@@ -1,0 +1,5 @@
+{
+  "terminal.integrated.env.windows": {
+    "PATH": "C:\\Users\\223074993.VUTV\\Downloads\\node-v26.13.0-win-x64\\node-v26.13.0-win-x64;${env:PATH}"
+  }
+}
