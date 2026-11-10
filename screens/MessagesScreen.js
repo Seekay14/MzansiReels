@@ -1,75 +1,99 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, TextInput, ScrollView, Image } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { databases, Query, account } from '../config/appwrite';
+import { databases, Query } from '../config/appwrite';
 import { DATABASE_ID, COLLECTIONS, COLORS } from '../config/constants';
 import { timeAgo } from '../config/helpers';
 import Avatar from '../components/Avatar';
-
-// Fake "Active Now" users for the top strip
-const ACTIVE_USERS = [
-  { id: '1', name: 'Sipho', img: 'https://i.pravatar.cc/150?img=11' },
-  { id: '2', name: 'Lerato', img: 'https://i.pravatar.cc/150?img=47' },
-  { id: '3', name: 'Thabo', img: 'https://i.pravatar.cc/150?img=33' },
-  { id: '4', name: 'Zanele', img: 'https://i.pravatar.cc/150?img=68' },
-  { id: '5', name: 'Kabelo', img: 'https://i.pravatar.cc/150?img=12' },
-];
+import { useAuth } from '../context/AuthContext';
 
 export default function MessagesScreen({ navigation }) {
+  const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchText, setSearchText] = useState('');
-  const [user, setUser] = useState(null);
-
-  useEffect(() => {
-    const getCurrentUser = async () => {
-      try {
-        const currentUser = await account.get();
-        setUser(currentUser);
-      } catch (error) {}
-    };
-    getCurrentUser();
-  }, []);
+  const [loadError, setLoadError] = useState('');
 
   const load = useCallback(async () => {
     if (!user) return;
+    setLoadError('');
     try {
-      const res = await databases.listDocuments(DATABASE_ID, COLLECTIONS.messages, [
-        Query.or([Query.equal('senderId', user.$id), Query.equal('receiverId', user.$id)]),
-        Query.orderDesc('$createdAt'),
-        Query.limit(100),
-      ]);
+      const chats = [];
+      let chatOffset = 0;
+      while (true) {
+        const page = await databases.listDocuments(DATABASE_ID, COLLECTIONS.chats, [
+          Query.contains('participants', user.$id),
+          Query.orderDesc('updatedAt'),
+          Query.limit(100),
+          Query.offset(chatOffset),
+        ]);
+        chats.push(...page.documents);
+        chatOffset += page.documents.length;
+        if (page.documents.length === 0 || chatOffset >= page.total) break;
+      }
 
-      const latest = new Map();
-      res.documents.forEach((m) => {
-        const otherId = m.senderId === user.$id ? m.receiverId : m.senderId;
-        if (!latest.has(otherId)) latest.set(otherId, m);
-      });
+      const unreadCounts = new Map();
+      let messageOffset = 0;
+      let unreadTotal = 0;
+      while (true) {
+        const page = await databases.listDocuments(DATABASE_ID, COLLECTIONS.messages, [
+          Query.equal('receiverId', user.$id),
+          Query.equal('isRead', false),
+          Query.limit(100),
+          Query.offset(messageOffset),
+        ]);
+        page.documents.forEach((message) => {
+          unreadCounts.set(message.senderId, (unreadCounts.get(message.senderId) || 0) + 1);
+        });
+        unreadTotal = page.total;
+        messageOffset += page.documents.length;
+        if (page.documents.length === 0 || messageOffset >= unreadTotal) break;
+      }
 
-      const ids = [...latest.keys()];
+      const ids = [...new Set(chats.flatMap((chat) => (
+        Array.isArray(chat.participants)
+          ? chat.participants.filter((participantId) => participantId !== user.$id)
+          : []
+      )))];
       let people = [];
       if (ids.length) {
-        const found = await databases.listDocuments(DATABASE_ID, COLLECTIONS.users, [Query.equal('userId', ids), Query.limit(100)]);
+        const found = await databases.listDocuments(DATABASE_ID, COLLECTIONS.users, [
+          Query.equal('userId', ids),
+          Query.limit(100),
+        ]);
         people = found.documents;
       }
 
-      setConversations(ids.map((id) => {
-        const m = latest.get(id);
-        const p = people.find((u) => u.userId === id);
-        return { userId: id, name: p?.name || 'Mzansi User', avatarUrl: p?.avatarUrl, text: m.text, at: m.$createdAt, mine: m.senderId === user.$id };
-      }));
-    } catch (error) { console.log('Error loading inbox:', error); } 
+      const conversationsWithUnread = chats.map((chat) => {
+        const otherId = chat.participants?.find((participantId) => participantId !== user.$id);
+        const person = people.find((profile) => profile.userId === otherId);
+        return {
+          chatId: chat.$id,
+          userId: otherId,
+          name: person?.name || 'Mzansi User',
+          avatarUrl: person?.avatarUrl,
+          text: chat.lastMessage || 'Chat started',
+          at: chat.updatedAt || chat.$createdAt,
+          unreadCount: unreadCounts.get(otherId) || 0,
+        };
+      });
+
+      setConversations(conversationsWithUnread);
+    } catch (error) {
+      console.error('Error loading inbox:', error);
+      setLoadError('Your inbox could not be loaded. Check your connection and try again.');
+    }
     finally { setLoading(false); setRefreshing(false); }
   }, [user]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const filteredConversations = conversations.filter(c => 
-    c.name.toLowerCase().includes(searchText.toLowerCase())
+  const filteredConversations = conversations.filter((conversation) =>
+    conversation.name.toLowerCase().includes(searchText.toLowerCase())
   );
 
   return (
@@ -77,8 +101,7 @@ export default function MessagesScreen({ navigation }) {
       
       {/* HEADER */}
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-        <Text style={styles.headerTitle}>Messages</Text>
-        {/* 👈 ADDED ONPRESS HERE */}
+        <Text style={styles.headerTitle}>Inbox</Text>
         <TouchableOpacity style={styles.newMessageBtn} onPress={() => navigation.navigate('NewMessage')}>
           <Ionicons name="create-outline" size={24} color={COLORS.cyan} />
         </TouchableOpacity>
@@ -98,69 +121,41 @@ export default function MessagesScreen({ navigation }) {
         </View>
       </View>
 
-      {/* ACTIVE NOW STRIP */}
-      <View style={styles.activeSection}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activeScroll}>
-          {/* "Your Story" button */}
-          <TouchableOpacity style={styles.activeUser}>
-            <View style={styles.storyBorder}>
-              <Image source={{ uri: user?.avatarUrl || 'https://i.pravatar.cc/150?img=12' }} style={styles.activeAvatar} />
-              <View style={styles.addIcon}><Ionicons name="add" size={12} color="#fff" /></View>
-            </View>
-            <Text style={styles.activeName}>You</Text>
-          </TouchableOpacity>
-
-          {ACTIVE_USERS.map((u) => (
-            <TouchableOpacity key={u.id} style={styles.activeUser} onPress={() => navigation.navigate('Chat', { userId: u.id, userName: u.name })}>
-              <View style={styles.storyBorder}>
-                <Image source={{ uri: u.img }} style={styles.activeAvatar} />
-                <View style={styles.onlineIndicator} />
-              </View>
-              <Text style={styles.activeName} numberOfLines={1}>{u.name}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {/* MESSAGE REQUESTS (Premium Feature) */}
-      {searchText === '' && (
-        <TouchableOpacity style={styles.requestRow}>
-          <View style={styles.requestIcon}>
-            <Ionicons name="mail-unread-outline" size={20} color={COLORS.cyan} />
-          </View>
-          <Text style={styles.requestText}>Message Requests</Text>
-          <View style={styles.badge}><Text style={styles.badgeText}>3</Text></View>
-          <Ionicons name="chevron-forward" size={18} color="#555" />
-        </TouchableOpacity>
-      )}
-
       {/* CHAT LIST */}
-      {loading ? <ActivityIndicator size="large" color={COLORS.cyan} style={{ marginTop: 50 }} /> : (
+      {loading ? <ActivityIndicator size="large" color={COLORS.cyan} style={{ marginTop: 50 }} /> : loadError ? (
+        <View style={styles.errorState}>
+          <Text style={styles.errorText}>{loadError}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={load}>
+            <Text style={styles.retryText}>Try again</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
         <FlatList
           data={filteredConversations}
-          keyExtractor={(c) => c.userId}
+          keyExtractor={(c) => c.chatId}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={COLORS.cyan} />}
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('Chat', { userId: item.userId, userName: item.name })}>
+            <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('Chat', {
+              chatId: item.chatId,
+              userId: item.userId,
+              userName: item.name,
+            })}>
               
-              {/* Avatar with Online Dot */}
-              <View style={styles.avatarContainer}>
-                <Avatar uri={item.avatarUrl} name={item.name} size={56} />
-                <View style={styles.onlineDot} />
-              </View>
-
-              {/* Name and Preview */}
+              <Avatar uri={item.avatarUrl} name={item.name} size={56} />
               <View style={{ flex: 1, marginLeft: 15 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <Text style={[styles.name, !item.mine && { fontWeight: '900', color: '#fff' }]}>{item.name}</Text>
+                  <Text style={[styles.name, item.unreadCount > 0 && styles.unreadText]}>{item.name}</Text>
                   <Text style={styles.time}>{timeAgo(item.at)}</Text>
                 </View>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={[styles.preview, !item.mine && { fontWeight: 'bold', color: '#fff' }]} numberOfLines={1}>
-                    {item.mine ? 'You: ' : ''}{item.text.startsWith('http') ? '📷 Image' : item.text}
+                  <Text style={[styles.preview, item.unreadCount > 0 && styles.unreadText]} numberOfLines={1}>
+                    {item.text.startsWith('http') ? '📷 Image' : item.text}
                   </Text>
-                  {/* Unread Badge (Fake logic for demo) */}
-                  {!item.mine && <View style={styles.unreadBadge}><Text style={styles.unreadText}>1</Text></View>}
+                  {item.unreadCount > 0 && (
+                    <View style={styles.unreadBadge}>
+                      <Text style={styles.unreadBadgeText}>{item.unreadCount > 99 ? '99+' : item.unreadCount}</Text>
+                    </View>
+                  )}
                 </View>
               </View>
             </TouchableOpacity>
@@ -177,33 +172,20 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 15 },
   headerTitle: { color: '#fff', fontSize: 24, fontWeight: 'bold' },
   newMessageBtn: { padding: 5 },
-  
   searchContainer: { paddingHorizontal: 15, marginBottom: 15 },
   searchBar: { flexDirection: 'row', backgroundColor: COLORS.card, borderRadius: 10, alignItems: 'center', paddingHorizontal: 12, height: 40 },
   searchInput: { flex: 1, color: '#fff', fontSize: 15 },
 
-  activeSection: { marginBottom: 15 },
-  activeScroll: { paddingHorizontal: 15, gap: 15 },
-  activeUser: { alignItems: 'center', width: 65 },
-  storyBorder: { width: 62, height: 62, borderRadius: 31, borderWidth: 2, borderColor: '#2A2A35', justifyContent: 'center', alignItems: 'center', marginBottom: 5 },
-  activeAvatar: { width: 54, height: 54, borderRadius: 27 },
-  addIcon: { position: 'absolute', bottom: 0, right: 0, backgroundColor: COLORS.cyan, width: 20, height: 20, borderRadius: 10, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: COLORS.bg },
-  onlineIndicator: { position: 'absolute', bottom: 2, right: 2, width: 12, height: 12, borderRadius: 6, backgroundColor: '#00FF7F', borderWidth: 2, borderColor: COLORS.bg },
-  activeName: { color: '#fff', fontSize: 12, textAlign: 'center' },
-
-  requestRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  requestIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0, 229, 255, 0.1)', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  requestText: { flex: 1, color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  badge: { backgroundColor: COLORS.pink, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10, marginRight: 10 },
-  badgeText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
-
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  avatarContainer: { position: 'relative' },
-  onlineDot: { position: 'absolute', bottom: 2, right: 2, width: 14, height: 14, borderRadius: 7, backgroundColor: '#00FF7F', borderWidth: 2, borderColor: COLORS.bg },
   name: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   time: { color: COLORS.muted, fontSize: 12 },
   preview: { color: COLORS.muted, fontSize: 14, flex: 1, marginRight: 10 },
-  unreadBadge: { backgroundColor: COLORS.cyan, width: 20, height: 20, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-  unreadText: { color: '#000', fontSize: 12, fontWeight: 'bold' },
-  empty: { color: COLORS.muted, textAlign: 'center', marginTop: 50 }
+  unreadText: { color: '#fff', fontWeight: '800' },
+  unreadBadge: { minWidth: 22, height: 22, borderRadius: 11, backgroundColor: '#FF4057', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  unreadBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  empty: { color: COLORS.muted, textAlign: 'center', marginTop: 50 },
+  errorState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 30 },
+  errorText: { color: COLORS.muted, textAlign: 'center', lineHeight: 21 },
+  retryButton: { backgroundColor: COLORS.cyan, borderRadius: 20, paddingHorizontal: 22, paddingVertical: 10, marginTop: 16 },
+  retryText: { color: '#000', fontWeight: '700' },
 });

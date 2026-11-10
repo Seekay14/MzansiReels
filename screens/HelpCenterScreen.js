@@ -9,7 +9,7 @@ const FAQS = [
   { q: "Why is my video not playing?", a: "If you are on the web browser, some video formats (like iPhone .mov files) are not supported by Chrome. Upload .mp4 files for the best web experience. The mobile app supports all formats." },
   { q: "How do I get a blue checkmark?", a: "The blue checkmark is currently reserved for the official MzansiReels account and select verified creators. Keep posting high-quality, original content to get noticed!" },
   { q: "How do I change my privacy settings?", a: "Go to Profile > Settings > Private Account. When enabled, only your followers can see your videos." },
-  { q: "Can I delete a video I uploaded?", a: "Yes. Go to your Profile tab, find the video in your grid, and tap the red trash can icon." },
+  { q: "Can I delete a video I uploaded?", a: "Yes. Open your video, tap the three-dot menu, and choose Delete video." },
 ];
 
 export default function HelpCenterScreen({ navigation }) {

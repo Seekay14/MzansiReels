@@ -12,6 +12,10 @@ export const COLLECTIONS = {
   likes: '6af0df47001d46d146d9',
   follows: '6af0dfe100196e6116f4',
   bookmarks: '6af0fbce003c0e8aec59',
+  typingStatus: '6af31c57001d52c8fbd0',
+  reports: '6af31e42000017a213e7',
+  blocks: '6af31db90012d83cf0bb',
+  chats: '6af324010030906d4c0b',
 };
 
 export const MAX_UPLOAD_MB = 50;

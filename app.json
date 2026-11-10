@@ -2,15 +2,11 @@
   "expo": {
     "name": "MzansiReels",
     "slug": "mzansireels",
+    "scheme": "mzansireels",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#000000"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -29,7 +25,8 @@
       ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
     },
     "plugins": [
       "expo-web-browser",
@@ -41,12 +38,31 @@
           "cameraPermission": "MzansiReels needs your camera so you can record videos."
         }
       ],
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "MzansiReels needs access to your photos to save videos to your library.",
+          "savePhotosPermission": "Allow MzansiReels to save videos to your library."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#000000",
+          "image": "./assets/splash.png",
+          "resizeMode": "contain"
+        }
+      ],
+      "expo-sharing"
     ],
     "extra": {
       "eas": {
         "projectId": "9d349ea3-5b11-4196-af34-70a03548789f"
       }
+    },
+    "experiments": {
+      "baseUrl": "/MzansiReels"
     }
   }
 }

@@ -8,7 +8,10 @@ npx expo install --fix            # aligns every package with SDK 58
 npx expo-doctor
 npx expo lint
 ```
-`expo-av`, `expo-video-thumbnails` (deprecated) and random `picsum` placeholders are no longer used.
+`expo-av` has been removed in favor of `expo-video`. Native uploads can generate a video
+thumbnail with `expo-video-thumbnails`, and creators can choose a custom cover image.
+If a web upload has no selected cover, it is saved without a thumbnail rather than
+displaying placeholder artwork.
 Because `expo-video` and the image picker plugin changed, build a development build
 (`npx expo run:android` / `run:ios`) if Expo Go complains.
 
