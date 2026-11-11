@@ -1,12 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, ScrollView, Platform, Animated, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, ScrollView, Platform, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { account, databases, ID } from '../config/appwrite';
-import { DATABASE_ID, COLLECTIONS, COLORS } from '../config/constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BlurView } from 'expo-blur';
+import { account, ID } from '../config/appwrite';
+import { COLORS } from '../config/constants';
 import { ensureUserDoc } from '../config/helpers';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../context/AuthContext';
 import Avatar from '../components/Avatar';
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const REMEMBERED_EMAIL_KEY = '@mzansireels/remembered-login-email';
 
 export default function AuthScreen({ navigation }) {
   const { setUser } = useAuth();
@@ -15,16 +20,15 @@ export default function AuthScreen({ navigation }) {
   const [subtitleIndex, setSubtitleIndex] = useState(0);
   const logoScale = useRef(new Animated.Value(0.82)).current;
   const subtitleOpacity = useRef(new Animated.Value(1)).current;
+  const tabIndicatorX = useRef(new Animated.Value(0)).current;
   const subtitles = ['Discover Mzansi talent', 'Scroll. Laugh. Repeat.'];
   
-  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  
-  const [otp, setOtp] = useState('');
-  const [userId, setUserId] = useState(null);
-  const [isOtpSent, setIsOtpSent] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [tabWidth, setTabWidth] = useState(0);
   
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -43,6 +47,31 @@ export default function AuthScreen({ navigation }) {
     animation.start();
     return () => animation.stop();
   }, [pendingAccount, welcomeOpacity]);
+
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem(REMEMBERED_EMAIL_KEY)
+      .then((savedEmail) => {
+        if (active && savedEmail) {
+          setEmail(savedEmail);
+          setRememberMe(true);
+        }
+      })
+      .catch((error) => console.error('Could not load the remembered login email:', error));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const activeTabIndex = ['login', 'signup', 'otp'].indexOf(activeTab);
+    Animated.spring(tabIndicatorX, {
+      toValue: activeTabIndex * tabWidth,
+      useNativeDriver: true,
+      speed: 22,
+      bounciness: 3,
+    }).start();
+  }, [activeTab, tabIndicatorX, tabWidth]);
 
   useEffect(() => {
     Animated.sequence([
@@ -104,6 +133,15 @@ export default function AuthScreen({ navigation }) {
     setMessage('');
     try {
       await account.createEmailPasswordSession(email.trim(), password);
+      try {
+        if (rememberMe) {
+          await AsyncStorage.setItem(REMEMBERED_EMAIL_KEY, email.trim());
+        } else {
+          await AsyncStorage.removeItem(REMEMBERED_EMAIL_KEY);
+        }
+      } catch (storageError) {
+        console.error('Could not save the remember-me preference:', storageError);
+      }
       const user = await account.get();
       const profile = await ensureUserDoc(user);
       setPendingAccount({ user, profile });
@@ -114,63 +152,44 @@ export default function AuthScreen({ navigation }) {
     }
   };
 
-  const handleSignUp = async () => {
-    if (!name.trim() || !email.trim() || !password) return setMessage('Please fill in all fields.');
-    if (password.length < 8) return setMessage('Password must be at least 8 characters.');
-    
-    setLoading(true);
-    setMessage('');
-    try {
-      await account.create(ID.unique(), email.trim(), password, name.trim());
-      await account.createEmailPasswordSession(email.trim(), password);
-      const user = await account.get();
-      
-      await databases.createDocument(DATABASE_ID, COLLECTIONS.users, ID.unique(), {
-        userId: user.$id,
-        name: name.trim(),
-        username: name.trim().toLowerCase().replace(/\s+/g, ''),
-        followers: 0,
-        following: 0,
-        isVerified: false,
-        isPrivate: false,
-        pushNotifications: true,
-        interests: ""
-      });
-
-      setUser(user);
-    } catch (error) {
-      setMessage(error.message);
-    } finally {
-      setLoading(false);
+  const handleSignup = async () => {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !password || !confirmPassword) {
+      setMessage('Please fill in all fields.');
+      return;
     }
-  };
-
-  const handleSendOtp = async () => {
-    if (!email.trim()) return setMessage('Please enter your email.');
-    setLoading(true);
-    setMessage('');
-    try {
-      const token = await account.createEmailToken(ID.unique(), email.trim());
-      setUserId(token.userId);
-      setIsOtpSent(true);
-    } catch (error) {
-      setMessage(error.message);
-    } finally {
-      setLoading(false);
+    if (!EMAIL_PATTERN.test(normalizedEmail)) {
+      setMessage('Please enter a valid email address.');
+      return;
     }
-  };
+    if (password.length < 8) {
+      setMessage('Password must be at least 8 characters.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setMessage('Passwords do not match.');
+      return;
+    }
 
-  const handleVerifyOtp = async () => {
-    if (!otp || otp.length < 6) return setMessage('Please enter the 6-digit code.');
     setLoading(true);
     setMessage('');
     try {
-      await account.createSession(userId, otp);
-      const user = await account.get();
-      ensureUserDoc(user).catch(() => {});
-      setUser(user);
+      try {
+        await account.create(ID.unique(), normalizedEmail, password);
+      } catch (error) {
+        if (error.code === 409 || error.type === 'user_already_exists') {
+          setMessage('An account with this email already exists. Please log in or use another email.');
+          return;
+        }
+        throw error;
+      }
+
+      await account.createEmailPasswordSession(normalizedEmail, password);
+      const signupUser = await account.get();
+      await setUser({ ...signupUser, profileSetupComplete: false, interests: [] });
     } catch (error) {
-      setMessage('Invalid or expired code.');
+      console.error('Could not complete account registration:', error);
+      setMessage(error.message || 'Could not create your account. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -180,10 +199,8 @@ export default function AuthScreen({ navigation }) {
     setActiveTab(tab);
     setFocusedInput(null);
     setMessage('');
-    setIsOtpSent(false);
-    setName('');
     setPassword('');
-    setOtp('');
+    setConfirmPassword('');
   };
 
   const handleContinue = () => {
@@ -202,9 +219,6 @@ export default function AuthScreen({ navigation }) {
       setEmail('');
       setPassword('');
       setShowPassword(false);
-      setOtp('');
-      setUserId(null);
-      setIsOtpSent(false);
       setFocusedInput(null);
     } catch (error) {
       console.error('Could not sign out before switching accounts:', error);
@@ -233,6 +247,7 @@ export default function AuthScreen({ navigation }) {
 
           <Avatar
             uri={profile.avatarUrl}
+            userId={user.$id}
             name={profile.username || profile.name || user.name}
             size={126}
             bordered
@@ -270,9 +285,19 @@ export default function AuthScreen({ navigation }) {
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: COLORS.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        
+    <KeyboardAvoidingView style={styles.authRoot} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <LinearGradient
+        colors={['#080A10', '#101820', '#08090E']}
+        locations={[0, 0.48, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={styles.backgroundGlowTop} pointerEvents="none" />
+      <View style={styles.backgroundGlowBottom} pointerEvents="none" />
+      <ScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <Animated.View style={[styles.logoContainer, { transform: [{ scale: logoScale }] }]}>
           <Ionicons name="videocam" size={60} color={COLORS.cyan} />
           <Text style={styles.logoText}>MzansiReels</Text>
@@ -281,34 +306,64 @@ export default function AuthScreen({ navigation }) {
           </Animated.Text>
         </Animated.View>
 
-        <View style={styles.tabContainer}>
-          <TouchableOpacity style={[styles.tab, activeTab === 'login' && styles.activeTab]} onPress={() => switchTab('login')}>
-            <Text style={[styles.tabText, activeTab === 'login' && styles.activeTabText]}>Login</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.tab, activeTab === 'signup' && styles.activeTab]} onPress={() => switchTab('signup')}>
-            <Text style={[styles.tabText, activeTab === 'signup' && styles.activeTabText]}>Sign Up</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.tab, activeTab === 'otp' && styles.activeTab]} onPress={() => switchTab('otp')}>
-            <Text style={[styles.tabText, activeTab === 'otp' && styles.activeTabText]}>Email OTP</Text>
-          </TouchableOpacity>
-        </View>
+        <View style={styles.authCard}>
+          <BlurView intensity={18} tint="dark" style={StyleSheet.absoluteFill} />
+          <View style={styles.authCardContent}>
+            <View
+              style={styles.tabContainer}
+              onLayout={(event) => setTabWidth(event.nativeEvent.layout.width / 3)}
+            >
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.tabIndicator, { width: tabWidth, transform: [{ translateX: tabIndicatorX }] }]}
+              />
+              <TouchableOpacity
+                style={styles.tab}
+                onPress={() => switchTab('login')}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: activeTab === 'login' }}
+              >
+                <Text style={[styles.tabText, activeTab === 'login' && styles.activeTabText]}>Login</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.tab}
+                onPress={() => switchTab('signup')}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: activeTab === 'signup' }}
+              >
+                <Text style={[styles.tabText, activeTab === 'signup' && styles.activeTabText]}>Sign Up</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.tab}
+                onPress={() => switchTab('otp')}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: activeTab === 'otp' }}
+              >
+                <Text style={[styles.tabText, activeTab === 'otp' && styles.activeTabText]}>Email OTP</Text>
+              </TouchableOpacity>
+            </View>
 
         {activeTab === 'login' && (
           <>
-            <TextInput
-              style={inputStyle('loginEmail')}
-              placeholder="Email"
-              placeholderTextColor="#888"
-              value={email}
-              onChangeText={setEmail}
-              onFocus={() => setFocusedInput('loginEmail')}
-              onBlur={() => setFocusedInput(null)}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
-            <View style={styles.passwordRow}>
+            <View style={[styles.iconInputRow, focusedInput === 'loginEmail' && styles.inputFocused]}>
+              <Ionicons name="mail-outline" size={19} color="#8C969E" style={styles.inputLeadingIcon} />
               <TextInput
-                style={[inputStyle('loginPassword'), { flex: 1, marginBottom: 0 }]}
+                style={styles.iconInput}
+                placeholder="Email"
+                placeholderTextColor="#888"
+                value={email}
+                onChangeText={setEmail}
+                onFocus={() => setFocusedInput('loginEmail')}
+                onBlur={() => setFocusedInput(null)}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoComplete="email"
+              />
+            </View>
+            <View style={[styles.iconInputRow, styles.loginPasswordInputRow, focusedInput === 'loginPassword' && styles.inputFocused]}>
+              <Ionicons name="lock-closed-outline" size={19} color="#8C969E" style={styles.inputLeadingIcon} />
+              <TextInput
+                style={styles.iconInput}
                 placeholder="Password"
                 placeholderTextColor="#888"
                 value={password}
@@ -316,18 +371,37 @@ export default function AuthScreen({ navigation }) {
                 onFocus={() => setFocusedInput('loginPassword')}
                 onBlur={() => setFocusedInput(null)}
                 secureTextEntry={!showPassword}
+                autoComplete="current-password"
               />
-              <TouchableOpacity style={styles.eye} onPress={() => setShowPassword(!showPassword)}>
-                <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={22} color="#888" />
+              <TouchableOpacity
+                style={styles.inlineEye}
+                onPress={() => setShowPassword(!showPassword)}
+                accessibilityRole="button"
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+              >
+                <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={21} color="#8C969E" />
               </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={styles.forgotPasswordLink}
-              onPress={() => navigation.navigate('ForgotPassword')}
-              accessibilityRole="button"
-            >
-              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-            </TouchableOpacity>
+            <View style={styles.loginOptionsRow}>
+              <TouchableOpacity
+                style={styles.rememberMe}
+                onPress={() => setRememberMe((remembering) => !remembering)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: rememberMe }}
+              >
+                <View style={[styles.checkbox, rememberMe && styles.checkboxSelected]}>
+                  {rememberMe && <Ionicons name="checkmark" size={14} color="#001014" />}
+                </View>
+                <Text style={styles.rememberMeText}>Remember Me</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.forgotPasswordLink}
+                onPress={() => navigation.navigate('ForgotPassword')}
+                accessibilityRole="button"
+              >
+                <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity
               style={[styles.button, loading && styles.buttonLoading]}
               onPress={handleLogin}
@@ -340,42 +414,68 @@ export default function AuthScreen({ navigation }) {
 
         {activeTab === 'signup' && (
           <>
-            <TextInput
-              style={inputStyle('signupName')}
-              placeholder="Full Name"
-              placeholderTextColor="#888"
-              value={name}
-              onChangeText={setName}
-              onFocus={() => setFocusedInput('signupName')}
-              onBlur={() => setFocusedInput(null)}
-            />
-            <TextInput
-              style={inputStyle('signupEmail')}
-              placeholder="Email"
-              placeholderTextColor="#888"
-              value={email}
-              onChangeText={setEmail}
-              onFocus={() => setFocusedInput('signupEmail')}
-              onBlur={() => setFocusedInput(null)}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
-            <View style={styles.passwordRow}>
+            <View style={styles.signupStepHeader}>
+              <Text style={styles.signupStepLabel}>CREATE YOUR ACCOUNT</Text>
+              <Text style={styles.signupStepTitle}>Start scrolling with Mzansi.</Text>
+              <Text style={styles.signupStepSubtitle}>A few details now. Your profile comes next.</Text>
+            </View>
+            <View style={[styles.iconInputRow, focusedInput === 'signupEmail' && styles.inputFocused]}>
+              <Ionicons name="mail-outline" size={19} color="#8C969E" style={styles.inputLeadingIcon} />
               <TextInput
-                style={[inputStyle('signupPassword'), { flex: 1, marginBottom: 0 }]}
-                placeholder="Password (min 8 chars)"
+                style={styles.iconInput}
+                placeholder="Email"
+                placeholderTextColor="#888"
+                value={email}
+                onChangeText={setEmail}
+                onFocus={() => setFocusedInput('signupEmail')}
+                onBlur={() => setFocusedInput(null)}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoComplete="email"
+              />
+            </View>
+            <View style={[styles.iconInputRow, focusedInput === 'signupPassword' && styles.inputFocused]}>
+              <Ionicons name="lock-closed-outline" size={19} color="#8C969E" style={styles.inputLeadingIcon} />
+              <TextInput
+                style={styles.iconInput}
+                placeholder="Password (min 8 characters)"
                 placeholderTextColor="#888"
                 value={password}
                 onChangeText={setPassword}
                 onFocus={() => setFocusedInput('signupPassword')}
                 onBlur={() => setFocusedInput(null)}
                 secureTextEntry={!showPassword}
+                autoComplete="new-password"
               />
-              <TouchableOpacity style={styles.eye} onPress={() => setShowPassword(!showPassword)}>
-                <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={22} color="#888" />
+              <TouchableOpacity
+                style={styles.inlineEye}
+                onPress={() => setShowPassword((visible) => !visible)}
+                accessibilityRole="button"
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+              >
+                <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={21} color="#8C969E" />
               </TouchableOpacity>
             </View>
-            <TouchableOpacity style={styles.button} onPress={handleSignUp} disabled={loading}>
+            <View style={[styles.iconInputRow, focusedInput === 'signupConfirmPassword' && styles.inputFocused]}>
+              <Ionicons name="lock-closed-outline" size={19} color="#8C969E" style={styles.inputLeadingIcon} />
+              <TextInput
+                style={styles.iconInput}
+                placeholder="Confirm Password"
+                placeholderTextColor="#888"
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                onFocus={() => setFocusedInput('signupConfirmPassword')}
+                onBlur={() => setFocusedInput(null)}
+                secureTextEntry={!showPassword}
+                autoComplete="new-password"
+              />
+            </View>
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonLoading]}
+              onPress={handleSignup}
+              disabled={loading}
+              accessibilityRole="button"
+            >
               {loading ? <ActivityIndicator color="#000" /> : <Text style={styles.buttonText}>Create Account</Text>}
             </TouchableOpacity>
           </>
@@ -383,56 +483,45 @@ export default function AuthScreen({ navigation }) {
 
         {activeTab === 'otp' && (
           <>
-            {!isOtpSent ? (
-              <>
-                <Text style={styles.subtitle}>We will send a 6-digit code to your email</Text>
-                <TextInput
-                  style={inputStyle('otpEmail')}
-                  placeholder="Email"
-                  placeholderTextColor="#888"
-                  value={email}
-                  onChangeText={setEmail}
-                  onFocus={() => setFocusedInput('otpEmail')}
-                  onBlur={() => setFocusedInput(null)}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                />
-                <TouchableOpacity style={styles.button} onPress={handleSendOtp} disabled={loading}>
-                  {loading ? <ActivityIndicator color="#000" /> : <Text style={styles.buttonText}>Send Code</Text>}
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <Text style={styles.subtitle}>Enter the code sent to {email}</Text>
-                <TextInput
-                  style={[inputStyle('otpCode'), styles.otpInput]}
-                  placeholder="000000"
-                  placeholderTextColor="#555"
-                  value={otp}
-                  onChangeText={setOtp}
-                  onFocus={() => setFocusedInput('otpCode')}
-                  onBlur={() => setFocusedInput(null)}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                />
-                <TouchableOpacity style={styles.button} onPress={handleVerifyOtp} disabled={loading}>
-                  {loading ? <ActivityIndicator color="#000" /> : <Text style={styles.buttonText}>Verify & Login</Text>}
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setIsOtpSent(false)} style={{ marginTop: 15 }}>
-                  <Text style={{ color: COLORS.muted, textAlign: 'center' }}>Change email</Text>
-                </TouchableOpacity>
-              </>
-            )}
+            <Text style={styles.subtitle}>Sign in or create an account with a one-time email code.</Text>
+            <TouchableOpacity
+              style={styles.button}
+              onPress={() => navigation.navigate('EmailOTP')}
+              accessibilityRole="button"
+            >
+              <Text style={styles.buttonText}>Continue with Email OTP</Text>
+            </TouchableOpacity>
           </>
         )}
 
         {!!message && <Text style={styles.message}>{message}</Text>}
+          </View>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  authRoot: { flex: 1, backgroundColor: COLORS.bg },
+  backgroundGlowTop: {
+    position: 'absolute',
+    top: '8%',
+    right: 0,
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    backgroundColor: 'rgba(0, 229, 255, 0.045)',
+  },
+  backgroundGlowBottom: {
+    position: 'absolute',
+    bottom: '4%',
+    left: 0,
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    backgroundColor: 'rgba(24, 42, 68, 0.22)',
+  },
   welcomeRoot: { flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center' },
   welcomeContent: {
     width: '100%',
@@ -469,32 +558,72 @@ const styles = StyleSheet.create({
   continueButtonText: { color: '#001014', fontSize: 16, fontWeight: '800', marginRight: 10 },
   switchAccountButton: { minHeight: 48, justifyContent: 'center', alignItems: 'center', marginTop: 14, paddingHorizontal: 8 },
   switchAccountText: { color: '#B8C2C8', fontSize: 14, fontWeight: '600', textAlign: 'center' },
-  container: { flexGrow: 1, justifyContent: 'center', padding: 25 },
-  logoContainer: { alignItems: 'center', marginBottom: 30 },
-  logoText: { color: '#fff', fontSize: 32, fontWeight: 'bold', marginTop: 10 },
-  brandSubtitle: { color: COLORS.muted, fontSize: 14, marginTop: 8, textAlign: 'center' },
-  tabContainer: { flexDirection: 'row', backgroundColor: COLORS.card, borderRadius: 12, padding: 5, marginBottom: 25 },
-  tab: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 8 },
-  activeTab: { backgroundColor: COLORS.cyan },
-  tabText: { color: '#888', fontWeight: 'bold', fontSize: 14 },
-  activeTabText: { color: '#000' },
+  container: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, paddingVertical: 34 },
+  logoContainer: { alignItems: 'center', marginBottom: 26 },
+  logoText: { color: '#fff', fontSize: 32, fontWeight: 'bold', marginTop: 10, letterSpacing: -0.5 },
+  brandSubtitle: { color: '#9299A3', fontSize: 14, marginTop: 8, textAlign: 'center' },
+  authCard: {
+    width: '100%',
+    maxWidth: 470,
+    alignSelf: 'center',
+    overflow: 'hidden',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(26,26,30,0.82)',
+    shadowColor: '#000',
+    shadowOpacity: 0.42,
+    shadowRadius: 30,
+    shadowOffset: { width: 0, height: 20 },
+    elevation: 12,
+  },
+  authCardContent: { padding: 25, zIndex: 1 },
+  tabContainer: { position: 'relative', flexDirection: 'row', marginBottom: 27, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.09)' },
+  tabIndicator: { position: 'absolute', bottom: -1, left: 0, height: 2, backgroundColor: COLORS.cyan, borderRadius: 2, zIndex: 1 },
+  tab: { flex: 1, minHeight: 46, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 3 },
+  tabText: { color: '#858B95', fontWeight: '700', fontSize: 13 },
+  activeTabText: { color: '#F7FCFD' },
   subtitle: { color: COLORS.muted, fontSize: 14, textAlign: 'center', marginBottom: 20 },
-  input: { backgroundColor: COLORS.card, color: '#fff', borderRadius: 12, padding: 18, marginBottom: 15, fontSize: 16, borderWidth: 1, borderColor: '#333' },
+  input: { backgroundColor: 'rgba(12,14,18,0.78)', color: '#fff', borderRadius: 12, padding: 18, marginBottom: 15, fontSize: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
   inputFocused: {
     borderColor: COLORS.cyan,
-    shadowColor: COLORS.cyan,
-    shadowOpacity: 0.35,
-    shadowRadius: 7,
+    shadowColor: '#00E5FF',
+    shadowOpacity: 0.18,
+    shadowRadius: 9,
     shadowOffset: { width: 0, height: 0 },
     elevation: 3,
   },
   otpInput: { textAlign: 'center', fontSize: 28, letterSpacing: 10, fontWeight: 'bold', paddingVertical: 20 },
+  iconInputRow: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+    paddingHorizontal: 15,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(12,14,18,0.78)',
+  },
+  loginPasswordInputRow: { marginBottom: 10 },
+  inputLeadingIcon: { marginRight: 12 },
+  iconInput: { flex: 1, color: '#fff', fontSize: 15, paddingVertical: 15 },
+  inlineEye: { padding: 6, marginLeft: 8 },
   passwordRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
-  forgotPasswordLink: { alignSelf: 'flex-end', marginTop: -7, marginBottom: 7, paddingVertical: 6 },
+  loginOptionsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15 },
+  rememberMe: { minHeight: 34, flexDirection: 'row', alignItems: 'center' },
+  rememberMeText: { color: '#A7ADB5', fontSize: 12, fontWeight: '600' },
+  forgotPasswordLink: { paddingVertical: 7, paddingLeft: 8 },
   forgotPasswordText: { color: COLORS.cyan, fontSize: 13, fontWeight: '600' },
   eye: { position: 'absolute', right: 15 },
-  button: { backgroundColor: COLORS.cyan, padding: 18, borderRadius: 12, alignItems: 'center', marginTop: 10 },
+  button: { minHeight: 54, flexDirection: 'row', justifyContent: 'center', backgroundColor: COLORS.cyan, padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 8 },
   buttonLoading: { backgroundColor: '#12343A' },
   buttonText: { color: '#000', fontSize: 18, fontWeight: 'bold' },
   message: { color: COLORS.pink, textAlign: 'center', marginTop: 20, fontWeight: 'bold', fontSize: 15 },
+  signupStepHeader: { marginBottom: 20 },
+  signupStepLabel: { color: COLORS.cyan, fontSize: 10, fontWeight: '800', letterSpacing: 1.5 },
+  signupStepTitle: { color: '#fff', fontSize: 23, fontWeight: '800' },
+  signupStepSubtitle: { color: COLORS.muted, fontSize: 13, lineHeight: 19, marginTop: 6 },
+  checkbox: { width: 21, height: 21, alignItems: 'center', justifyContent: 'center', borderRadius: 5, borderWidth: 1.5, borderColor: '#737780', marginRight: 10 },
+  checkboxSelected: { borderColor: COLORS.cyan, backgroundColor: COLORS.cyan },
 });

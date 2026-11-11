@@ -1,7 +1,10 @@
 import { databases, storage, ID, Query } from './appwrite';
-import { DATABASE_ID, COLLECTIONS, BUCKET_ID } from './constants';
+import { Permission, Role } from 'react-native-appwrite';
+import { DATABASE_ID, COLLECTIONS, BUCKET_ID, fileIdFromUrl } from './constants';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { uploadMediaFile } from './mediaUpload';
+import { sendPushNotification } from './pushNotifications';
+export { getOrCreateChat, sendMessage } from './chatService';
 
 export async function getUserDoc(userId) {
   const res = await databases.listDocuments(DATABASE_ID, COLLECTIONS.users, [
@@ -9,6 +12,20 @@ export async function getUserDoc(userId) {
     Query.limit(1),
   ]);
   return res.documents[0] || null;
+}
+
+export async function getUserDocs(userIds) {
+  const uniqueIds = [...new Set(userIds.filter(Boolean))];
+  const profiles = [];
+  for (let index = 0; index < uniqueIds.length; index += 100) {
+    const batch = uniqueIds.slice(index, index + 100);
+    const result = await databases.listDocuments(DATABASE_ID, COLLECTIONS.users, [
+      Query.equal('userId', batch),
+      Query.limit(100),
+    ]);
+    profiles.push(...result.documents);
+  }
+  return profiles;
 }
 
 export async function reportVideo(videoId, reporterId, reason) {
@@ -41,60 +58,6 @@ export async function blockUser(currentUserId, targetUserId) {
   });
 }
 
-export async function getOrCreateChat(currentUserId, targetUserId) {
-  if (!currentUserId || !targetUserId || currentUserId === targetUserId) {
-    throw new Error('A valid current user and target user are required to start a chat.');
-  }
-
-  const existing = await databases.listDocuments(DATABASE_ID, COLLECTIONS.chats, [
-    Query.contains('participants', currentUserId),
-    Query.contains('participants', targetUserId),
-    Query.limit(1),
-  ]);
-  if (existing.documents[0]) return existing.documents[0].$id;
-
-  const chat = await databases.createDocument(DATABASE_ID, COLLECTIONS.chats, ID.unique(), {
-    participants: [currentUserId, targetUserId],
-    lastMessage: 'Chat started',
-    updatedAt: new Date().toISOString(),
-  });
-  return chat.$id;
-}
-
-export async function sendMessage(chatId, senderId, text, isRead = false, replyToId = '', attachmentType = '') {
-  if (!chatId || !senderId || typeof text !== 'string' || !text.trim()) {
-    throw new Error('A chat, sender, and non-empty message are required.');
-  }
-
-  const chat = await databases.getDocument(DATABASE_ID, COLLECTIONS.chats, chatId);
-  if (!chat.participants?.includes(senderId)) {
-    throw new Error('The sender is not a participant in this chat.');
-  }
-  const receiverId = chat.participants.find((participantId) => participantId !== senderId);
-  if (!receiverId) throw new Error('The chat does not have another participant.');
-
-  const message = await databases.createDocument(DATABASE_ID, COLLECTIONS.messages, ID.unique(), {
-    senderId,
-    receiverId,
-    text: text.trim(),
-    isRead: Boolean(isRead),
-    replyToId: replyToId || '',
-    attachmentType: attachmentType || '',
-  });
-
-  try {
-    await databases.updateDocument(DATABASE_ID, COLLECTIONS.chats, chatId, {
-      lastMessage: text.trim(),
-      updatedAt: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error('Message was saved, but the chat preview could not be updated:', error);
-    throw error;
-  }
-
-  return message;
-}
-
 export function getAvatarPreviewUrl(fileId) {
   if (!fileId) throw new Error('An avatar file ID is required.');
   return storage.getFilePreviewURL(BUCKET_ID, fileId, 200, 200).toString();
@@ -105,13 +68,135 @@ export function getFileViewUrl(fileId) {
   return storage.getFileViewURL(BUCKET_ID, fileId).toString();
 }
 
-export async function toggleLike(videoId, userId) {
+export function getVideoThumbnail(videoUrl, thumbnailUrl) {
+  if (thumbnailUrl) return thumbnailUrl;
+
+  const fileId = fileIdFromUrl(videoUrl);
+  if (!fileId) return '';
+
+  return storage.getFilePreviewURL(BUCKET_ID, fileId, 400, 400).toString();
+}
+
+export async function sharePost(originalPost, currentUser, newCaption = '') {
+  if (!originalPost?.$id || !originalPost.userId || !currentUser?.$id) {
+    throw new Error('A post and signed-in user are required to share a post.');
+  }
+
+  const originalContent = originalPost.content || '';
+  const thoughts = typeof newCaption === 'string' ? newCaption.trim() : '';
+
+  const sharedPost = await databases.createDocument(DATABASE_ID, COLLECTIONS.posts, ID.unique(), {
+    postType: originalPost.postType || 'text',
+    imageUrl: originalPost.imageUrl || '',
+    videoUrl: originalPost.videoUrl || '',
+    content: thoughts ? `${thoughts}\n\n${originalContent}` : originalContent,
+    userId: currentUser.$id,
+    userName: currentUser.name || '',
+    avatarUrl: currentUser.avatarUrl || '',
+    sharedFromName: originalPost.sharedFromName || originalPost.userName || 'Mzansi Creator',
+    sharedFromId: originalPost.sharedFromId || originalPost.$id,
+    sharedFromUserId: originalPost.sharedFromUserId || originalPost.userId,
+    likes: 0,
+    views: 0,
+    shares: 0,
+    uploadedAt: new Date().toISOString(),
+  });
+
+  const currentOriginalPost = await databases.getDocument(
+    DATABASE_ID,
+    COLLECTIONS.posts,
+    originalPost.$id,
+  );
+  const updatedOriginalPost = await databases.updateDocument(
+    DATABASE_ID,
+    COLLECTIONS.posts,
+    originalPost.$id,
+    { shares: (Number(currentOriginalPost.shares) || 0) + 1 },
+  );
+
+  return {
+    sharedPost,
+    originalShares: Number(updatedOriginalPost.shares) || 0,
+    originalPostId: originalPost.$id,
+  };
+}
+
+export async function togglePostLike(postId, userId, userName, senderAvatar = '') {
+  if (!postId || !userId) {
+    throw new Error('A post ID and user ID are required to toggle a post like.');
+  }
+
+  const [likeResult, post] = await Promise.all([
+    databases.listDocuments(DATABASE_ID, COLLECTIONS.postLikes, [
+      Query.equal('postId', postId),
+      Query.equal('userId', userId),
+      Query.limit(1),
+    ]),
+    databases.getDocument(DATABASE_ID, COLLECTIONS.posts, postId),
+  ]);
+  const existingLike = likeResult.documents[0];
+  const wasLiked = Boolean(existingLike);
+  const nextCount = Math.max(0, (Number(post.likes) || 0) + (wasLiked ? -1 : 1));
+  let createdLike;
+
+  if (wasLiked) {
+    await databases.deleteDocument(DATABASE_ID, COLLECTIONS.postLikes, existingLike.$id);
+  } else {
+    createdLike = await databases.createDocument(DATABASE_ID, COLLECTIONS.postLikes, ID.unique(), {
+      userId,
+      postId,
+    });
+  }
+
+  try {
+    const updatedPost = await databases.updateDocument(
+      DATABASE_ID,
+      COLLECTIONS.posts,
+      postId,
+      { likes: nextCount },
+    );
+    if (!wasLiked && post.userId && post.userId !== userId) {
+      try {
+        await createNotification(post.userId, userName || 'Someone', senderAvatar, 'like', post.$id);
+      } catch (error) {
+        console.error('Post was liked, but the activity notification could not be created:', error);
+      }
+      try {
+        await sendPushNotification({
+          targetUserId: post.userId,
+          title: 'New Like!',
+          body: `${userName || 'Someone'} liked your post.`,
+          postId: post.$id,
+        });
+      } catch (error) {
+        console.error('Post was liked, but the push notification could not be sent:', error);
+      }
+    }
+    return { isLiked: !wasLiked, likes: Number(updatedPost.likes) || 0 };
+  } catch (error) {
+    try {
+      if (createdLike) {
+        await databases.deleteDocument(DATABASE_ID, COLLECTIONS.postLikes, createdLike.$id);
+      } else {
+        await databases.createDocument(DATABASE_ID, COLLECTIONS.postLikes, existingLike.$id, {
+          userId,
+          postId,
+        });
+      }
+    } catch (rollbackError) {
+      console.error('Could not roll back the post like record after the post update failed:', rollbackError);
+    }
+    throw error;
+  }
+}
+
+export async function toggleVideoLike(videoId, userId, userName, senderAvatar = '') {
   if (!videoId || !userId) {
-    throw new Error('A video ID and user ID are required to toggle a like.');
+    throw new Error('A video ID and user ID are required to toggle a video like.');
   }
 
   const [likeResult, video] = await Promise.all([
-    databases.listDocuments(DATABASE_ID, COLLECTIONS.likes, [
+    databases.listDocuments(DATABASE_ID, COLLECTIONS.videoLikes, [
       Query.equal('videoId', videoId),
       Query.equal('userId', userId),
       Query.limit(1),
@@ -124,9 +209,9 @@ export async function toggleLike(videoId, userId) {
   let createdLike;
 
   if (wasLiked) {
-    await databases.deleteDocument(DATABASE_ID, COLLECTIONS.likes, existingLike.$id);
+    await databases.deleteDocument(DATABASE_ID, COLLECTIONS.videoLikes, existingLike.$id);
   } else {
-    createdLike = await databases.createDocument(DATABASE_ID, COLLECTIONS.likes, ID.unique(), {
+    createdLike = await databases.createDocument(DATABASE_ID, COLLECTIONS.videoLikes, ID.unique(), {
       userId,
       videoId,
     });
@@ -139,6 +224,23 @@ export async function toggleLike(videoId, userId) {
       videoId,
       { likes: nextCount },
     );
+    if (!wasLiked && video.userId && video.userId !== userId) {
+      try {
+        await createNotification(video.userId, userName || 'Someone', senderAvatar, 'like', video.$id);
+      } catch (error) {
+        console.error('Video was liked, but the activity notification could not be created:', error);
+      }
+      try {
+        await sendPushNotification({
+          targetUserId: video.userId,
+          title: 'New Like!',
+          body: `${userName || 'Someone'} liked your post.`,
+          postId: video.$id,
+        });
+      } catch (error) {
+        console.error('Video was liked, but the push notification could not be sent:', error);
+      }
+    }
     return {
       isLiked: !wasLiked,
       likes: Number(updatedVideo.likes) || 0,
@@ -146,15 +248,15 @@ export async function toggleLike(videoId, userId) {
   } catch (error) {
     try {
       if (createdLike) {
-        await databases.deleteDocument(DATABASE_ID, COLLECTIONS.likes, createdLike.$id);
+        await databases.deleteDocument(DATABASE_ID, COLLECTIONS.videoLikes, createdLike.$id);
       } else {
-        await databases.createDocument(DATABASE_ID, COLLECTIONS.likes, existingLike.$id, {
+        await databases.createDocument(DATABASE_ID, COLLECTIONS.videoLikes, existingLike.$id, {
           userId,
           videoId,
         });
       }
     } catch (rollbackError) {
-      console.error('Could not roll back the like record after the video update failed:', rollbackError);
+      console.error('Could not roll back the video like record after the video update failed:', rollbackError);
     }
     throw error;
   }
@@ -194,26 +296,48 @@ export async function ensureUserDoc(user) {
   // 👈 FIXED: Added default username and isVerified
   return databases.createDocument(DATABASE_ID, COLLECTIONS.users, ID.unique(), {
     userId: user.$id,
-    name: user.name || 'Mzansi User',
-    username: user.name?.toLowerCase().replace(/\s+/g, '') || 'user', 
+    name: user.name || user.email?.split('@')[0] || 'Mzansi User',
+    username: `user_${user.$id.slice(-8).toLowerCase()}`,
     followers: 0,
     following: 0,
     isVerified: false, 
+    interests: [],
+    profileSetupComplete: false,
+    onboardingComplete: false,
   });
 }
 
-// Best effort: a failed notification should never break the action that caused it.
-export async function notify(toUserId, senderName, type) {
+export async function createNotification(targetUserId, senderName, senderAvatar, type, postId) {
+  if (!targetUserId || !type) {
+    throw new Error('A target user and notification type are required.');
+  }
+  return databases.createDocument(
+    DATABASE_ID,
+    COLLECTIONS.notifications,
+    ID.unique(),
+    {
+      userId: targetUserId,
+      senderName,
+      senderAvatar: senderAvatar || '',
+      type,
+      postId: postId || '',
+      isRead: false,
+      createdAt: new Date().toISOString(),
+    },
+    [
+      Permission.read(Role.user(targetUserId)),
+      Permission.update(Role.user(targetUserId)),
+      Permission.delete(Role.user(targetUserId)),
+    ],
+  );
+}
+
+export async function notify(toUserId, senderName, type, senderAvatar = '', postId = '') {
   if (!toUserId) return;
   try {
-    await databases.createDocument(DATABASE_ID, COLLECTIONS.notifications, ID.unique(), {
-      userId: toUserId,
-      senderName: senderName || 'Someone',
-      type,
-      isRead: false, 
-    });
+    await createNotification(toUserId, senderName || 'Someone', senderAvatar, type, postId);
   } catch (error) {
-    console.log('notify failed:', error.message);
+    console.error('Could not create activity notification:', error);
   }
 }
 

@@ -67,7 +67,7 @@ export default function UserProfileScreen({ route, navigation }) {
         const doc = await databases.createDocument(DATABASE_ID, COLLECTIONS.follows, ID.unique(), { followerId: user.$id, followingId: userId });
         setFollowDocId(doc.$id);
         await adjustCounts(1);
-        notify(userId, user.name, 'follow');
+        await notify(userId, user.name, 'follow', user.avatarUrl);
       }
     } catch (error) {
       Alert.alert('Error', 'Could not update follow.');
@@ -83,7 +83,14 @@ export default function UserProfileScreen({ route, navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}><Ionicons name="arrow-back" size={24} color="#fff" /></TouchableOpacity>
       </View>
       <View style={styles.profileInfo}>
-        <Avatar uri={userDoc?.avatarUrl} name={userName} size={90} bordered style={{ marginBottom: 10 }} />
+        <Avatar
+          uri={userDoc?.avatarUrl}
+          userId={userId}
+          name={userName}
+          size={90}
+          bordered
+          style={{ marginBottom: 10 }}
+        />
         
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 5 }}>
           <Text style={styles.name}>@{userName}</Text>

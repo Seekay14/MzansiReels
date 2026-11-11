@@ -30,7 +30,19 @@ notifications, likes, follows), give role **Users** Create, Read, Update and Del
 developing. Tighten later with document-level security.
 Bucket `6af0bf150026128b0048`: Users create/delete, Any read (video and avatar URLs are public views).
 
-Existing collections need **no** new attributes.
+The likes and follows collections need no attributes beyond those listed above.
+
+The registration onboarding flow uses the `users` collection's existing `username`
+and `avatarUrl` string attributes and its `interests` string-array attribute, plus:
+
+| Attribute | Type | Notes |
+|---|---|---|
+| `province` | String (optional) | Selected South African province |
+| `profileSetupComplete` | Boolean | Default false until profile setup is saved |
+| `termsAccepted` | Boolean (optional) | Set true when the user accepts the terms |
+
+Add a **unique index** on `username` to enforce handle uniqueness across simultaneous
+sign-ups. The app also checks availability while the user types.
 
 ## 3. Appwrite platform
 `config/appwrite.js` still uses `setPlatform('127.0.0.1')`. In the Appwrite console, add a

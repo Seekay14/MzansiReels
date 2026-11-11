@@ -14,6 +14,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import VideoCard from '../components/VideoCard';
+import MzansiLoader from '../components/MzansiLoader';
+import TopLoadingBar from '../components/TopLoadingBar';
 import { databases, Query } from '../config/appwrite';
 import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
 import { useAuth } from '../context/AuthContext';
@@ -38,6 +40,7 @@ export default function HomeScreen({ navigation }) {
   const flatListRef = useRef(null);
   const requestId = useRef(0);
   const videoCount = useRef(0);
+  const lastReelsTabPress = useRef(0);
   const [hasMore, setHasMore] = useState(true);
   const viewabilityConfig = useRef({
     itemVisiblePercentThreshold: 65,
@@ -155,6 +158,24 @@ export default function HomeScreen({ navigation }) {
     fetchFeed();
   }, [fetchFeed]);
 
+  useEffect(() => {
+    if (!focused) return undefined;
+    const tabNavigation = navigation.getParent()?.getParent();
+    if (!tabNavigation) return undefined;
+    return tabNavigation.addListener('tabPress', (event) => {
+      const reelsRoute = tabNavigation.getState().routes.find((route) => route.name === 'Reels');
+      if (event.target !== reelsRoute?.key || !tabNavigation.isFocused()) return;
+
+      const now = Date.now();
+      if (now - lastReelsTabPress.current <= 350) {
+        lastReelsTabPress.current = 0;
+        onRefresh();
+      } else {
+        lastReelsTabPress.current = now;
+      }
+    });
+  }, [focused, navigation, onRefresh]);
+
   const loadMore = useCallback(() => {
     if (!loading && !loadingMore && hasMore && videos.length >= PAGE_SIZE) {
       fetchFeed({ append: true });
@@ -183,7 +204,7 @@ export default function HomeScreen({ navigation }) {
     if (loading && !refreshing) {
       return (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={COLORS.cyan} />
+          <MzansiLoader />
         </View>
       );
     }
@@ -304,16 +325,27 @@ export default function HomeScreen({ navigation }) {
             </TouchableOpacity>
           ))}
         </View>
-        <TouchableOpacity
-          style={[styles.sideSlot, styles.notificationButton]}
-          onPress={() => navigation.navigate('Notifications')}
-          accessibilityRole="button"
-          accessibilityLabel={unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'}
-        >
-          <Ionicons name="notifications-outline" size={25} color="#fff" />
-          {unreadCount > 0 && <View style={styles.notificationDot} />}
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={[styles.sideSlot, styles.notificationButton]}
+            onPress={() => navigation.navigate('Search')}
+            accessibilityRole="button"
+            accessibilityLabel="Discover and search"
+          >
+            <Ionicons name="search" size={24} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.sideSlot, styles.notificationButton]}
+            onPress={() => navigation.navigate('Notifications')}
+            accessibilityRole="button"
+            accessibilityLabel={unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+          >
+            <Ionicons name="notifications-outline" size={25} color="#fff" />
+            {unreadCount > 0 && <View style={styles.notificationDot} />}
+          </TouchableOpacity>
+        </View>
       </View>
+      <TopLoadingBar isLoading={loading || refreshing || loadingMore} />
     </View>
   );
 }
@@ -337,6 +369,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   sideSlot: { width: 42, height: 42 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', marginRight: -8 },
   notificationButton: { alignItems: 'center', justifyContent: 'center' },
   notificationDot: {
     position: 'absolute',

@@ -17,14 +17,16 @@ import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
 import { useAuth } from '../context/AuthContext';
 
 const CATEGORIES = [
-  'Comedy', 'Music', 'Dance', 'Sports', 'Tech',
+  'Amapiano', 'Comedy', 'Music', 'Dance', 'Sports', 'Tech',
   'Fashion', 'Food', 'Travel', 'Gaming', 'Vlogs',
 ];
 
 export default function InterestsScreen() {
   const { user, setUser } = useAuth();
   const insets = useSafeAreaInsets();
-  const [selectedInterests, setSelectedInterests] = useState([]);
+  const [selectedInterests, setSelectedInterests] = useState(
+    Array.isArray(user?.interests) ? user.interests : [],
+  );
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -46,10 +48,13 @@ export default function InterestsScreen() {
       Alert.alert('Sign-in required', 'Please sign in again to save your interests.');
       return;
     }
+    if (!Array.isArray(interests) || interests.some((interest) => typeof interest !== 'string')) {
+      Alert.alert('Could not continue', 'Please select your interests again.');
+      return;
+    }
 
     setSaving(true);
     let profileDocumentId = user.profileDocumentId;
-    const savedInterests = interests.length ? JSON.stringify(interests) : '';
     try {
       if (!profileDocumentId) {
         const result = await databases.listDocuments(DATABASE_ID, COLLECTIONS.users, [
@@ -63,24 +68,24 @@ export default function InterestsScreen() {
         throw new Error('Your profile could not be found. Please sign out and try again.');
       }
 
-      // The existing Appwrite schema stores interests as a string; JSON preserves selected topics.
       await databases.updateDocument(DATABASE_ID, COLLECTIONS.users, profileDocumentId, {
-        interests: savedInterests,
+        interests: [...interests],
+        onboardingComplete: true,
+      });
+      await setUser({
+        ...user,
+        profileDocumentId,
+        interests: [...interests],
+        profileSetupComplete: true,
         onboardingComplete: true,
       });
     } catch (error) {
-      console.error('Appwrite failed, but continuing locally to prevent onboarding lockout:', error);
+      console.error('Could not save onboarding interests:', error);
       Alert.alert(
         'Could not continue',
-        'Something went wrong. Please try again or skip for now.',
+        error.message || 'Something went wrong. Please try again.',
       );
     } finally {
-      setUser({
-        ...user,
-        ...(profileDocumentId ? { profileDocumentId } : {}),
-        interests: savedInterests,
-        onboardingComplete: true,
-      });
       setSaving(false);
     }
   };
@@ -89,8 +94,6 @@ export default function InterestsScreen() {
     if (selectedInterests.length < 3) return;
     return completeOnboarding(selectedInterests);
   };
-
-  const handleSkip = () => completeOnboarding([]);
 
   const handleLogout = async () => {
     if (saving) return;
@@ -163,14 +166,6 @@ export default function InterestsScreen() {
         </View>
 
         <View style={styles.footer}>
-          <TouchableOpacity
-            style={styles.skipButton}
-            onPress={handleSkip}
-            disabled={saving}
-            accessibilityRole="button"
-          >
-            <Text style={styles.skipText}>Skip for now</Text>
-          </TouchableOpacity>
           <Text style={styles.selectionHint}>
             {selectedInterests.length < 3
               ? `Choose ${3 - selectedInterests.length} more to continue`

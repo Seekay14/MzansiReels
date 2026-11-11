@@ -5,6 +5,7 @@ import {
   ID,
   Databases,
   Storage,
+  Functions,
   Permission,
   Role,
   Query,
@@ -22,4 +23,5 @@ const client = new Client()
 export const account = new Account(client);
 export const databases = new Databases(client);
 export const storage = new Storage(client);
+export const functions = new Functions(client);
 export { client, ID, Permission, Role, Query };

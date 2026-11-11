@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { databases, Query } from '../config/appwrite';
 import { DATABASE_ID, COLLECTIONS, COLORS } from '../config/constants';
-import { getOrCreateChat } from '../config/helpers';
+import { getOrCreateChat } from '../config/chatService';
 import Avatar from '../components/Avatar';
 import { useAuth } from '../context/AuthContext';
 
@@ -38,11 +38,12 @@ export default function NewMessageScreen({ navigation }) {
 
   const startChat = async (targetUser) => {
     try {
-      const chatId = await getOrCreateChat(user.$id, targetUser.userId);
+      const chat = await getOrCreateChat(user.$id, targetUser.userId);
       navigation.replace('Chat', {
-        chatId,
-        userId: targetUser.userId,
-        userName: targetUser.name,
+        chatId: chat.$id,
+        otherUserId: targetUser.userId,
+        otherUserName: targetUser.name || targetUser.username || 'User',
+        otherUserAvatar: targetUser.avatarUrl || null,
       });
     } catch (error) {
       console.error('Could not start chat:', error);
@@ -82,7 +83,7 @@ export default function NewMessageScreen({ navigation }) {
           keyExtractor={(item) => item.$id}
           renderItem={({ item }) => (
             <TouchableOpacity style={styles.userRow} onPress={() => startChat(item)}>
-              <Avatar uri={item.avatarUrl} name={item.name} size={50} />
+              <Avatar uri={item.avatarUrl} userId={item.userId} name={item.name} size={50} />
               <View style={styles.userInfo}>
                 <Text style={styles.userName}>{item.name}</Text>
                 <Text style={styles.userHandle}>@{item.username || 'user'}</Text>

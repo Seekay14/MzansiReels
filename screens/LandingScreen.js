@@ -11,11 +11,24 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 
-const HERO_IMAGE = 'https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?auto=format&fit=crop&w=1400&q=85';
-const CREATOR_IMAGE = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=160&q=85';
+const HERO_IMAGE = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=900&h=1600&q=90';
+const CREATOR_IMAGE = 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=160&h=160&q=85';
 const BRAND_CYAN = '#00E5FF';
 const BRAND_DARK = '#171A1F';
+const TRENDING_HASHTAGS = ['#Amapiano', '#JoburgVibes', '#DurbanBeach', '#ComedySA', '#MzansiTalent'];
+const STATS = [
+  { value: '10k+', label: 'Creators' },
+  { value: '500k+', label: 'Reels Watched' },
+  { value: '1M+', label: 'Likes' },
+  { value: '12', label: 'Languages' },
+];
+const STEPS = [
+  { icon: 'person-add-outline', title: 'Create an Account', description: 'Join the community and set up your creator profile.' },
+  { icon: 'videocam-outline', title: 'Upload Your Reels', description: 'Share the moments, moves and stories that are you.' },
+  { icon: 'rocket-outline', title: 'Get Featured in Mzansi', description: 'Find your audience and let your creativity travel.' },
+];
 
 function BrandLogo() {
   return (
@@ -34,12 +47,24 @@ function FloatingCard({ style, delay = 0, children }) {
   const translateY = useRef(new Animated.Value(12)).current;
 
   useEffect(() => {
-    const animation = Animated.parallel([
+    const entrance = Animated.parallel([
       Animated.timing(opacity, { toValue: 1, duration: 550, delay, useNativeDriver: true }),
       Animated.spring(translateY, { toValue: 0, delay, friction: 7, tension: 55, useNativeDriver: true }),
     ]);
-    animation.start();
-    return () => animation.stop();
+    entrance.start(({ finished }) => {
+      if (!finished) return;
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(translateY, { toValue: -5, duration: 1100, useNativeDriver: true }),
+          Animated.timing(translateY, { toValue: 0, duration: 1100, useNativeDriver: true }),
+        ]),
+      ).start();
+    });
+    return () => {
+      entrance.stop();
+      opacity.stopAnimation();
+      translateY.stopAnimation();
+    };
   }, [delay, opacity, translateY]);
 
   return (
@@ -49,41 +74,64 @@ function FloatingCard({ style, delay = 0, children }) {
   );
 }
 
-function HeroVisual({ compact }) {
+function HeroVisual({ compact, width }) {
+  const phoneWidth = compact ? Math.min(width - 72, 270) : 282;
+  const phoneHeight = phoneWidth * 1.86;
+
   return (
-    <View style={[styles.heroFrame, compact ? styles.heroFrameMobile : styles.heroFrameDesktop]}>
-      <ImageBackground
-        source={{ uri: HERO_IMAGE }}
-        style={styles.heroImage}
-        imageStyle={styles.heroImageStyle}
-        resizeMode="cover"
-      >
-        <View style={styles.imageShade} />
-        {!compact && (
-          <>
-            <FloatingCard style={styles.reaction} delay={180}>
-              <Text style={styles.reactionEmoji}>😂</Text>
-              <Text style={styles.reactionCount}>2.4k</Text>
-            </FloatingCard>
-
-            <FloatingCard style={styles.playCard} delay={360}>
-              <View style={styles.playIcon}>
-                <Ionicons name="play" size={17} color={BRAND_CYAN} />
+    <View style={styles.heroFrame}>
+      <View style={[styles.phoneBezel, { width: phoneWidth, height: phoneHeight }]}>
+        <View style={styles.phoneScreen}>
+          <ImageBackground
+            source={{ uri: HERO_IMAGE }}
+            style={styles.heroImage}
+            imageStyle={styles.heroImageStyle}
+            resizeMode="cover"
+          >
+            <View style={styles.imageShade} />
+            <View style={styles.screenHeader}>
+              <View style={styles.liveLabel}>
+                <View style={styles.liveDot} />
+                <Text style={styles.liveText}>FOR YOU</Text>
               </View>
-              <View style={styles.playCopy}>
-                <Text style={styles.playTitle}>A moment from Mzansi</Text>
-                <Text style={styles.playSubtitle}>Watch the joy unfold</Text>
+              <Ionicons name="volume-high" size={17} color="#fff" />
+            </View>
+            <View style={styles.actionRail}>
+              <FloatingCard style={styles.actionItem} delay={180}>
+                <BlurView intensity={18} tint="dark" style={StyleSheet.absoluteFill} />
+                <Ionicons name="heart" size={27} color="#fff" />
+                <Text style={styles.actionText}>24.5k</Text>
+              </FloatingCard>
+              <FloatingCard style={styles.actionItem} delay={320}>
+                <BlurView intensity={18} tint="dark" style={StyleSheet.absoluteFill} />
+                <Ionicons name="chatbubble" size={24} color="#fff" />
+                <Text style={styles.actionText}>1.2k</Text>
+              </FloatingCard>
+              <FloatingCard style={styles.actionItem} delay={460}>
+                <BlurView intensity={18} tint="dark" style={StyleSheet.absoluteFill} />
+                <Ionicons name="bookmark" size={24} color="#fff" />
+                <Text style={styles.actionText}>Save</Text>
+              </FloatingCard>
+            </View>
+            <View style={styles.profileCard}>
+              <BlurView intensity={24} tint="dark" style={StyleSheet.absoluteFill} />
+              <Image source={{ uri: CREATOR_IMAGE }} style={styles.profileAvatar} />
+              <View style={styles.profileCopy}>
+                <View style={styles.profileNameRow}>
+                  <Text style={styles.username}>@sipho_creates</Text>
+                  <Ionicons name="checkmark-circle" size={15} color="#38BDF8" />
+                </View>
+                <Text style={styles.caption} numberOfLines={1}>Golden hour in Joburg</Text>
               </View>
-              <Ionicons name="volume-high" size={17} color="#62706A" />
-            </FloatingCard>
-
-            <FloatingCard style={styles.creatorAvatar} delay={520}>
-              <Image source={{ uri: CREATOR_IMAGE }} style={styles.creatorImage} />
-              <View style={styles.onlineDot} />
-            </FloatingCard>
-          </>
-        )}
-      </ImageBackground>
+            </View>
+          </ImageBackground>
+        </View>
+      </View>
+      <FloatingCard style={styles.trendingBadge} delay={300}>
+        <BlurView intensity={24} tint="light" style={StyleSheet.absoluteFill} />
+        <Ionicons name="flame" size={17} color="#F97316" />
+        <Text style={styles.trendingText}>Trending</Text>
+      </FloatingCard>
     </View>
   );
 }
@@ -97,10 +145,10 @@ function IntroCopy({ onGetStarted, onLogin, compact }) {
       </View>
       <Text style={styles.eyebrow}>MADE FOR THE MOMENTS THAT MOVE US</Text>
       <Text style={[styles.headline, compact && styles.headlineMobile]}>
-        Experience the heartbeat of <Text style={styles.headlineAccent}>Mzansi.</Text>
+        Watch the vibe. Share your <Text style={styles.headlineAccent}>Mzansi.</Text>
       </Text>
       <Text style={styles.bodyCopy}>
-        Discover the creators, culture and everyday stories that bring South Africa together — one reel at a time.
+        Discover the creators, culture and everyday stories that bring South Africa together.
       </Text>
       <View style={[styles.actions, compact && styles.actionsMobile]}>
         <TouchableOpacity
@@ -108,7 +156,7 @@ function IntroCopy({ onGetStarted, onLogin, compact }) {
           onPress={onGetStarted}
           accessibilityRole="button"
         >
-          <Text style={styles.primaryButtonText}>Get started</Text>
+          <Text style={styles.primaryButtonText}>Get Started</Text>
           <Ionicons name="arrow-forward" size={19} color={BRAND_DARK} />
         </TouchableOpacity>
         <TouchableOpacity
@@ -119,9 +167,121 @@ function IntroCopy({ onGetStarted, onLogin, compact }) {
           <Text style={styles.loginButtonText}>Log in</Text>
         </TouchableOpacity>
       </View>
-      <View style={styles.communityNote}>
-        <Ionicons name="play-circle-outline" size={18} color={BRAND_CYAN} />
-        <Text style={styles.communityText}>Your people. Your stories. Your Mzansi.</Text>
+    </View>
+  );
+}
+
+function StatsSection({ compact }) {
+  return (
+    <View style={[styles.contentSection, styles.statsSection, compact && styles.contentSectionMobile]}>
+      <View style={styles.statsGrid}>
+        {STATS.map((stat) => (
+          <View key={stat.label} style={[styles.statItem, compact && styles.statItemMobile]}>
+            <Text style={styles.statValue}>{stat.value}</Text>
+            <Text style={styles.statLabel}>{stat.label}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function HowItWorksSection({ compact }) {
+  return (
+    <View style={[styles.contentSection, compact && styles.contentSectionMobile]}>
+      <View style={styles.sectionHeading}>
+        <Text style={styles.sectionEyebrow}>YOUR NEXT BIG MOMENT STARTS HERE</Text>
+        <Text style={styles.sectionTitle}>How it works</Text>
+      </View>
+      <View style={[styles.stepsGrid, compact && styles.stepsGridMobile]}>
+        {STEPS.map((step, index) => (
+          <View key={step.title} style={[styles.stepCard, compact && styles.stepCardMobile]}>
+            <View style={styles.stepIcon}>
+              <Ionicons name={step.icon} size={25} color={BRAND_CYAN} />
+            </View>
+            <Text style={styles.stepNumber}>0{index + 1}</Text>
+            <Text style={styles.stepTitle}>{step.title}</Text>
+            <Text style={styles.stepDescription}>{step.description}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function TrendingSection({ width }) {
+  const groupWidth = Math.max(width - 56, 620);
+  const translateX = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    translateX.setValue(0);
+    const animation = Animated.loop(
+      Animated.timing(translateX, {
+        toValue: -groupWidth,
+        duration: groupWidth * 35,
+        useNativeDriver: true,
+        isInteraction: false,
+      }),
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [groupWidth, translateX]);
+
+  const renderTagGroup = (duplicate = false) => (
+    <View
+      style={[styles.hashtagGroup, { width: groupWidth }]}
+      key={duplicate ? 'duplicate' : 'primary'}
+      accessibilityElementsHidden={duplicate}
+      importantForAccessibility={duplicate ? 'no-hide-descendants' : 'auto'}
+    >
+      {TRENDING_HASHTAGS.map((hashtag) => (
+        <View key={hashtag} style={styles.hashtagPill}>
+          <Text style={styles.hashtagText}>{hashtag}</Text>
+        </View>
+      ))}
+    </View>
+  );
+
+  return (
+    <View style={styles.trendingSection}>
+      <View style={styles.sectionHeading}>
+        <Text style={styles.sectionEyebrow}>THE CONVERSATION IS HERE</Text>
+        <Text style={[styles.sectionTitle, styles.trendingTitle]}>Trending now</Text>
+      </View>
+      <View style={styles.marqueeViewport}>
+        <Animated.View style={[styles.marqueeTrack, { width: groupWidth * 2, transform: [{ translateX }] }]}>
+          {renderTagGroup()}
+          {renderTagGroup(true)}
+        </Animated.View>
+      </View>
+    </View>
+  );
+}
+
+function DownloadFooter() {
+  return (
+    <View style={styles.downloadFooter}>
+      <View style={styles.downloadContent}>
+        <Text style={styles.downloadEyebrow}>YOUR NEXT FAVOURITE APP</Text>
+        <Text style={styles.downloadTitle}>Mzansi, in your pocket.</Text>
+        <Text style={styles.releaseDate}>Coming Jan 2027</Text>
+        <View style={styles.storeButtons}>
+          <View style={styles.storeButton} accessibilityRole="text" accessibilityLabel="Google Play, coming soon">
+            <Ionicons name="logo-google-playstore" size={20} color="#fff" />
+            <View style={styles.storeButtonCopy}>
+              <Text style={styles.storeButtonOverline}>GET IT ON</Text>
+              <Text style={styles.storeButtonName}>Google Play</Text>
+            </View>
+          </View>
+          <View style={styles.storeButton} accessibilityRole="text" accessibilityLabel="App Store, coming soon">
+            <Ionicons name="logo-apple" size={22} color="#fff" />
+            <View style={styles.storeButtonCopy}>
+              <Text style={styles.storeButtonOverline}>DOWNLOAD ON THE</Text>
+              <Text style={styles.storeButtonName}>App Store</Text>
+            </View>
+          </View>
+        </View>
+        <Text style={styles.downloadNote}>Be ready for the stories that move us.</Text>
       </View>
     </View>
   );
@@ -144,7 +304,7 @@ export default function LandingScreen({ navigation }) {
 
   const openAuth = () => navigation.navigate('Auth');
   const heroHeight = compact
-    ? Math.min(Math.max(height * 0.32, 220), 320)
+    ? Math.max(Math.min(width * 1.5, 520), 410)
     : Math.min(Math.max(height * 0.68, 460), 680);
 
   return (
@@ -172,7 +332,7 @@ export default function LandingScreen({ navigation }) {
         >
           <IntroCopy onGetStarted={openAuth} onLogin={openAuth} compact={compact} />
           <View style={[styles.heroColumn, compact && styles.heroColumnMobile, { height: heroHeight }]}>
-            <HeroVisual compact={compact} />
+            <HeroVisual compact={compact} width={width} />
           </View>
         </Animated.View>
 
@@ -184,6 +344,10 @@ export default function LandingScreen({ navigation }) {
             <View style={[styles.footerDot, { backgroundColor: BRAND_CYAN }]} />
           </View>
         </View>
+        <StatsSection compact={compact} />
+        <HowItWorksSection compact={compact} />
+        <TrendingSection width={width} />
+        <DownloadFooter />
       </View>
     </ScrollView>
   );
@@ -212,67 +376,92 @@ const styles = StyleSheet.create({
   heroLayoutMobile: { flexDirection: 'column', alignItems: 'stretch', paddingTop: 0, paddingBottom: 12, gap: 0 },
   heroColumn: { flex: 1.08, width: '100%', maxWidth: 660, zIndex: 0 },
   heroColumnMobile: { flex: 0, flexShrink: 0, flexBasis: 'auto', width: '100%', maxWidth: 540, alignSelf: 'center' },
-  heroFrame: { flex: 1, width: '100%', overflow: 'visible', padding: 8 },
-  heroFrameDesktop: { transform: [{ rotate: '-1deg' }] },
-  heroFrameMobile: { transform: [{ rotate: '0deg' }] },
-  heroImage: { flex: 1, width: '100%', borderRadius: 28, overflow: 'hidden', backgroundColor: '#DDE6E0' },
-  heroImageStyle: { borderRadius: 28 },
-  imageShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(5,25,18,0.08)', borderRadius: 28 },
-  reaction: {
-    position: 'absolute',
-    top: '12%',
-    right: -14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 22,
-    paddingVertical: 9,
-    paddingHorizontal: 13,
-    shadowColor: '#15221C',
-    shadowOpacity: 0.16,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 5,
+  heroFrame: { flex: 1, width: '100%', overflow: 'visible', alignItems: 'center', justifyContent: 'center' },
+  phoneBezel: {
+    padding: 8,
+    borderRadius: 38,
+    backgroundColor: '#08090D',
+    borderWidth: 1,
+    borderColor: '#383A42',
+    shadowColor: '#000',
+    shadowOpacity: 0.32,
+    shadowRadius: 28,
+    shadowOffset: { width: 0, height: 18 },
+    elevation: 14,
   },
-  reactionEmoji: { fontSize: 22 },
-  reactionCount: { color: '#23332B', fontSize: 12, fontWeight: '800', marginLeft: 7 },
-  playCard: {
+  phoneScreen: { flex: 1, overflow: 'hidden', borderRadius: 30, backgroundColor: '#252525' },
+  heroImage: { flex: 1, width: '100%', overflow: 'hidden', justifyContent: 'space-between', backgroundColor: '#252525' },
+  heroImageStyle: { borderRadius: 30 },
+  imageShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(3, 5, 10, 0.24)' },
+  screenHeader: {
     position: 'absolute',
-    left: -20,
-    bottom: '17%',
-    maxWidth: 300,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 17,
-    padding: 12,
-    shadowColor: '#15221C',
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 6,
-  },
-  playIcon: { width: 38, height: 38, borderRadius: 13, backgroundColor: '#E8FBFF', alignItems: 'center', justifyContent: 'center' },
-  playCopy: { flex: 1, marginHorizontal: 11 },
-  playTitle: { color: '#1C2A22', fontSize: 12, fontWeight: '800' },
-  playSubtitle: { color: '#728077', fontSize: 11, marginTop: 3 },
-  creatorAvatar: {
-    position: 'absolute',
+    top: 18,
+    left: 17,
     right: 17,
-    bottom: '5%',
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 4,
-    borderColor: '#fff',
-    shadowColor: '#15221C',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  liveLabel: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.42)' },
+  liveDot: { width: 6, height: 6, borderRadius: 3, marginRight: 6, backgroundColor: BRAND_CYAN },
+  liveText: { color: '#fff', fontSize: 9, fontWeight: '800', letterSpacing: 1.2 },
+  actionRail: {
+    position: 'absolute',
+    right: 10,
+    bottom: 100,
+    alignItems: 'center',
+  },
+  actionItem: {
+    minWidth: 48,
+    alignItems: 'center',
+    marginBottom: 17,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(12, 14, 20, 0.38)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+  },
+  actionText: { color: '#fff', fontSize: 10, fontWeight: '800', marginTop: 4, textShadowColor: 'rgba(0,0,0,0.4)', textShadowRadius: 4 },
+  profileCard: {
+    position: 'absolute',
+    left: 12,
+    right: 68,
+    bottom: 18,
+    minHeight: 55,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(15, 17, 23, 0.58)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  profileAvatar: { width: 35, height: 35, borderRadius: 18, borderWidth: 1.5, borderColor: '#fff' },
+  profileCopy: { flex: 1, marginLeft: 8 },
+  profileNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  username: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  caption: { color: '#F0F0F2', fontSize: 9, marginTop: 3 },
+  trendingBadge: {
+    position: 'absolute',
+    top: '15%',
+    right: '7%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 13,
+    borderRadius: 15,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    shadowColor: '#000',
     shadowOpacity: 0.18,
     shadowRadius: 14,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 5,
+    shadowOffset: { width: 0, height: 7 },
+    elevation: 7,
   },
-  creatorImage: { width: '100%', height: '100%', borderRadius: 28 },
-  onlineDot: { position: 'absolute', right: -1, bottom: 1, width: 14, height: 14, borderRadius: 7, backgroundColor: '#FFB81C', borderWidth: 2, borderColor: '#fff' },
+  trendingText: { color: '#20212A', fontSize: 12, fontWeight: '800', marginLeft: 6 },
   copyBlock: { flex: 0.92, maxWidth: 470, paddingHorizontal: 10, justifyContent: 'center', zIndex: 1 },
   copyBlockMobile: { flex: 0, flexShrink: 0, flexBasis: 'auto', width: '100%', maxWidth: 620, alignSelf: 'center', paddingHorizontal: 0, paddingTop: 18, paddingBottom: 22 },
   flagAccent: { flexDirection: 'row', width: 60, height: 5, borderRadius: 4, overflow: 'hidden', marginBottom: 22 },
@@ -297,12 +486,55 @@ const styles = StyleSheet.create({
   primaryButtonMobile: { width: '100%', alignSelf: 'stretch' },
   primaryButtonText: { color: BRAND_DARK, fontSize: 15, fontWeight: '800', marginRight: 11 },
   loginButton: { minHeight: 48, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 17, zIndex: 2 },
-  loginButtonMobile: { width: '100%', alignSelf: 'stretch', borderWidth: 1, borderColor: '#DCE5DF', borderRadius: 15 },
+  loginButtonMobile: { width: '100%', alignSelf: 'stretch' },
   loginButtonText: { color: '#27323A', fontSize: 14, fontWeight: '700' },
-  communityNote: { flexDirection: 'row', alignItems: 'center', marginTop: 28 },
-  communityText: { color: '#66726A', fontSize: 12, marginLeft: 8 },
   footer: { minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, zIndex: 1 },
   footerText: { color: '#87918B', fontSize: 11 },
   footerDots: { flexDirection: 'row', gap: 4 },
   footerDot: { width: 6, height: 6, borderRadius: 3 },
+  contentSection: { width: '100%', maxWidth: 1120, alignSelf: 'center', paddingVertical: 76 },
+  contentSectionMobile: { paddingVertical: 52 },
+  statsSection: { borderTopWidth: 1, borderTopColor: '#E8EDF0', borderBottomWidth: 1, borderBottomColor: '#E8EDF0' },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-around', rowGap: 28 },
+  statItem: { width: '25%', minWidth: 150, alignItems: 'center', paddingHorizontal: 10 },
+  statItemMobile: { width: '50%', minWidth: 0 },
+  statValue: { color: BRAND_CYAN, fontSize: 36, lineHeight: 42, fontWeight: '900', letterSpacing: -1 },
+  statLabel: { color: '#77818A', fontSize: 13, fontWeight: '600', marginTop: 6, textAlign: 'center' },
+  sectionHeading: { alignItems: 'center', marginBottom: 34 },
+  sectionEyebrow: { color: '#7A858D', fontSize: 10, fontWeight: '800', letterSpacing: 1.8 },
+  sectionTitle: { color: BRAND_DARK, fontSize: 32, fontWeight: '900', letterSpacing: -0.8, marginTop: 9, textAlign: 'center' },
+  stepsGrid: { flexDirection: 'row', gap: 18 },
+  stepsGridMobile: { flexDirection: 'column', gap: 12 },
+  stepCard: {
+    flex: 1,
+    minHeight: 220,
+    padding: 22,
+    borderRadius: 20,
+    backgroundColor: '#F6F9FA',
+    borderWidth: 1,
+    borderColor: '#E8EEF0',
+  },
+  stepCardMobile: { minHeight: 0, padding: 19 },
+  stepIcon: { width: 50, height: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: '#E6FBFE' },
+  stepNumber: { color: '#9BA5AA', fontSize: 11, fontWeight: '800', letterSpacing: 1, marginTop: 19 },
+  stepTitle: { color: BRAND_DARK, fontSize: 17, fontWeight: '800', marginTop: 6 },
+  stepDescription: { color: '#77818A', fontSize: 13, lineHeight: 20, marginTop: 8 },
+  trendingSection: { width: '100%', paddingVertical: 60, backgroundColor: '#101217' },
+  trendingTitle: { color: '#fff' },
+  marqueeViewport: { width: '100%', minWidth: 0, flexShrink: 1, overflow: 'hidden', paddingVertical: 5 },
+  marqueeTrack: { flexDirection: 'row', flexShrink: 0 },
+  hashtagGroup: { flexDirection: 'row', flexShrink: 0, alignItems: 'center', justifyContent: 'space-around', paddingHorizontal: 10 },
+  hashtagPill: { paddingVertical: 9, paddingHorizontal: 13, borderRadius: 18, borderWidth: 1, borderColor: BRAND_CYAN, backgroundColor: 'rgba(0,229,255,0.06)' },
+  hashtagText: { color: '#DDE8EB', fontSize: 12, fontWeight: '700' },
+  downloadFooter: { width: '100%', marginTop: 58, marginBottom: 30, paddingHorizontal: 26, paddingVertical: 58, borderRadius: 26, backgroundColor: '#101217' },
+  downloadContent: { width: '100%', maxWidth: 650, alignSelf: 'center', alignItems: 'center' },
+  downloadEyebrow: { color: BRAND_CYAN, fontSize: 10, fontWeight: '800', letterSpacing: 1.8 },
+  downloadTitle: { color: '#fff', fontSize: 30, fontWeight: '900', letterSpacing: -0.8, textAlign: 'center', marginTop: 11 },
+  releaseDate: { color: BRAND_CYAN, fontSize: 17, fontWeight: '800', marginTop: 12 },
+  storeButtons: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 12, marginTop: 27 },
+  storeButton: { minWidth: 156, minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 13, borderRadius: 12, borderWidth: 1, borderColor: '#454951', backgroundColor: '#1C1F25' },
+  storeButtonCopy: { marginLeft: 9 },
+  storeButtonOverline: { color: '#AAB1B6', fontSize: 8, fontWeight: '700', letterSpacing: 0.6 },
+  storeButtonName: { color: '#fff', fontSize: 13, fontWeight: '800', marginTop: 2 },
+  downloadNote: { color: '#87919A', fontSize: 12, marginTop: 22, textAlign: 'center' },
 });

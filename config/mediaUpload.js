@@ -193,16 +193,6 @@ export async function uploadMediaFile(
   }
 }
 
-export function uploadProfilePicture(asset, userId, onStatusChange) {
-  return uploadMediaFile(asset, {
-    userId,
-    kind: 'image',
-    publicRead: true,
-    folder: `avatars/${userId}`,
-    onStatusChange,
-  });
-}
-
 export function uploadVideo(asset, userId, onProgress, onStatusChange) {
   return uploadMediaFile(asset, {
     userId,

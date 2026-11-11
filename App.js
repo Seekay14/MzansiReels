@@ -14,22 +14,26 @@ import { account } from './config/appwrite';
 import { COLLECTIONS, COLORS, DATABASE_ID } from './config/constants';
 import { AuthContext, useAuth } from './context/AuthContext';
 import { ensureUserDoc } from './config/helpers';
+import LaunchModal from './components/LaunchModal';
 
 // ... keep all your screen imports exactly as they are ...
 import HomeScreen from './screens/HomeScreen';
+import HomeFeed from './screens/HomeFeed';
 import SearchScreen from './screens/SearchScreen';
 import MessagesScreen from './screens/MessagesScreen';
 import ChatScreen from './screens/ChatScreen';
 import NewMessageScreen from './screens/NewMessageScreen';
 import UploadScreen from './screens/UploadScreen';
+import StoryUploadScreen from './screens/StoryUploadScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import AuthScreen from './screens/AuthScreen';
 import LandingScreen from './screens/LandingScreen';
+import ProfileSetupScreen from './screens/ProfileSetupScreen';
 import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
+import EmailOTPScreen from './screens/EmailOTPScreen';
 import ResetPasswordScreen from './screens/ResetPasswordScreen';
 import InterestsScreen from './screens/InterestsScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
-import UserProfileScreen from './screens/UserProfileScreen';
 import WatchScreen from './screens/WatchScreen';
 import EditProfileScreen from './screens/EditProfileScreen';
 import SettingsScreen from './screens/SettingsScreen';
@@ -73,10 +77,25 @@ const getNavTheme = () => {
 function HomeStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Feed" component={HomeFeed} />
+      <Stack.Screen name="Notifications" component={NotificationsScreen} />
+      <Stack.Screen name="UserProfile" component={ProfileScreen} />
+      <Stack.Screen name="Watch" component={WatchScreen} />
+      <Stack.Screen name="Search" component={SearchScreen} />
+      <Stack.Screen name="NewMessage" component={NewMessageScreen} />
+      <Stack.Screen name="StoryUpload" component={StoryUploadScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function ReelsStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Feed" component={HomeScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
-      <Stack.Screen name="UserProfile" component={UserProfileScreen} />
+      <Stack.Screen name="UserProfile" component={ProfileScreen} />
       <Stack.Screen name="Watch" component={WatchScreen} />
+      <Stack.Screen name="Search" component={SearchScreen} />
     </Stack.Navigator>
   );
 }
@@ -85,6 +104,7 @@ function ProfileStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="MyProfile" component={ProfileScreen} />
+      <Stack.Screen name="UserProfile" component={ProfileScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="EditVideo" component={EditVideoScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
@@ -92,6 +112,7 @@ function ProfileStack() {
       <Stack.Screen name="About" component={AboutScreen} />
       <Stack.Screen name="Legal" component={LegalScreen} />
       <Stack.Screen name="LogoutScreen" component={LogoutScreen} />
+      <Stack.Screen name="StoryUpload" component={StoryUploadScreen} />
     </Stack.Navigator>
   );
 }
@@ -102,6 +123,7 @@ function MessagesStack() {
       <Stack.Screen name="Inbox" component={MessagesScreen} />
       <Stack.Screen name="Chat" component={ChatScreen} />
       <Stack.Screen name="NewMessage" component={NewMessageScreen} />
+      <Stack.Screen name="UserProfile" component={ProfileScreen} />
     </Stack.Navigator>
   );
 }
@@ -151,8 +173,7 @@ function MyTabs() {
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarShowLabel: true,
-        tabBarLabel: route.name === 'Search' ? 'Discover'
-          : route.name === 'Upload' ? 'Create'
+        tabBarLabel: route.name === 'Upload' ? 'Create'
             : route.name === 'Messages' ? 'Inbox'
               : route.name,
         tabBarLabelStyle: { fontSize: 10, fontWeight: '600', marginTop: 2 },
@@ -176,7 +197,7 @@ function MyTabs() {
           }
           const icons = {
             Home: ['home', 'home-outline'],
-            Search: ['search', 'search-outline'],
+            Reels: ['play-circle', 'play-circle-outline'],
             Messages: ['chatbubbles', 'chatbubbles-outline'],
             Profile: ['person', 'person-outline'],
           };
@@ -186,7 +207,7 @@ function MyTabs() {
       })}
     >
       <Tab.Screen name="Home" component={HomeStack} options={{ tabBarAccessibilityLabel: 'Home feed' }} />
-      <Tab.Screen name="Search" component={SearchScreen} options={{ tabBarAccessibilityLabel: 'Discover videos and creators' }} />
+      <Tab.Screen name="Reels" component={ReelsStack} options={{ tabBarAccessibilityLabel: 'Reels video feed' }} />
       <Tab.Screen name="Upload" component={UploadScreen} options={{ tabBarAccessibilityLabel: 'Create a video' }} />
       <Tab.Screen
         name="Messages"
@@ -209,15 +230,9 @@ export default function App() {
   const [profileError, setProfileError] = useState('');
   const [fatalError, setFatalError] = useState(null);
 
-  const setUser = useCallback(async (nextUser) => {
+  const setUser = useCallback(async (nextUser, options = {}) => {
     if (!nextUser) {
       setAuthUser(null);
-      setProfileError('');
-      return;
-    }
-
-    if (nextUser.onboardingComplete === true) {
-      setAuthUser(nextUser);
       setProfileError('');
       return;
     }
@@ -231,8 +246,12 @@ export default function App() {
         profileDocumentId: profile.$id,
         username: profile.username,
         avatarUrl: profile.avatarUrl,
+        province: profile.province,
+        bio: profile.bio,
         interests: profile.interests,
-        onboardingComplete: profile.onboardingComplete === true,
+        profileSetupComplete: profile.profileSetupComplete,
+        onboardingComplete: profile.onboardingComplete,
+        skipOnboarding: options.skipOnboarding === true,
       });
     } catch (error) {
       console.error('Could not load the signed-in user profile:', error);
@@ -292,7 +311,7 @@ export default function App() {
     setProfileError('');
   }, []);
 
-  const auth = useMemo(() => ({ user, setUser, logout }), [user, logout]);
+  const auth = useMemo(() => ({ user, setUser, logout }), [user, setUser, logout]);
 
   if (loading || profileLoading) {
     const safeColors = COLORS || { bg: '#000', cyan: '#00ffff', muted: '#888' };
@@ -332,30 +351,39 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar style="light" />
       <AuthContext.Provider value={auth}>
-        <NavigationContainer theme={getNavTheme()} linking={linking}>
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="App">
-              {(navigationProps) => (
-                user
-                  ? user.onboardingComplete === true
-                    ? <MyTabs />
-                    : <InterestsScreen />
-                  : <LandingScreen {...navigationProps} />
-              )}
-            </Stack.Screen>
-            <Stack.Screen name="Auth">
-              {(navigationProps) => (
-                user
-                  ? user.onboardingComplete === true
-                    ? <MyTabs />
-                    : <InterestsScreen />
-                  : <AuthScreen {...navigationProps} />
-              )}
-            </Stack.Screen>
-            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-            <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
-          </Stack.Navigator>
-        </NavigationContainer>
+        <>
+          <NavigationContainer theme={getNavTheme()} linking={linking}>
+            <Stack.Navigator screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="App">
+                {(navigationProps) => (
+                  user
+                    ? user.profileSetupComplete === false
+                      ? <ProfileSetupScreen />
+                      : !user.skipOnboarding && user.onboardingComplete === false
+                        ? <InterestsScreen />
+                        : <MyTabs />
+                    : <LandingScreen {...navigationProps} />
+                )}
+              </Stack.Screen>
+              <Stack.Screen name="Auth">
+                {(navigationProps) => (
+                  user
+                    ? user.profileSetupComplete === false
+                      ? <ProfileSetupScreen />
+                      : !user.skipOnboarding && user.onboardingComplete === false
+                        ? <InterestsScreen />
+                        : <MyTabs />
+                    : <AuthScreen {...navigationProps} />
+                )}
+              </Stack.Screen>
+              <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+              <Stack.Screen name="EmailOTP" component={EmailOTPScreen} />
+              <Stack.Screen name="Legal" component={LegalScreen} />
+              <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+            </Stack.Navigator>
+          </NavigationContainer>
+          <LaunchModal />
+        </>
       </AuthContext.Provider>
     </SafeAreaProvider>
   );

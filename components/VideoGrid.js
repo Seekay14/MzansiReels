@@ -1,42 +1,90 @@
-import React from 'react';
-import { Text, View, FlatList, TouchableOpacity, useWindowDimensions, RefreshControl, StyleSheet, Image } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Text, View, FlatList, TouchableOpacity, RefreshControl, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../config/constants';
+import { getVideoThumbnail } from '../config/helpers';
 
-export default function VideoGrid({ videos, onPress, onLongPress, header, refreshing, onRefresh, emptyText }) {
-  const { width } = useWindowDimensions();
-  const columns = width >= 1000 ? 5 : width >= 680 ? 4 : 3;
-  const itemSize = width / columns;
+function VideoGridTile({ item, onPress, onLongPress }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  let thumbnailUrl = item.mediaType === 'post'
+    ? item.thumbnailUrl || item.imageUrl || ''
+    : '';
+  if (item.mediaType !== 'post') {
+    try {
+      const videoUrl = item.videoUrl || (
+        item.videoFileId ? `/files/${item.videoFileId}/view` : ''
+      );
+      thumbnailUrl = getVideoThumbnail(videoUrl, item.thumbnailUrl);
+    } catch (error) {
+      console.error('Could not create video grid preview URL:', error);
+    }
+  }
+  const showViews = item.views !== undefined && item.views !== null;
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [item.$id, thumbnailUrl]);
 
   return (
+    <TouchableOpacity
+      activeOpacity={0.8}
+      style={{ flex: 1 / 3, aspectRatio: 1, padding: 1 }}
+      onPress={() => onPress?.(item)}
+      onLongPress={() => onLongPress?.(item)}
+    >
+      <View style={styles.cellContent}>
+        {thumbnailUrl && !imageFailed ? (
+          <Image
+            source={{ uri: thumbnailUrl }}
+            style={[styles.thumbnail, { aspectRatio: 1 }]}
+            resizeMode="cover"
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          <View style={styles.placeholder}>
+            <Ionicons name="play" size={24} color="#AAB2BD" />
+          </View>
+        )}
+        <View style={styles.overlay}>
+          <View style={styles.meta}>
+            <Ionicons
+              name="play"
+              size={12}
+              color="#fff"
+            />
+            <Text style={styles.metaText}>
+              {showViews ? Number(item.views) || 0 : Number(item.likes) || 0}
+            </Text>
+          </View>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+export default function VideoGrid({
+  videos,
+  onPress,
+  onLongPress,
+  header,
+  refreshing,
+  onRefresh,
+  emptyText,
+}) {
+  return (
     <FlatList
-      key={`video-grid-${columns}`}
       data={videos}
       keyExtractor={(item) => item.$id}
-      numColumns={columns}
+      numColumns={3}
       ListHeaderComponent={header}
       showsVerticalScrollIndicator={false}
       refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={COLORS.cyan} /> : undefined}
       renderItem={({ item }) => (
-        <TouchableOpacity activeOpacity={0.8} style={[styles.tile, { width: itemSize, height: itemSize * 1.5 }]} onPress={() => onPress?.(item)} onLongPress={() => onLongPress?.(item)}>
-          
-          {item.thumbnailUrl ? (
-            <Image source={{ uri: item.thumbnailUrl }} style={StyleSheet.absoluteFillObject} />
-          ) : (
-            <View style={styles.placeholder}>
-              <Ionicons name="videocam" size={30} color={COLORS.muted} />
-            </View>
-          )}
-
-          <View style={styles.overlay}>
-            <Ionicons name="play-circle" size={24} color="rgba(255,255,255,0.85)" />
-            <View style={styles.likes}>
-              <Ionicons name="heart" size={12} color={COLORS.pink} />
-              <Text style={styles.likeText}>{item.likes || 0}</Text>
-            </View>
-          </View>
-          
-        </TouchableOpacity>
+        <VideoGridTile
+          item={item}
+          onPress={onPress}
+          onLongPress={onLongPress}
+        />
       )}
       ListEmptyComponent={<Text style={styles.empty}>{emptyText}</Text>}
     />
@@ -44,10 +92,11 @@ export default function VideoGrid({ videos, onPress, onLongPress, header, refres
 }
 
 const styles = StyleSheet.create({
-  tile: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' },
-  placeholder: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.card },
-  overlay: { position: 'absolute', bottom: 8, left: 8, right: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  likes: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 },
-  likeText: { color: '#fff', fontSize: 11, marginLeft: 4, fontWeight: 'bold' },
+  cellContent: { width: '100%', height: '100%', aspectRatio: 1, backgroundColor: '#1F1F1F', borderRadius: 4, overflow: 'hidden' },
+  thumbnail: { width: '100%', height: '100%', borderRadius: 4 },
+  placeholder: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center', backgroundColor: '#1F1F1F', borderRadius: 4 },
+  overlay: { position: 'absolute', bottom: 6, left: 6 },
+  meta: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.62)', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 10 },
+  metaText: { color: '#fff', fontSize: 11, marginLeft: 4, fontWeight: '700' },
   empty: { color: COLORS.muted, textAlign: 'center', marginTop: 30, width: '100%' },
 });

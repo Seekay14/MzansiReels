@@ -127,13 +127,14 @@ export default function SearchScreen({ navigation }) {
         <View style={styles.modeRow}>
           {['videos', 'users'].map((m) => (
             <TouchableOpacity 
-              key={m} 
-              style={[styles.modeTab, mode === m && styles.modeTabActive]} 
+              key={m}
+              style={styles.modeTab}
               onPress={() => setMode(m)}
             >
-              <Text style={[styles.modeText, mode === m && { color: '#000' }]}>
+              <Text style={[styles.modeText, mode === m && styles.modeTextActive]}>
                 {m === 'videos' ? 'Videos' : 'Users'}
               </Text>
+              {mode === m ? <View style={styles.modeUnderline} /> : null}
             </TouchableOpacity>
           ))}
         </View>
@@ -142,7 +143,11 @@ export default function SearchScreen({ navigation }) {
       {searchText === '' && mode === 'videos' && (
         <View style={styles.trendingContainer}>
           <Text style={styles.trendingTitle}>Trending across Mzansi</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalContent}
+          >
             {trendingTags.map((tag) => (
               <TouchableOpacity key={tag} style={styles.tagPill} onPress={() => setSearchText(tag)}>
                 <Text style={styles.tagText}>{tag}</Text>
@@ -155,14 +160,18 @@ export default function SearchScreen({ navigation }) {
       {searchText === '' && mode === 'videos' && allUsers.length > 0 && (
         <View style={styles.suggestedContainer}>
           <Text style={styles.trendingTitle}>Creators to explore</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalContent}
+          >
             {allUsers.filter((creator) => creator.userId).slice(0, 12).map((creator) => (
               <TouchableOpacity
                 key={creator.$id}
                 style={styles.suggestedCreator}
                 onPress={() => openUser(creator.userId, creator.username || creator.name)}
               >
-                <Avatar uri={creator.avatarUrl} name={creator.username || creator.name} size={54} bordered />
+                <Avatar uri={creator.avatarUrl} userId={creator.userId} name={creator.username || creator.name} size={64} bordered />
                 <Text style={styles.suggestedName} numberOfLines={1}>
                   @{creator.username || creator.name || 'creator'}
                 </Text>
@@ -196,7 +205,7 @@ export default function SearchScreen({ navigation }) {
           keyExtractor={(u) => u.$id}
           renderItem={({ item }) => (
             <TouchableOpacity style={styles.userRow} onPress={() => openUser(item.userId, item.name)}>
-              <Avatar uri={item.avatarUrl} name={item.name} size={46} />
+              <Avatar uri={item.avatarUrl} userId={item.userId} name={item.name} size={46} />
               <View style={{ marginLeft: 12, flex: 1 }}>
                 <Text style={styles.userName}>@{item.name}</Text>
                 <Text style={styles.userMeta}>{item.followers || 0} followers</Text>
@@ -219,17 +228,19 @@ const styles = StyleSheet.create({
   discoverSubtitle: { color: COLORS.muted, fontSize: 13, marginTop: 3 },
   searchBar: { flexDirection: 'row', backgroundColor: COLORS.card, borderRadius: 14, alignItems: 'center', paddingHorizontal: 12, height: 48, borderWidth: 1, borderColor: COLORS.border },
   searchInput: { flex: 1, color: '#fff', fontSize: 16 },
-  modeRow: { flexDirection: 'row', marginTop: 12 },
-  modeTab: { paddingHorizontal: 18, paddingVertical: 7, borderRadius: 20, backgroundColor: COLORS.card, marginRight: 10 },
-  modeTabActive: { backgroundColor: COLORS.cyan },
-  modeText: { color: '#fff', fontWeight: 'bold' },
+  modeRow: { flexDirection: 'row', marginTop: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  modeTab: { flex: 1, alignItems: 'center', paddingHorizontal: 18, paddingTop: 9, paddingBottom: 10, position: 'relative' },
+  modeText: { color: COLORS.muted, fontWeight: '700', fontSize: 15 },
+  modeTextActive: { color: COLORS.cyan },
+  modeUnderline: { position: 'absolute', bottom: -1, width: '62%', height: 3, borderRadius: 2, backgroundColor: COLORS.cyan },
   trendingContainer: { paddingHorizontal: 15, paddingBottom: 15 },
   trendingTitle: { color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 10 },
   tagPill: { backgroundColor: COLORS.card, paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20, marginRight: 10 },
   tagText: { color: COLORS.cyan, fontSize: 14, fontWeight: 'bold' },
   suggestedContainer: { paddingHorizontal: 15, paddingBottom: 14 },
-  suggestedCreator: { width: 70, alignItems: 'center', marginRight: 12 },
-  suggestedName: { color: '#fff', fontSize: 11, marginTop: 6, maxWidth: 70 },
+  horizontalContent: { paddingRight: 20 },
+  suggestedCreator: { width: 82, alignItems: 'center', marginRight: 12 },
+  suggestedName: { color: '#fff', fontSize: 11, marginTop: 6, maxWidth: 82 },
   userRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   userName: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   userMeta: { color: COLORS.muted, fontSize: 12, marginTop: 2 },

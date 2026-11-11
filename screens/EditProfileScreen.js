@@ -6,9 +6,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { databases } from '../config/appwrite';
 import { DATABASE_ID, COLLECTIONS, COLORS } from '../config/constants';
 import { useAuth } from '../context/AuthContext';
-import { ensureUserDoc, getAvatarPreviewUrl } from '../config/helpers';
+import { ensureUserDoc } from '../config/helpers';
 import Avatar from '../components/Avatar';
-import { uploadProfilePicture } from '../config/mediaUpload';
+import { uploadProfilePicture } from '../config/profilePictureService';
 
 export default function EditProfileScreen({ route, navigation }) {
   const { user, setUser } = useAuth();
@@ -45,25 +45,17 @@ export default function EditProfileScreen({ route, navigation }) {
       const asset = result.assets[0];
       setUploadingAvatar(true);
       setAvatarStatus({ type: 'uploading', message: 'Uploading profile picture…' });
-      const profileDoc = userDoc || await ensureUserDoc(user);
-      const fileId = await uploadProfilePicture(asset, user.$id, ({ status, message }) => {
+      const { url: avatarUrl, userDocument: updatedDoc } = await uploadProfilePicture(asset, user, ({ status, message }) => {
         setAvatarStatus({ type: status, message });
       });
-      const avatarUrl = getAvatarPreviewUrl(fileId);
-
-      const updatedDoc = await databases.updateDocument(
-        DATABASE_ID,
-        COLLECTIONS.users,
-        profileDoc.$id,
-        { avatarUrl },
-      );
       setUserDoc(updatedDoc);
       setUser({ ...user, avatarUrl });
       setAvatarStatus({ type: 'success', message: 'Profile picture updated successfully!' });
+      Alert.alert('Success', 'Profile picture updated successfully!');
     } catch (error) {
       console.error('Profile picture upload failed:', error);
       setAvatarStatus({ type: 'error', message: error.message || 'Could not update profile picture.' });
-      Alert.alert('Error', error.message || 'Could not update profile picture.');
+      Alert.alert('Upload Failed', error.message || 'Could not update profile picture.');
     } finally {
       setUploadingAvatar(false);
     }
@@ -115,10 +107,10 @@ export default function EditProfileScreen({ route, navigation }) {
           accessibilityLabel="Change profile picture"
         >
           <View style={styles.avatarContainer}>
-            <Avatar uri={userDoc?.avatarUrl} name={name || user?.name} size={96} bordered />
+            <Avatar uri={userDoc?.avatarUrl} userId={user?.$id} name={name || user?.name} size={96} bordered />
             {uploadingAvatar && (
               <View style={styles.avatarLoading}>
-                <ActivityIndicator color={COLORS.cyan} size="large" />
+                <ActivityIndicator color="#fff" size="large" />
               </View>
             )}
           </View>
@@ -176,7 +168,7 @@ const styles = StyleSheet.create({
   saveText: { color: COLORS.cyan, fontSize: 16, fontWeight: 'bold' },
   avatarPicker: { alignItems: 'center', paddingTop: 24 },
   avatarContainer: { width: 100, height: 100, justifyContent: 'center', alignItems: 'center' },
-  avatarLoading: { ...StyleSheet.absoluteFillObject, borderRadius: 50, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center' },
+  avatarLoading: { ...StyleSheet.absoluteFillObject, borderRadius: 50, backgroundColor: 'rgba(0,0,0,0.58)', justifyContent: 'center', alignItems: 'center' },
   changePhotoText: { color: COLORS.cyan, fontSize: 14, fontWeight: '600', marginTop: 10 },
   avatarStatus: { color: COLORS.cyan, fontSize: 13, textAlign: 'center', marginTop: 10, paddingHorizontal: 20 },
   avatarStatusSuccess: { color: '#45D483' },

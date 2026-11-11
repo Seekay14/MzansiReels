@@ -1,96 +1,149 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Linking, Platform } from 'react-native';
+import React, { useState } from 'react';
+import {
+  Alert,
+  Linking,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../config/constants';
 
+const CONTACT_EMAIL = 'sectionfellas@gmail.com';
+
 export default function AboutScreen({ navigation }) {
   const insets = useSafeAreaInsets();
+  const [openingEmail, setOpeningEmail] = useState(false);
+
+  const emailUs = async () => {
+    if (openingEmail) return;
+    setOpeningEmail(true);
+    try {
+      await Linking.openURL(`mailto:${CONTACT_EMAIL}`);
+    } catch (error) {
+      console.error('Could not open an email app:', error);
+      if (Platform.OS === 'web' && typeof globalThis.alert === 'function') {
+        globalThis.alert(`Could not open an email app. Contact us at ${CONTACT_EMAIL}.`);
+      } else {
+        Alert.alert('Email unavailable', `Please email us at ${CONTACT_EMAIL}.`);
+      }
+    } finally {
+      setOpeningEmail(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={26} color="#fff" />
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Ionicons name="arrow-back" size={23} color="#F6F8FA" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>About</Text>
-        <View style={{ width: 26 }} />
+        <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        
-        <View style={styles.logoContainer}>
-          <View style={styles.logoBox}>
-            <Ionicons name="videocam" size={50} color="#000" />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.hero}>
+          <View style={styles.brandIcon}>
+            <Ionicons name="play" size={28} color="#061116" />
           </View>
-          <Text style={styles.appName}>MzansiReels</Text>
-          <Text style={styles.tagline}>The Home of South African Creativity</Text>
+          <Text style={styles.heroTitle}>About MzansiReels</Text>
+          <Text style={styles.heroSubtitle}>
+            The home of South African creators. Built with love, for the culture.
+          </Text>
+          <View style={styles.heroAccent} />
         </View>
 
-        <Text style={styles.description}>
-          MzansiReels is the premier platform for South African creators to share short, engaging videos. Discover the best of local talent, music, and culture.
-        </Text>
-
-        <View style={styles.infoCard}>
-          <View style={styles.infoRow}>
-            <Ionicons name="code-slash" size={20} color={COLORS.cyan} style={styles.infoIcon} />
-            <View>
-              <Text style={styles.infoLabel}>Developer</Text>
-              <Text style={styles.infoValue}>Mzansi Tech Team</Text>
-            </View>
+        <View style={styles.missionCard}>
+          <View style={styles.sectionEyebrow}>
+            <Ionicons name="sparkles-outline" size={16} color={COLORS.cyan} />
+            <Text style={styles.eyebrowText}>OUR MISSION</Text>
           </View>
-          <View style={styles.divider} />
-          <View style={styles.infoRow}>
-            <Ionicons name="location" size={20} color={COLORS.cyan} style={styles.infoIcon} />
-            <View>
-              <Text style={styles.infoLabel}>Headquarters</Text>
-              <Text style={styles.infoValue}>Johannesburg, South Africa 🇿🇦</Text>
-            </View>
-          </View>
-          <View style={styles.divider} />
-          <TouchableOpacity style={styles.infoRow} onPress={() => Linking.openURL('mailto:hello@mzansireels.com')}>
-            <Ionicons name="mail" size={20} color={COLORS.cyan} style={styles.infoIcon} />
-            <View>
-              <Text style={styles.infoLabel}>Contact Support</Text>
-              <Text style={[styles.infoValue, { color: COLORS.cyan }]}>hello@mzansireels.com</Text>
-            </View>
-          </TouchableOpacity>
+          <Text style={styles.missionText}>
+            We built MzansiReels to give local creators a platform to share their
+            vibe, talent, and everyday stories with the world. From Amapiano
+            dances to comedy skits, this is the heartbeat of Mzansi.
+          </Text>
         </View>
 
-        <Text style={styles.sectionTitle}>Legal & Policies</Text>
-        <View style={styles.linkCard}>
-          
-          {/* THIS IS THE EQUIVALENT OF HREF, IT OPENS THE IN-APP PAGE */}
-          <TouchableOpacity style={styles.linkRow} onPress={() => navigation.navigate('Legal', { type: 'privacy' })}>
-            <Text style={styles.linkText}>Privacy Policy</Text>
-            <Ionicons name="chevron-forward" size={20} color="#555" />
+        <View style={styles.contactCard}>
+          <View style={styles.contactIcon}>
+            <Ionicons name="mail-outline" size={23} color={COLORS.cyan} />
+          </View>
+          <Text style={styles.contactTitle}>Get in touch</Text>
+          <Text style={styles.contactDescription}>
+            Have a question, feedback, or business inquiry? We&apos;d love to hear
+            from you.
+          </Text>
+          <TouchableOpacity
+            style={styles.emailButton}
+            onPress={emailUs}
+            accessibilityRole="button"
+            accessibilityLabel={`Email us at ${CONTACT_EMAIL}`}
+          >
+            <Ionicons name="mail" size={17} color="#061116" />
+            <Text style={styles.emailButtonText}>Email Us</Text>
+            <Ionicons name="arrow-up-right" size={16} color="#061116" />
           </TouchableOpacity>
-          
-          <View style={styles.divider} />
-          
-          <TouchableOpacity style={styles.linkRow} onPress={() => navigation.navigate('Legal', { type: 'terms' })}>
+          <Text style={styles.emailAddress}>{CONTACT_EMAIL}</Text>
+        </View>
+
+        <Text style={styles.linksHeading}>LEGAL & COMMUNITY</Text>
+        <View style={styles.linksCard}>
+          <TouchableOpacity
+            style={styles.linkRow}
+            onPress={() => navigation.navigate('Legal', { type: 'terms' })}
+            accessibilityRole="button"
+          >
+            <View style={styles.linkIcon}>
+              <Ionicons name="document-text-outline" size={18} color={COLORS.cyan} />
+            </View>
             <Text style={styles.linkText}>Terms of Service</Text>
-            <Ionicons name="chevron-forward" size={20} color="#555" />
+            <Ionicons name="chevron-forward" size={18} color="#737B86" />
           </TouchableOpacity>
-          
           <View style={styles.divider} />
-          
-          <TouchableOpacity style={styles.linkRow} onPress={() => navigation.navigate('Legal', { type: 'guidelines' })}>
-            <Text style={styles.linkText}>Community Guidelines</Text>
-            <Ionicons name="chevron-forward" size={20} color="#555" />
+          <TouchableOpacity
+            style={styles.linkRow}
+            onPress={() => navigation.navigate('Legal', { type: 'privacy' })}
+            accessibilityRole="button"
+          >
+            <View style={styles.linkIcon}>
+              <Ionicons name="shield-checkmark-outline" size={18} color={COLORS.cyan} />
+            </View>
+            <Text style={styles.linkText}>Privacy Policy</Text>
+            <Ionicons name="chevron-forward" size={18} color="#737B86" />
           </TouchableOpacity>
-          
+          <View style={styles.divider} />
+          <TouchableOpacity
+            style={styles.linkRow}
+            onPress={() => navigation.navigate('Legal', { type: 'guidelines' })}
+            accessibilityRole="button"
+          >
+            <View style={styles.linkIcon}>
+              <Ionicons name="people-outline" size={18} color={COLORS.cyan} />
+            </View>
+            <Text style={styles.linkText}>Community Guidelines</Text>
+            <Ionicons name="chevron-forward" size={18} color="#737B86" />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.versionText}>Version 1.0.0 (Build 1)</Text>
-          <Text style={styles.osText}>Running on {Platform.OS === 'ios' ? 'iOS' : Platform.OS === 'android' ? 'Android' : 'Web'}</Text>
-          <Text style={styles.copyright}>
-            © {new Date().getFullYear()} MzansiReels. All rights reserved.
-          </Text>
-          <Text style={styles.madeWith}>Made with ❤️ in Mzansi.</Text>
+          <Text style={styles.footerBrand}>MzansiReels</Text>
+          <Text style={styles.footerText}>Made for the culture in South Africa.</Text>
+          <Text style={styles.copyright}>© {new Date().getFullYear()} MzansiReels</Text>
         </View>
-
       </ScrollView>
     </View>
   );
@@ -98,28 +151,35 @@ export default function AboutScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  backBtn: { padding: 5 },
-  headerTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
-  content: { padding: 20, alignItems: 'center', paddingBottom: 40 },
-  logoContainer: { alignItems: 'center', marginTop: 10, marginBottom: 20 },
-  logoBox: { width: 90, height: 90, backgroundColor: COLORS.cyan, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
-  appName: { color: '#fff', fontSize: 28, fontWeight: 'bold', letterSpacing: 1 },
-  tagline: { color: COLORS.muted, fontSize: 14, marginTop: 5, fontStyle: 'italic' },
-  description: { color: '#ccc', fontSize: 15, textAlign: 'center', lineHeight: 22, marginBottom: 30, paddingHorizontal: 10 },
-  infoCard: { width: '100%', backgroundColor: COLORS.card, padding: 20, borderRadius: 15, borderWidth: 1, borderColor: '#2A2A35', marginBottom: 30 },
-  infoRow: { flexDirection: 'row', alignItems: 'center' },
-  infoIcon: { marginRight: 15 },
-  infoLabel: { color: COLORS.muted, fontSize: 12, textTransform: 'uppercase', marginBottom: 2, fontWeight: 'bold' },
-  infoValue: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  divider: { height: 1, backgroundColor: '#2A2A35', marginVertical: 15 },
-  sectionTitle: { width: '100%', color: COLORS.muted, fontSize: 13, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 10, marginLeft: 5 },
-  linkCard: { width: '100%', backgroundColor: COLORS.card, borderRadius: 15, borderWidth: 1, borderColor: '#2A2A35', paddingHorizontal: 15, marginBottom: 30 },
-  linkRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 15 },
-  linkText: { color: '#fff', fontSize: 16 },
-  footer: { alignItems: 'center', marginTop: 10 },
-  versionText: { color: COLORS.muted, fontSize: 13, fontWeight: 'bold' },
-  osText: { color: '#555', fontSize: 12, marginTop: 4 },
-  copyright: { color: '#444', fontSize: 12, marginTop: 20, textAlign: 'center' },
-  madeWith: { color: '#444', fontSize: 12, marginTop: 5, fontWeight: 'bold' }
+  header: { minHeight: 55, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  backButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { color: '#F6F8FA', fontSize: 17, fontWeight: '800' },
+  headerSpacer: { width: 40 },
+  content: { width: '100%', maxWidth: 680, alignSelf: 'center', paddingHorizontal: 22, paddingTop: 27, paddingBottom: 42 },
+  hero: { alignItems: 'center', paddingTop: 9, paddingBottom: 27 },
+  brandIcon: { width: 58, height: 58, alignItems: 'center', justifyContent: 'center', marginBottom: 19, borderRadius: 19, backgroundColor: COLORS.cyan, shadowColor: COLORS.cyan, shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 5 }, elevation: 5 },
+  heroTitle: { color: '#F7F9FA', fontSize: 29, lineHeight: 36, fontWeight: '900', letterSpacing: -0.7, textAlign: 'center' },
+  heroSubtitle: { maxWidth: 410, color: '#A3ABB5', fontSize: 15, lineHeight: 23, textAlign: 'center', marginTop: 9 },
+  heroAccent: { width: 42, height: 3, borderRadius: 2, backgroundColor: COLORS.cyan, marginTop: 19 },
+  missionCard: { padding: 19, borderRadius: 18, borderWidth: 1, borderColor: '#292E37', backgroundColor: '#14171E', marginBottom: 15 },
+  sectionEyebrow: { flexDirection: 'row', alignItems: 'center', marginBottom: 11 },
+  eyebrowText: { color: COLORS.cyan, fontSize: 10, fontWeight: '900', letterSpacing: 1.4, marginLeft: 8 },
+  missionText: { color: '#D5D9DF', fontSize: 14, lineHeight: 22 },
+  contactCard: { alignItems: 'center', paddingHorizontal: 21, paddingVertical: 22, borderRadius: 18, borderWidth: 1, borderColor: 'rgba(0,229,255,0.22)', backgroundColor: '#121B21', marginBottom: 25 },
+  contactIcon: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 15, backgroundColor: 'rgba(0,229,255,0.1)', marginBottom: 12 },
+  contactTitle: { color: '#F7F9FA', fontSize: 20, fontWeight: '800' },
+  contactDescription: { maxWidth: 400, color: '#A3ABB5', fontSize: 13, lineHeight: 20, textAlign: 'center', marginTop: 7 },
+  emailButton: { minWidth: 145, height: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderRadius: 12, backgroundColor: COLORS.cyan, marginTop: 17, paddingHorizontal: 17 },
+  emailButtonText: { color: '#061116', fontSize: 14, fontWeight: '900' },
+  emailAddress: { color: '#8E9AA3', fontSize: 11, marginTop: 10 },
+  linksHeading: { color: '#89919C', fontSize: 10, fontWeight: '900', letterSpacing: 1.4, marginBottom: 10, marginLeft: 3 },
+  linksCard: { paddingHorizontal: 14, borderRadius: 16, borderWidth: 1, borderColor: '#292E37', backgroundColor: '#14171E' },
+  linkRow: { minHeight: 57, flexDirection: 'row', alignItems: 'center' },
+  linkIcon: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', marginRight: 11, borderRadius: 10, backgroundColor: 'rgba(0,229,255,0.08)' },
+  linkText: { flex: 1, color: '#E8EAED', fontSize: 14, fontWeight: '600' },
+  divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.07)' },
+  footer: { alignItems: 'center', marginTop: 28 },
+  footerBrand: { color: '#E9EDF0', fontSize: 13, fontWeight: '800' },
+  footerText: { color: '#858D98', fontSize: 11, marginTop: 5 },
+  copyright: { color: '#626A75', fontSize: 10, marginTop: 10 },
 });

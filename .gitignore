@@ -9,3 +9,4 @@ web-build/
 .expo/
 .expo/
 node_modules
+assets/node_modules/

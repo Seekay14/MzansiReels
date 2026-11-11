@@ -1,219 +1,502 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
+  RefreshControl,
+  Share,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { databases, Query } from '../config/appwrite';
-import { DATABASE_ID, COLLECTIONS, COLORS } from '../config/constants';
+import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
 import { useAuth } from '../context/AuthContext';
-import { ensureUserDoc, getAvatarPreviewUrl } from '../config/helpers';
-import { uploadProfilePicture } from '../config/mediaUpload';
-import VideoGrid from '../components/VideoGrid';
+import { ensureUserDoc, getVideoThumbnail } from '../config/helpers';
+import { uploadProfilePicture } from '../config/profilePictureService';
 import Avatar from '../components/Avatar';
+import LaunchCountdownCard from '../components/LaunchCountdownCard';
+import MzansiLoader from '../components/MzansiLoader';
+import TopLoadingBar from '../components/TopLoadingBar';
+import TextPostCard from '../components/TextPostCard';
+import UserProfileScreen from './UserProfileScreen';
 
-export default function ProfileScreen({ navigation }) {
+const PROFILE_TABS = [
+  { id: 'videos', label: 'Videos', icon: 'grid-outline' },
+  { id: 'posts', label: 'Posts', icon: 'document-text-outline' },
+  { id: 'saved', label: 'Saved', icon: 'bookmark-outline' },
+  { id: 'liked', label: 'Liked', icon: 'heart-outline' },
+];
+
+async function fetchDocumentsByIds(collectionId, ids) {
+  if (ids.length === 0) return [];
+  const result = await databases.listDocuments(DATABASE_ID, collectionId, [
+    Query.equal('$id', ids),
+    Query.limit(100),
+  ]);
+  const documentsById = new Map(result.documents.map((document) => [document.$id, document]));
+  return ids.map((id) => documentsById.get(id)).filter(Boolean);
+}
+
+function MyProfileScreen({ navigation }) {
   const { user, setUser } = useAuth();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const [userDoc, setUserDoc] = useState(null);
   const [videos, setVideos] = useState([]);
+  const [postsCount, setPostsCount] = useState(0);
+  const [activeTab, setActiveTab] = useState('videos');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [avatarStatus, setAvatarStatus] = useState(null);
 
   const fetchProfile = useCallback(async () => {
+    if (!user?.$id) return;
+    setErrorMessage('');
     try {
       const doc = await ensureUserDoc(user);
       setUserDoc(doc);
-      
-      const res = await databases.listDocuments(DATABASE_ID, COLLECTIONS.videos, [
-        Query.equal('userId', user.$id), Query.orderDesc('$createdAt'), Query.limit(60),
+
+      const [ownVideos, ownPosts] = await Promise.all([
+        databases.listDocuments(DATABASE_ID, COLLECTIONS.videos, [
+          Query.equal('userId', user.$id),
+          Query.orderDesc('uploadedAt'),
+          Query.limit(100),
+        ]),
+        databases.listDocuments(DATABASE_ID, COLLECTIONS.posts, [
+          Query.equal('userId', user.$id),
+          Query.orderDesc('uploadedAt'),
+          Query.limit(100),
+        ]),
       ]);
-      setVideos(res.documents);
-      
+      setPostsCount(ownVideos.total + ownPosts.total);
+
+      if (activeTab === 'videos') {
+        setVideos(ownVideos.documents);
+      } else if (activeTab === 'posts') {
+        setVideos(ownPosts.documents.map((post) => ({ ...post, mediaType: 'post' })));
+      } else if (activeTab === 'saved') {
+        const bookmarks = await databases.listDocuments(DATABASE_ID, COLLECTIONS.bookmarks, [
+          Query.equal('userId', user.$id),
+          Query.orderDesc('$createdAt'),
+          Query.limit(100),
+        ]);
+        const videoIds = [...new Set(bookmarks.documents.map((item) => item.videoId).filter(Boolean))];
+        setVideos(await fetchDocumentsByIds(COLLECTIONS.videos, videoIds));
+      } else {
+        const [videoLikes, postLikes] = await Promise.all([
+          databases.listDocuments(DATABASE_ID, COLLECTIONS.videoLikes, [
+            Query.equal('userId', user.$id),
+            Query.orderDesc('$createdAt'),
+            Query.limit(100),
+          ]),
+          databases.listDocuments(DATABASE_ID, COLLECTIONS.postLikes, [
+            Query.equal('userId', user.$id),
+            Query.orderDesc('$createdAt'),
+            Query.limit(100),
+          ]),
+        ]);
+        const videoIds = [...new Set(videoLikes.documents.map((like) => like.videoId).filter(Boolean))];
+        const postIds = [...new Set(postLikes.documents.map((like) => like.postId).filter(Boolean))];
+        const [likedVideos, likedPosts] = await Promise.all([
+          fetchDocumentsByIds(COLLECTIONS.videos, videoIds),
+          fetchDocumentsByIds(COLLECTIONS.posts, postIds),
+        ]);
+        const combined = [
+          ...likedVideos,
+          ...likedPosts.map((post) => ({ ...post, mediaType: 'post' })),
+        ];
+        combined.sort((a, b) => (
+          new Date(b.uploadedAt || b.$createdAt) - new Date(a.uploadedAt || a.$createdAt)
+        ));
+        setVideos(combined);
+      }
     } catch (error) {
-      console.log('Error fetching profile:', error);
+      console.error('Could not load profile:', error);
+      setErrorMessage('Could not load your profile. Pull down to try again.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user]);
+  }, [activeTab, user]);
 
-  useFocusEffect(useCallback(() => { fetchProfile(); }, [fetchProfile]));
+  useFocusEffect(useCallback(() => {
+    setLoading(true);
+    fetchProfile();
+  }, [fetchProfile]));
 
   const pickAvatar = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) return Alert.alert('Permission needed', 'Allow photo library access to change your picture.');
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.5 });
-    if (result.canceled) return;
-    const asset = result.assets[0];
-    setUploadingAvatar(true);
-    setAvatarStatus({ type: 'uploading', message: 'Uploading profile picture…' });
     try {
-      const fileId = await uploadProfilePicture(asset, user.$id, ({ status, message }) => {
-        setAvatarStatus({ type: status, message });
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission needed', 'Allow photo library access to change your picture.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
       });
-      const avatarUrl = getAvatarPreviewUrl(fileId);
-      const doc = userDoc || (await ensureUserDoc(user));
-      await databases.updateDocument(DATABASE_ID, COLLECTIONS.users, doc.$id, { avatarUrl });
-      setUserDoc({ ...doc, avatarUrl });
-      setUser({ ...user, avatarUrl });
-      setAvatarStatus({ type: 'success', message: 'Profile picture updated successfully!' });
+      if (result.canceled || !result.assets?.[0]) return;
+
+      setUploadingAvatar(true);
+      const { url: avatarUrl, userDocument } = await uploadProfilePicture(result.assets[0], user);
+      setUserDoc(userDocument);
+      await setUser({ ...user, avatarUrl });
     } catch (error) {
-      console.error('Profile avatar upload failed:', error);
-      setAvatarStatus({ type: 'error', message: error.message || 'Could not update avatar.' });
-      Alert.alert('Error', error.message || 'Could not update avatar.');
+      console.error('Could not update profile picture:', error);
+      Alert.alert('Could not update photo', error.message || 'Please try again.');
     } finally {
       setUploadingAvatar(false);
     }
   };
 
+  const shareProfile = async () => {
+    try {
+      const username = userDoc?.username || user?.name?.toLowerCase().replace(/\s+/g, '') || 'user';
+      await Share.share({ message: `Check out @${username} on MzansiReels!` });
+    } catch (error) {
+      console.error('Could not share profile:', error);
+      Alert.alert('Could not share profile', error.message || 'Please try again.');
+    }
+  };
+
+  const openVideo = (video) => {
+    if (video.mediaType === 'post') {
+      navigation.navigate('Home', { screen: 'Feed' });
+      return;
+    }
+    navigation.navigate('Home', {
+      screen: 'Watch',
+      params: { video, allVideos: videos },
+    });
+  };
+
   const handleLongPress = (video) => {
-    Alert.alert(
-      'Manage Video',
-      'What would you like to do?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Edit Caption', onPress: () => navigation.navigate('EditVideo', { video }) },
-      ]
+    Alert.alert('Manage Video', 'What would you like to do?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Edit Caption', onPress: () => navigation.navigate('EditVideo', { video }) },
+    ]);
+  };
+
+  const username = userDoc?.username || user?.name?.toLowerCase().replace(/\s+/g, '') || 'user';
+  const displayName = userDoc?.name || user?.name || 'Mzansi User';
+  const tileSize = width / 3;
+
+  const renderVideo = ({ item }) => {
+    let thumbnailUrl = item.mediaType === 'post'
+      ? item.imageUrl
+      : item.thumbnailUrl || '';
+    if (item.mediaType !== 'post') {
+      try {
+        thumbnailUrl = getVideoThumbnail(
+          item.videoUrl || (item.videoFileId ? `/files/${item.videoFileId}/view` : ''),
+          thumbnailUrl,
+        );
+      } catch (error) {
+        console.error('Could not create profile video preview URL:', error);
+      }
+    }
+
+    const isTextPost = item.mediaType === 'post' && item.postType === 'text';
+    const isPost = item.mediaType === 'post';
+
+    return (
+      <TouchableOpacity
+        style={[styles.videoTile, { width: tileSize, height: tileSize }]}
+        onPress={() => openVideo(item)}
+        onLongPress={() => {
+          if (!isPost) handleLongPress(item);
+        }}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel={isPost ? `Open post ${item.content || ''}` : `Open reel ${item.caption || ''}`}
+      >
+        {isTextPost ? (
+          <View style={styles.textPostTile}>
+            <Ionicons name="text-outline" size={30} color="#AAB2BD" />
+          </View>
+        ) : thumbnailUrl ? (
+          <Image
+            source={{ uri: thumbnailUrl }}
+            style={[StyleSheet.absoluteFillObject, { aspectRatio: 1 }]}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.videoPlaceholder}>
+            <Ionicons name={isPost ? 'image-outline' : 'videocam-outline'} size={28} color="#727985" />
+          </View>
+        )}
+        {!isPost ? (
+          <View style={styles.tileMeta}>
+            <Ionicons name="play" size={12} color="#fff" />
+            <Text style={styles.tileMetaText}>{item.views || 0}</Text>
+          </View>
+        ) : null}
+      </TouchableOpacity>
     );
   };
 
-  if (loading) return <View style={[styles.container, { justifyContent: 'center' }]}><ActivityIndicator size="large" color={COLORS.cyan} /></View>;
-
-  const header = (
-    <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-      
-      <View style={styles.topBar}>
-        <Text style={styles.usernameHeader}>@{userDoc?.username || user?.name?.toLowerCase().replace(/\s+/g, '') || 'user'}</Text>
-        
-        <TouchableOpacity style={styles.settingsBtn} onPress={() => navigation.navigate('Settings')}>
-          <Ionicons name="settings-outline" size={22} color="#fff" />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.profileInfo}>
-        <TouchableOpacity onPress={pickAvatar} style={styles.avatarWrapper}>
-          <Avatar uri={userDoc?.avatarUrl} name={user?.name} size={90} bordered />
-          <View style={styles.editIcon}>
-            {uploadingAvatar
-              ? <ActivityIndicator size="small" color="#000" />
-              : <Ionicons name="camera" size={14} color="#fff" />}
-          </View>
-        </TouchableOpacity>
-
-        <View style={styles.statsRow}>
-          <View style={styles.statBox}>
-            <Text style={styles.statNumber}>{videos.length}</Text>
-            <Text style={styles.statLabel}>Posts</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statNumber}>{userDoc?.followers || 0}</Text>
-            <Text style={styles.statLabel}>Followers</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statNumber}>{userDoc?.following || 0}</Text>
-            <Text style={styles.statLabel}>Following</Text>
-          </View>
-        </View>
-      </View>
-
-      <View style={styles.bioSection}>
-        {avatarStatus && (
-          <Text style={[
-            styles.avatarStatus,
-            avatarStatus.type === 'success' && styles.avatarStatusSuccess,
-            avatarStatus.type === 'error' && styles.avatarStatusError,
-          ]}>
-            {avatarStatus.message}
-          </Text>
-        )}
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-          <Text style={styles.name}>{userDoc?.name || user?.name || 'User'}</Text>
-          {userDoc?.isVerified === true && (
-            <Ionicons name="checkmark-circle" size={18} color={COLORS.cyan} style={{ marginLeft: 6 }} />
-          )}
-        </View>
-        <Text style={styles.email}>{user?.email}</Text>
-        
-        {userDoc?.bio ? (
-          <Text style={styles.bioText}>{userDoc.bio}</Text>
-        ) : (
-          <Text style={[styles.bioText, { color: '#555' }]}>Tap "Edit Profile" to add a bio.</Text>
-        )}
-      </View>
-
-      <TouchableOpacity 
-        style={styles.editProfileBtn} 
-        onPress={() => navigation.navigate('EditProfile', { userDoc })}
-      >
-        <Text style={styles.editProfileText}>Edit Profile</Text>
-      </TouchableOpacity>
-
-      <View style={styles.mediaActions}>
-        <TouchableOpacity
-          style={styles.mediaActionButton}
-          onPress={pickAvatar}
-          disabled={uploadingAvatar}
-          accessibilityRole="button"
-        >
-          <Ionicons name="image-outline" size={17} color={COLORS.cyan} />
-          <Text style={styles.mediaActionText}>Change Profile Picture</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.mediaActionButton}
-          onPress={() => navigation.getParent()?.navigate('Upload')}
-          accessibilityRole="button"
-        >
-          <Ionicons name="cloud-upload-outline" size={17} color={COLORS.cyan} />
-          <Text style={styles.mediaActionText}>Upload Video</Text>
-        </TouchableOpacity>
+  const renderEmptyGrid = () => (
+    <View style={styles.emptyGrid}>
+      {Array.from({ length: 9 }, (_, index) => (
+        <View key={`empty-${index}`} style={[styles.skeletonTile, { width: tileSize, height: tileSize }]} />
+      ))}
+      <View pointerEvents="none" style={styles.emptyGridMessage}>
+        <Ionicons name={
+          activeTab === 'videos' ? 'videocam-outline'
+            : activeTab === 'posts' ? 'document-text-outline'
+              : activeTab === 'saved' ? 'bookmark-outline' : 'heart-outline'
+        } size={23} color={COLORS.cyan} />
+        <Text style={styles.emptyGridTitle}>
+          {activeTab === 'videos' ? 'Upload your first reel!'
+            : activeTab === 'posts' ? 'No posts yet'
+              : activeTab === 'saved' ? 'No saved reels yet' : 'No liked content yet'}
+        </Text>
+        {activeTab === 'videos' && <Text style={styles.emptyGridSubtitle}>Tap + to get started</Text>}
       </View>
     </View>
   );
 
+  const renderPost = ({ item }) => (
+    <TextPostCard
+      post={item}
+      user={user}
+      navigation={navigation}
+      onDelete={(postId) => setVideos((current) => current.filter((post) => post.$id !== postId))}
+      onShared={(sharedPost, originalShares, originalPostId) => {
+        setVideos((current) => current.map((post) => (
+          post.$id === originalPostId
+            ? { ...post, shares: originalShares }
+            : post
+        )));
+        if (activeTab === 'posts') {
+          setVideos((current) => [sharedPost, ...current.filter((post) => post.$id !== sharedPost.$id)]);
+        }
+      }}
+    />
+  );
+
+  const renderEmptyPosts = () => (
+    <Text style={styles.emptyPosts}>You haven’t shared any posts yet.</Text>
+  );
+
+  const header = (
+    <View style={[styles.profileHeader, { paddingTop: insets.top + 8 }]}>
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={shareProfile} style={styles.headerIcon} accessibilityRole="button" accessibilityLabel="Share profile">
+          <Ionicons name="share-social-outline" size={22} color="#F6F8FA" />
+        </TouchableOpacity>
+        <Text numberOfLines={1} style={styles.usernameHeader}>@{username}</Text>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Settings')}
+          style={styles.headerIcon}
+          accessibilityRole="button"
+          accessibilityLabel="Settings"
+        >
+          <Ionicons name="settings-outline" size={22} color="#F6F8FA" />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.profileDetails}>
+        <TouchableOpacity
+          onPress={pickAvatar}
+          disabled={uploadingAvatar}
+          style={styles.avatarWrapper}
+          accessibilityRole="button"
+          accessibilityLabel="Edit profile picture"
+        >
+          <Avatar uri={userDoc?.avatarUrl} userId={user?.$id} name={displayName} size={104} bordered />
+          <View style={styles.cameraBadge}>
+            {uploadingAvatar
+              ? <ActivityIndicator size="small" color="#071014" />
+              : <Ionicons name="camera" size={15} color="#071014" />}
+          </View>
+        </TouchableOpacity>
+
+        <View style={styles.identity}>
+          <Text style={styles.displayName}>{displayName}</Text>
+          <View style={styles.handleRow}>
+            <Text style={styles.handleText}>@{username}</Text>
+            {userDoc?.isVerified === true && (
+              <Ionicons name="checkmark-circle" size={17} color={COLORS.cyan} style={styles.verifiedIcon} />
+            )}
+          </View>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('EditProfile', { userDoc })}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={userDoc?.bio ? 'Edit bio' : 'Add a bio'}
+          >
+            <Text style={[styles.bioText, !userDoc?.bio && styles.bioPlaceholder]}>
+              {userDoc?.bio || 'Tap to add a bio...'}
+            </Text>
+          </TouchableOpacity>
+          {userDoc?.province ? (
+            <View style={styles.locationRow}>
+              <Ionicons name="location-outline" size={15} color="#929AA5" />
+              <Text style={styles.locationText}>{userDoc.province}, SA</Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+
+      <View style={styles.statsRow}>
+        <View style={styles.statBox}>
+          <Text style={styles.statNumber}>{postsCount}</Text>
+          <Text style={styles.statLabel}>Posts</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statNumber}>{userDoc?.followers || 0}</Text>
+          <Text style={styles.statLabel}>Followers</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statNumber}>{userDoc?.following || 0}</Text>
+          <Text style={styles.statLabel}>Following</Text>
+        </View>
+      </View>
+
+      <LaunchCountdownCard />
+
+      <View style={styles.actionRow}>
+        <TouchableOpacity
+          style={styles.editProfileButton}
+          onPress={() => navigation.navigate('EditProfile', { userDoc })}
+          accessibilityRole="button"
+        >
+          <Text style={styles.editProfileText}>Edit Profile</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.uploadButton}
+          onPress={() => navigation.getParent()?.navigate('Upload')}
+          accessibilityRole="button"
+          accessibilityLabel="Upload a new video"
+        >
+          <Ionicons name="add" size={27} color="#071014" />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.tabBar}>
+        {PROFILE_TABS.map((tab) => {
+          const selected = activeTab === tab.id;
+          return (
+            <TouchableOpacity
+              key={tab.id}
+              style={styles.tabButton}
+              onPress={() => setActiveTab(tab.id)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected }}
+            >
+              <Ionicons name={tab.icon} size={17} color={selected ? COLORS.cyan : '#89919C'} />
+              <Text style={[styles.tabLabel, selected && styles.tabLabelActive]}>{tab.label}</Text>
+              <View style={[styles.tabUnderline, selected && styles.tabUnderlineActive]} />
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+
+  if (loading && !refreshing) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <MzansiLoader />
+        </View>
+        <TopLoadingBar isLoading={loading || refreshing} />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
-      <VideoGrid
-        videos={videos}
-        header={header}
-        refreshing={refreshing}
-        onRefresh={() => { setRefreshing(true); fetchProfile(); }}
-        onPress={(video) => navigation.navigate('Home', { 
-          screen: 'Watch', 
-          params: { video: video, allVideos: videos } 
-        })}
-        onLongPress={handleLongPress}
-        emptyText="No posts yet. Tap + to upload!"
+      <TopLoadingBar isLoading={loading || refreshing} />
+      {errorMessage ? <Text style={styles.errorMessage}>{errorMessage}</Text> : null}
+      <FlatList
+        key={activeTab === 'posts' ? 'profile-post-feed' : 'profile-grid-three-columns'}
+        data={videos}
+        numColumns={activeTab === 'posts' ? 1 : 3}
+        keyExtractor={(item) => `${item.mediaType || 'video'}-${item.$id}`}
+        renderItem={activeTab === 'posts' ? renderPost : renderVideo}
+        ListHeaderComponent={header}
+        ListEmptyComponent={activeTab === 'posts' ? renderEmptyPosts : renderEmptyGrid}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              fetchProfile();
+            }}
+            tintColor={COLORS.cyan}
+          />
+        }
       />
     </View>
   );
 }
 
+export default function ProfileScreen({ route, navigation }) {
+  const { user } = useAuth();
+  const targetUserId = route?.params?.userId;
+  if (targetUserId && targetUserId !== user?.$id) {
+    return <UserProfileScreen route={route} navigation={navigation} />;
+  }
+  return <MyProfileScreen navigation={navigation} />;
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
-  header: { paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 15 },
-  usernameHeader: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  settingsBtn: { padding: 8, backgroundColor: COLORS.card, borderRadius: 10, borderWidth: 1, borderColor: '#333' },
-  profileInfo: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingHorizontal: 20 },
-  avatarWrapper: { position: 'relative' },
-  editIcon: { position: 'absolute', bottom: 0, right: 0, backgroundColor: COLORS.cyan, padding: 6, borderRadius: 15, borderWidth: 2, borderColor: COLORS.bg },
-  avatarStatus: { color: COLORS.cyan, fontSize: 13, marginBottom: 10 },
-  avatarStatusSuccess: { color: '#45D483' },
-  avatarStatusError: { color: '#FF5B67' },
-  statsRow: { flexDirection: 'row', gap: 30 },
-  statBox: { alignItems: 'center' },
-  statNumber: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
-  statLabel: { color: COLORS.muted, fontSize: 13, marginTop: 2 },
-  bioSection: { paddingHorizontal: 20, marginTop: 15 },
-  name: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  email: { color: COLORS.muted, fontSize: 13, marginBottom: 8 },
-  bioText: { color: '#fff', fontSize: 14, lineHeight: 20 },
-  editProfileBtn: { marginHorizontal: 20, marginTop: 15, paddingVertical: 10, backgroundColor: COLORS.card, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: '#333' },
-  editProfileText: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
-  mediaActions: { flexDirection: 'row', gap: 10, marginHorizontal: 20, marginTop: 10 },
-  mediaActionButton: { flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 8, backgroundColor: COLORS.card, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border },
-  mediaActionText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  loadingContainer: { alignItems: 'center', justifyContent: 'center' },
+  profileHeader: { paddingBottom: 0 },
+  topBar: { height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 17 },
+  headerIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  usernameHeader: { flex: 1, color: '#F6F8FA', fontSize: 16, fontWeight: '800', textAlign: 'center', marginHorizontal: 8 },
+  profileDetails: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 21, paddingTop: 16 },
+  avatarWrapper: { position: 'relative', width: 112, height: 112, alignItems: 'center', justifyContent: 'center', marginRight: 19 },
+  cameraBadge: { position: 'absolute', right: 3, bottom: 3, width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 15, backgroundColor: COLORS.cyan, borderWidth: 3, borderColor: COLORS.bg },
+  identity: { flex: 1, justifyContent: 'center' },
+  displayName: { color: '#fff', fontSize: 21, fontWeight: '900', letterSpacing: -0.3 },
+  handleRow: { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
+  handleText: { color: '#9CA4AE', fontSize: 13, fontWeight: '600' },
+  verifiedIcon: { marginLeft: 5 },
+  bioText: { color: '#E8EAED', fontSize: 13, lineHeight: 18, marginTop: 10 },
+  bioPlaceholder: { color: '#818995' },
+  locationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 7 },
+  locationText: { color: '#929AA5', fontSize: 12, marginLeft: 4 },
+  statsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', marginTop: 19, marginHorizontal: 17, paddingVertical: 13, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
+  statBox: { minWidth: 78, alignItems: 'center' },
+  statNumber: { color: '#fff', fontSize: 18, fontWeight: '900' },
+  statLabel: { color: '#9098A3', fontSize: 11, fontWeight: '600', marginTop: 3 },
+  emptyPosts: { color: COLORS.muted, textAlign: 'center', paddingVertical: 32, paddingHorizontal: 20 },
+  actionRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginTop: 15, marginBottom: 16, gap: 10 },
+  editProfileButton: { flex: 1, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 10, borderWidth: 1, borderColor: '#3A414B', backgroundColor: '#151820' },
+  editProfileText: { color: '#F3F5F7', fontSize: 13, fontWeight: '800' },
+  uploadButton: { width: 46, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: COLORS.cyan },
+  tabBar: { height: 48, flexDirection: 'row', borderBottomWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  tabButton: { flex: 1, position: 'relative', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  tabLabel: { color: '#89919C', fontSize: 12, fontWeight: '700' },
+  tabLabelActive: { color: '#F5F7F9' },
+  tabUnderline: { position: 'absolute', height: 2, left: '22%', right: '22%', bottom: 0, backgroundColor: 'transparent', borderRadius: 1 },
+  tabUnderlineActive: { backgroundColor: COLORS.cyan },
+  videoTile: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.bg, overflow: 'hidden' },
+  videoPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#191C24' },
+  textPostTile: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#292929' },
+  tileMeta: { position: 'absolute', right: 7, bottom: 7, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.52)' },
+  tileMetaText: { color: '#fff', fontSize: 10, fontWeight: '700', marginLeft: 3 },
+  emptyGrid: { flexDirection: 'row', flexWrap: 'wrap', position: 'relative' },
+  skeletonTile: { borderWidth: 1, borderColor: COLORS.bg, backgroundColor: '#151820' },
+  emptyGridMessage: { position: 'absolute', top: '50%', left: 18, right: 18, alignItems: 'center', justifyContent: 'center', paddingVertical: 15, borderRadius: 14, backgroundColor: 'rgba(10,10,15,0.88)', transform: [{ translateY: -35 }] },
+  emptyGridTitle: { color: '#F4F6F8', fontSize: 15, fontWeight: '800', marginTop: 6, textAlign: 'center' },
+  emptyGridSubtitle: { color: '#9CA4AE', fontSize: 12, marginTop: 4 },
+  errorMessage: { color: '#FF7B86', textAlign: 'center', fontSize: 12, padding: 8, backgroundColor: '#21171B' },
 });
