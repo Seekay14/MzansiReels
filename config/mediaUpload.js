@@ -6,8 +6,10 @@ import { BUCKET_ID } from './constants';
 
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 const VIDEO_TYPES = new Set(['video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v']);
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const AUDIO_TYPES = new Set(['audio/mp4', 'audio/m4a', 'audio/mpeg', 'audio/wav', 'audio/3gpp']);
 let webStoragePromise;
 
 const mimeFromName = (name = '') => {
@@ -17,6 +19,10 @@ const mimeFromName = (name = '') => {
     m4v: 'video/x-m4v',
     mov: 'video/quicktime',
     webm: 'video/webm',
+    m4a: 'audio/mp4',
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    '3gp': 'audio/3gpp',
     jpg: 'image/jpeg',
     jpeg: 'image/jpeg',
     png: 'image/png',
@@ -69,7 +75,7 @@ function getFileName(asset, kind) {
   const name = asset.fileName || asset.name || asset.file?.name || decodedUriName;
   return name && !name.startsWith('blob:')
     ? name
-    : kind === 'video' ? 'video.mp4' : 'image.jpg';
+    : kind === 'video' ? 'video.mp4' : kind === 'audio' ? 'voice-note.m4a' : 'image.jpg';
 }
 
 export async function convertExpoAssetToFile(asset, { kind = 'image', fileName, mimeType } = {}) {
@@ -112,29 +118,38 @@ function notifyStatus(onStatusChange, status, message) {
 
 export async function uploadMediaFile(
   asset,
-  { userId, kind, publicRead = false, folder, onProgress, onStatusChange } = {},
+  {
+    userId,
+    kind,
+    publicRead = false,
+    readUserIds = [],
+    folder,
+    onProgress,
+    onStatusChange,
+  } = {},
 ) {
   try {
     if (!userId) throw new Error('Sign in before uploading a file.');
     if (!asset?.uri) throw new Error('The selected file is missing its URI.');
-    if (kind !== 'video' && kind !== 'image') {
-      throw new Error('Upload kind must be either "video" or "image".');
+    if (!['video', 'image', 'audio'].includes(kind)) {
+      throw new Error('Upload kind must be "video", "image", or "audio".');
     }
 
     const fileName = getFileName(asset, kind);
-    const allowedTypes = kind === 'video' ? VIDEO_TYPES : IMAGE_TYPES;
+    const allowedTypes = kind === 'video' ? VIDEO_TYPES : kind === 'audio' ? AUDIO_TYPES : IMAGE_TYPES;
     const mimeType = [asset.mimeType, asset.file?.type, asset.type].find((type) => allowedTypes.has(type))
       || mimeFromName(fileName);
     if (!allowedTypes.has(mimeType)) {
       throw new Error(`Unsupported ${kind} file type: ${mimeType || 'unknown'}.`);
     }
 
-    const maxBytes = kind === 'video' ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+    const maxBytes = kind === 'video' ? MAX_VIDEO_BYTES : kind === 'audio' ? MAX_AUDIO_BYTES : MAX_IMAGE_BYTES;
     const declaredSize = Platform.OS === 'web'
       ? asset.file?.size ?? asset.fileSize
       : asset.fileSize;
     if (Number.isFinite(declaredSize) && declaredSize > maxBytes) {
-      throw new Error(`${kind === 'video' ? 'Video' : 'Image'} must be no larger than ${kind === 'video' ? 50 : 5} MB.`);
+      const maxMb = kind === 'video' ? 50 : kind === 'audio' ? 25 : 5;
+      throw new Error(`${kind[0].toUpperCase()}${kind.slice(1)} must be no larger than ${maxMb} MB.`);
     }
 
     notifyStatus(onStatusChange, 'uploading', kind === 'video' ? 'Uploading video…' : 'Uploading profile picture…');
@@ -147,12 +162,15 @@ export async function uploadMediaFile(
       size = await getAssetSize(asset);
     }
     if (size > maxBytes) {
-      throw new Error(`${kind === 'video' ? 'Video' : 'Image'} must be no larger than ${kind === 'video' ? 50 : 5} MB.`);
+      const maxMb = kind === 'video' ? 50 : kind === 'audio' ? 25 : 5;
+      throw new Error(`${kind[0].toUpperCase()}${kind.slice(1)} must be no larger than ${maxMb} MB.`);
     }
 
     const ownerRole = Role.user(userId);
     const permissions = [
       publicRead ? Permission.read(Role.any()) : Permission.read(ownerRole),
+      ...[...new Set(readUserIds.filter((readerId) => readerId && readerId !== userId))]
+        .map((readerId) => Permission.read(Role.user(readerId))),
       Permission.update(ownerRole),
       Permission.delete(ownerRole),
     ];
@@ -183,7 +201,7 @@ export async function uploadMediaFile(
     notifyStatus(
       onStatusChange,
       'success',
-      kind === 'video' ? 'Video uploaded successfully!' : 'Profile picture updated successfully!',
+      `${kind[0].toUpperCase()}${kind.slice(1)} uploaded successfully!`,
     );
     return uploaded.$id;
   } catch (error) {

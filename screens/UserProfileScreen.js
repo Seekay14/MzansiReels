@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { databases, ID, Query } from '../config/appwrite';
 import { DATABASE_ID, COLLECTIONS, COLORS } from '../config/constants';
 import { useAuth } from '../context/AuthContext';
-import { getUserDoc, ensureUserDoc, notify } from '../config/helpers';
+import { getUserDoc, ensureUserDoc, createNotification, requireAuth } from '../config/helpers';
 import VideoGrid from '../components/VideoGrid';
 import Avatar from '../components/Avatar';
 
@@ -25,7 +25,7 @@ export default function UserProfileScreen({ route, navigation }) {
       const [doc, vids, follow] = await Promise.all([
         getUserDoc(userId).catch(() => null),
         databases.listDocuments(DATABASE_ID, COLLECTIONS.videos, [Query.equal('userId', userId), Query.orderDesc('$createdAt'), Query.limit(60)]),
-        isSelf ? null : databases.listDocuments(DATABASE_ID, COLLECTIONS.follows, [
+        isSelf || !user?.$id ? null : databases.listDocuments(DATABASE_ID, COLLECTIONS.follows, [
           Query.equal('followerId', user.$id), Query.equal('followingId', userId), Query.limit(1),
         ]).catch(() => null),
       ]);
@@ -37,7 +37,7 @@ export default function UserProfileScreen({ route, navigation }) {
     } finally {
       setLoading(false);
     }
-  }, [userId, isSelf, user]);
+  }, [userId, isSelf, user?.$id]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -56,7 +56,7 @@ export default function UserProfileScreen({ route, navigation }) {
   };
 
   const toggleFollow = async () => {
-    if (busy || isSelf) return;
+    if (!requireAuth('follow this user', navigation, user) || busy || isSelf) return;
     setBusy(true);
     try {
       if (followDocId) {
@@ -67,7 +67,11 @@ export default function UserProfileScreen({ route, navigation }) {
         const doc = await databases.createDocument(DATABASE_ID, COLLECTIONS.follows, ID.unique(), { followerId: user.$id, followingId: userId });
         setFollowDocId(doc.$id);
         await adjustCounts(1);
-        await notify(userId, user.name, 'follow', user.avatarUrl);
+        try {
+          await createNotification(userId, user.name, user.avatarUrl, 'follow');
+        } catch (error) {
+          console.error('Follow succeeded, but its notification could not be created:', error);
+        }
       }
     } catch (error) {
       Alert.alert('Error', 'Could not update follow.');
@@ -110,7 +114,14 @@ export default function UserProfileScreen({ route, navigation }) {
             <TouchableOpacity style={[styles.followButton, following ? styles.followingButton : styles.notFollowingButton]} onPress={toggleFollow} disabled={busy}>
               <Text style={[styles.followText, following && { color: '#fff' }]}>{following ? 'Following' : 'Follow'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.messageButton} onPress={() => navigation.navigate('Messages', { screen: 'Chat', params: { userId, userName } })}>
+            <TouchableOpacity
+              style={styles.messageButton}
+              onPress={() => {
+                if (requireAuth('message this user', navigation, user)) {
+                  navigation.navigate('Messages', { screen: 'Chat', params: { userId, userName } });
+                }
+              }}
+            >
               <Ionicons name="chatbubble-ellipses-outline" size={20} color="#fff" />
             </TouchableOpacity>
           </View>

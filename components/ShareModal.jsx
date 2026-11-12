@@ -54,7 +54,7 @@ export default function ShareModal({
       return;
     }
     try {
-      setPreviewUrl(getVideoThumbnail(originalPost.videoUrl, originalPost.thumbnailUrl));
+      setPreviewUrl(getVideoThumbnail(originalPost));
     } catch (error) {
       console.error('Could not create post share preview:', error);
       setPreviewUrl('');

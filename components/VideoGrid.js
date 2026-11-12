@@ -11,10 +11,7 @@ function VideoGridTile({ item, onPress, onLongPress }) {
     : '';
   if (item.mediaType !== 'post') {
     try {
-      const videoUrl = item.videoUrl || (
-        item.videoFileId ? `/files/${item.videoFileId}/view` : ''
-      );
-      thumbnailUrl = getVideoThumbnail(videoUrl, item.thumbnailUrl);
+      thumbnailUrl = getVideoThumbnail(item);
     } catch (error) {
       console.error('Could not create video grid preview URL:', error);
     }
@@ -36,7 +33,7 @@ function VideoGridTile({ item, onPress, onLongPress }) {
         {thumbnailUrl && !imageFailed ? (
           <Image
             source={{ uri: thumbnailUrl }}
-            style={[styles.thumbnail, { aspectRatio: 1 }]}
+            style={styles.thumbnail}
             resizeMode="cover"
             onError={() => setImageFailed(true)}
           />

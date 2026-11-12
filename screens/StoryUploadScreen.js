@@ -17,10 +17,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { useEvent } from 'expo';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { databases, ID } from '../config/appwrite';
-import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
-import { getFileViewUrl } from '../config/helpers';
-import { uploadMediaFile } from '../config/mediaUpload';
+import { COLORS } from '../config/constants';
+import { uploadStory } from '../config/storyService';
 import { useAuth } from '../context/AuthContext';
 
 const MAX_STORY_VIDEO_MS = 45 * 1000;
@@ -45,6 +43,8 @@ function VideoDurationProbe({ uri, onDuration, onError }) {
       const durationMs = player.duration * 1000;
       if (Number.isFinite(durationMs) && durationMs > 0) {
         onDurationRef.current(durationMs);
+      } else {
+        onErrorRef.current(new Error('Could not read the selected video duration.'));
       }
     } else if (status === 'error') {
       onErrorRef.current(new Error('Could not read the selected video duration.'));
@@ -61,8 +61,11 @@ export default function StoryUploadScreen({ navigation }) {
   const [content, setContent] = useState('');
   const [asset, setAsset] = useState(null);
   const [videoDurationVerified, setVideoDurationVerified] = useState(false);
+  const [verifiedVideoDurationMs, setVerifiedVideoDurationMs] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const uploadLock = useRef(false);
 
   const closeScreen = () => {
     if (navigation.canGoBack()) navigation.goBack();
@@ -72,6 +75,7 @@ export default function StoryUploadScreen({ navigation }) {
   const rejectLongVideo = useCallback(() => {
     setAsset(null);
     setVideoDurationVerified(false);
+    setVerifiedVideoDurationMs(null);
     Alert.alert(
       'Video Too Long',
       'Stories must be 45 seconds or less. Please select a shorter video.',
@@ -84,6 +88,7 @@ export default function StoryUploadScreen({ navigation }) {
       return;
     }
     setVideoDurationVerified(true);
+    setVerifiedVideoDurationMs(durationMs);
   }, [rejectLongVideo]);
 
   const pickMedia = async (type) => {
@@ -106,10 +111,12 @@ export default function StoryUploadScreen({ navigation }) {
           return;
         }
         setVideoDurationVerified(false);
+        setVerifiedVideoDurationMs(null);
       } else {
         setVideoDurationVerified(type !== 'video');
+        setVerifiedVideoDurationMs(null);
       }
-      setAsset(selected);
+      setAsset({ ...selected, type });
       setStoryType(type);
       setUploadMessage('');
     } catch (error) {
@@ -119,7 +126,7 @@ export default function StoryUploadScreen({ navigation }) {
   };
 
   const handleShare = async () => {
-    if (uploading) return;
+    if (uploading || uploadLock.current) return;
     if (!user?.$id) {
       Alert.alert('Sign in required', 'Sign in before sharing a story.');
       return;
@@ -136,39 +143,27 @@ export default function StoryUploadScreen({ navigation }) {
       Alert.alert('Checking video', 'Wait until the video duration has been verified.');
       return;
     }
-
+    uploadLock.current = true;
     setUploading(true);
-    setUploadMessage('');
+    setUploadMessage('Validating story…');
+    setUploadProgress(0);
     try {
-      let mediaUrl = '';
-      if (storyType !== 'text') {
-        const fileId = await uploadMediaFile(asset, {
-          userId: user.$id,
-          kind: storyType,
-          publicRead: true,
-          folder: `stories/${user.$id}`,
-          onStatusChange: ({ message }) => setUploadMessage(message || ''),
-        });
-        mediaUrl = getFileViewUrl(fileId);
-      }
-
-      await databases.createDocument(DATABASE_ID, COLLECTIONS.stories, ID.unique(), {
-        userId: user.$id,
-        userName: user.name || '',
-        avatarUrl: user.avatarUrl || '',
-        createdAt: new Date().toISOString(),
+      await uploadStory(asset, user, {
         mediaType: storyType,
-        mediaUrl,
         content: content.trim(),
+        durationMs: verifiedVideoDurationMs,
+        onStatusChange: ({ message }) => setUploadMessage(message || ''),
+        onProgress: ({ progress }) => setUploadProgress(Math.round(progress)),
       });
 
-      Alert.alert('Story shared', 'Your story is available for the next 24 hours.');
+      Alert.alert('Success', 'Story uploaded!');
       navigation.goBack();
     } catch (error) {
       console.error('Could not share story:', error);
-      setUploadMessage('');
-      Alert.alert('Upload failed', error.message || 'Your story could not be shared.');
+      setUploadMessage(error.message || 'Your story could not be shared.');
+      Alert.alert('Upload Failed', error.message || 'Your story could not be shared.');
     } finally {
+      uploadLock.current = false;
       setUploading(false);
     }
   };
@@ -219,6 +214,7 @@ export default function StoryUploadScreen({ navigation }) {
               setStoryType(option.type);
               setAsset(null);
               setVideoDurationVerified(false);
+              setVerifiedVideoDurationMs(null);
               setUploadMessage('');
             }}
             disabled={uploading}
@@ -267,7 +263,7 @@ export default function StoryUploadScreen({ navigation }) {
                   uri={asset.uri}
                   onDuration={acceptVideoDuration}
                   onError={(error) => {
-                    if (typeof asset.duration === 'number') {
+                      if (Number.isFinite(asset.duration) && asset.duration > 0) {
                       acceptVideoDuration(asset.duration);
                     } else {
                       console.error('Could not verify story video duration:', error);
@@ -283,6 +279,7 @@ export default function StoryUploadScreen({ navigation }) {
               onPress={() => {
                 setAsset(null);
                 setVideoDurationVerified(false);
+                setVerifiedVideoDurationMs(null);
               }}
               accessibilityRole="button"
               accessibilityLabel="Remove selected media"
@@ -328,7 +325,11 @@ export default function StoryUploadScreen({ navigation }) {
             accessibilityLabel="Optional story caption"
           />
         ) : null}
-        {uploadMessage ? <Text style={styles.status}>{uploadMessage}</Text> : null}
+        {uploadMessage ? (
+          <Text style={styles.status}>
+            {uploadMessage}{uploading && uploadProgress > 0 ? ` ${uploadProgress}%` : ''}
+          </Text>
+        ) : null}
       </ScrollView>
     </KeyboardAvoidingView>
   );

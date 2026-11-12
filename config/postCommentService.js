@@ -1,6 +1,6 @@
 import { databases, ID, Query } from './appwrite';
 import { COLLECTIONS, DATABASE_ID } from './constants';
-import { sendPushNotification } from './pushNotifications';
+import { createNotification } from './helpers';
 
 const COMMENT_PAGE_SIZE = 100;
 
@@ -43,15 +43,16 @@ export async function addPostComment(postId, text, currentUser, parentId = '', o
     try {
       const post = await databases.getDocument(DATABASE_ID, COLLECTIONS.posts, postId);
       if (post.userId && post.userId !== currentUser.$id) {
-        await sendPushNotification({
-          targetUserId: post.userId,
-          title: 'New Comment!',
-          body: `${currentUser.name || 'Someone'} commented on your post.`,
-          postId: post.$id,
-        });
+        await createNotification(
+          post.userId,
+          currentUser.name || 'Someone',
+          currentUser.avatarUrl || '',
+          'comment',
+          post.$id,
+        );
       }
     } catch (error) {
-      console.error('Comment was saved, but the push notification could not be prepared:', error);
+      console.error('Comment was saved, but its activity notification could not be created:', error);
     }
 
     return comment;
@@ -68,7 +69,7 @@ export async function addVideoComment(videoId, text, currentUser, parentId = '')
   }
 
   try {
-    return await databases.createDocument(
+    const comment = await databases.createDocument(
       DATABASE_ID,
       COLLECTIONS.comments,
       ID.unique(),
@@ -81,6 +82,21 @@ export async function addVideoComment(videoId, text, currentUser, parentId = '')
         likes: 0,
       },
     );
+    try {
+      const video = await databases.getDocument(DATABASE_ID, COLLECTIONS.videos, videoId);
+      if (video.userId && video.userId !== currentUser.$id) {
+        await createNotification(
+          video.userId,
+          currentUser.name || 'Someone',
+          currentUser.avatarUrl || '',
+          'comment',
+          video.$id,
+        );
+      }
+    } catch (error) {
+      console.error('Video comment was saved, but its activity notification could not be created:', error);
+    }
+    return comment;
   } catch (error) {
     console.error('Could not add video comment:', error);
     throw error;
@@ -148,6 +164,7 @@ export async function toggleCommentLike(
   commentId,
   userId,
   commentCollectionId = COLLECTIONS.postComments,
+  currentLikes,
 ) {
   if (!commentId || !userId) {
     throw new Error('A comment ID and user ID are required to toggle a comment like.');
@@ -166,7 +183,10 @@ export async function toggleCommentLike(
   ]);
   const existingLike = likeResult.documents[0];
   const wasLiked = Boolean(existingLike);
-  const likes = Math.max(0, (Number(comment.likes) || 0) + (wasLiked ? -1 : 1));
+  const baseLikes = Number.isFinite(Number(currentLikes))
+    ? Number(currentLikes)
+    : Number(comment.likes) || 0;
+  const likes = Math.max(0, baseLikes + (wasLiked ? -1 : 1));
   let createdLike;
 
   if (wasLiked) {
@@ -205,4 +225,13 @@ export async function toggleCommentLike(
     }
     throw error;
   }
+}
+
+export async function togglePostCommentLike(commentId, userId, currentLikes) {
+  return toggleCommentLike(
+    commentId,
+    userId,
+    COLLECTIONS.postComments,
+    currentLikes,
+  );
 }

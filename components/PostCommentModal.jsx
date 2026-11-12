@@ -7,6 +7,7 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -17,7 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Avatar from './Avatar';
 import { COLLECTIONS, COLORS } from '../config/constants';
-import { getUserDocs, timeAgo } from '../config/helpers';
+import { getUserDocs, requireAuth, timeAgo } from '../config/helpers';
 import {
   addPostComment,
   addVideoComment,
@@ -25,6 +26,7 @@ import {
   fetchPostComments,
   fetchVideoComments,
   toggleCommentLike,
+  togglePostCommentLike,
 } from '../config/postCommentService';
 
 function flattenCommentThreads(comments) {
@@ -56,6 +58,7 @@ export default function PostCommentModal({
   postId,
   videoId,
   user,
+  navigation,
   onClose,
   onOpenProfile,
   onCommentAdded,
@@ -127,7 +130,8 @@ export default function PostCommentModal({
 
   const send = async () => {
     const text = draft.trim();
-    if (!text || !user?.$id || sending || !contentId) return;
+    const actionName = isVideoComment ? 'comment on this Reel' : 'comment on this post';
+    if (!requireAuth(actionName, navigation, user) || !text || sending || !contentId) return;
     setSending(true);
     try {
       const comment = isVideoComment
@@ -145,13 +149,14 @@ export default function PostCommentModal({
     } catch (error) {
       console.error(error);
       setErrorMessage(error.message || 'Could not post your comment.');
+      Alert.alert('Comment failed', error.message || 'Could not post your comment.');
     } finally {
       setSending(false);
     }
   };
 
   const likeComment = async (comment) => {
-    if (!user?.$id || likingCommentIds.current.has(comment.$id)) return;
+    if (!requireAuth('like this comment', navigation, user) || likingCommentIds.current.has(comment.$id)) return;
     likingCommentIds.current.add(comment.$id);
     const wasLiked = likedCommentIds.has(comment.$id);
     const previousLikes = Number(comment.likes) || 0;
@@ -168,11 +173,9 @@ export default function PostCommentModal({
     )));
 
     try {
-      const result = await toggleCommentLike(
-        comment.$id,
-        user.$id,
-        isVideoComment ? COLLECTIONS.comments : COLLECTIONS.postComments,
-      );
+      const result = isVideoComment
+        ? await toggleCommentLike(comment.$id, user.$id, COLLECTIONS.comments, previousLikes)
+        : await togglePostCommentLike(comment.$id, user.$id, previousLikes);
       setLikedCommentIds((current) => {
         const next = new Set(current);
         if (result.isLiked) next.add(comment.$id);
@@ -243,8 +246,9 @@ export default function PostCommentModal({
           <View style={styles.commentActions}>
             <TouchableOpacity
               style={styles.commentAction}
-              onPress={() => setReplyTo(item)}
-              disabled={!user?.$id}
+              onPress={() => {
+                if (requireAuth('reply to this comment', navigation, user)) setReplyTo(item);
+              }}
               accessibilityRole="button"
               accessibilityLabel={`Reply to ${item.userName || 'comment'}`}
             >
@@ -253,7 +257,6 @@ export default function PostCommentModal({
             <TouchableOpacity
               style={styles.commentAction}
               onPress={() => likeComment(item)}
-              disabled={!user?.$id}
               accessibilityRole="button"
               accessibilityLabel={likedCommentIds.has(item.$id) ? 'Unlike comment' : 'Like comment'}
             >
@@ -328,6 +331,13 @@ export default function PostCommentModal({
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={comments.length ? styles.list : styles.emptyList}
+                refreshControl={(
+                  <RefreshControl
+                    refreshing={loading && comments.length > 0}
+                    onRefresh={loadComments}
+                    tintColor={COLORS.cyan}
+                  />
+                )}
                 ListEmptyComponent={(
                   <View style={styles.emptyState}>
                     <Ionicons name="chatbubble-ellipses-outline" size={32} color={COLORS.muted} />
@@ -368,7 +378,7 @@ export default function PostCommentModal({
               <TouchableOpacity
                 style={styles.sendButton}
                 onPress={send}
-                disabled={!draft.trim() || sending || !user?.$id}
+                disabled={!draft.trim() || sending}
                 accessibilityRole="button"
                 accessibilityLabel="Send comment"
               >
@@ -393,8 +403,8 @@ const styles = StyleSheet.create({
   headerSpacer: { width: 44 },
   title: { flex: 1, color: '#F3F5F7', fontSize: 17, fontWeight: '800', textAlign: 'center' },
   closeButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  list: { paddingHorizontal: 17, paddingTop: 16, paddingBottom: 10 },
-  emptyList: { flexGrow: 1, justifyContent: 'center' },
+  list: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 10 },
+  emptyList: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 16 },
   commentRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 20 },
   replyRow: { marginBottom: 14 },
   commentBody: { flex: 1, marginLeft: 11 },
@@ -406,9 +416,9 @@ const styles = StyleSheet.create({
   commentBubble: { padding: 10, borderRadius: 13, backgroundColor: '#1A1E26' },
   replyBubble: { backgroundColor: '#202630' },
   commentText: { color: '#DCE1E6', fontSize: 14, lineHeight: 20 },
-  commentActions: { flexDirection: 'row', alignItems: 'center', gap: 18, marginTop: 7, marginLeft: 4 },
-  commentAction: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 22 },
-  replyActionText: { color: '#929AA5', fontSize: 12, fontWeight: '700' },
+  commentActions: { flexDirection: 'row', alignItems: 'center', gap: 15, marginTop: 7, marginLeft: 2 },
+  commentAction: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, minHeight: 26, paddingHorizontal: 7, borderRadius: 13, backgroundColor: '#1A1E26' },
+  replyActionText: { color: '#AAB3BD', fontSize: 11, fontWeight: '700' },
   likeCount: { color: '#929AA5', fontSize: 11 },
   state: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
   stateText: { color: COLORS.muted, fontSize: 13, textAlign: 'center', marginTop: 9 },
@@ -417,7 +427,7 @@ const styles = StyleSheet.create({
   inlineError: { color: '#FF8A8A', fontSize: 12, paddingHorizontal: 16, paddingBottom: 6 },
   replyingBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingVertical: 6, borderTopWidth: 1, borderTopColor: COLORS.border },
   replyingText: { color: COLORS.cyan, fontSize: 12 },
-  composer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: 1, borderTopColor: COLORS.border },
-  input: { flex: 1, maxHeight: 90, minHeight: 42, color: '#F3F5F7', backgroundColor: '#1A1E26', borderRadius: 22, paddingHorizontal: 15, paddingVertical: 10, marginLeft: 10, fontSize: 14 },
+  composer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: COLORS.border },
+  input: { flex: 1, maxHeight: 90, minHeight: 42, color: '#F3F5F7', backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#30343A', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, marginLeft: 10, fontSize: 14 },
   sendButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', marginLeft: 4 },
 });

@@ -37,6 +37,7 @@ import NotificationsScreen from './screens/NotificationsScreen';
 import WatchScreen from './screens/WatchScreen';
 import EditProfileScreen from './screens/EditProfileScreen';
 import SettingsScreen from './screens/SettingsScreen';
+import BlockedUsersScreen from './screens/BlockedUsersScreen';
 import HelpCenterScreen from './screens/HelpCenterScreen';
 import AboutScreen from './screens/AboutScreen';
 import LegalScreen from './screens/LegalScreen';
@@ -83,6 +84,7 @@ function HomeStack() {
       <Stack.Screen name="Watch" component={WatchScreen} />
       <Stack.Screen name="Search" component={SearchScreen} />
       <Stack.Screen name="NewMessage" component={NewMessageScreen} />
+      <Stack.Screen name="Chat" component={ChatScreen} />
       <Stack.Screen name="StoryUpload" component={StoryUploadScreen} />
     </Stack.Navigator>
   );
@@ -108,6 +110,7 @@ function ProfileStack() {
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="EditVideo" component={EditVideoScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
       <Stack.Screen name="HelpCenter" component={HelpCenterScreen} />
       <Stack.Screen name="About" component={AboutScreen} />
       <Stack.Screen name="Legal" component={LegalScreen} />
@@ -208,7 +211,19 @@ function MyTabs() {
     >
       <Tab.Screen name="Home" component={HomeStack} options={{ tabBarAccessibilityLabel: 'Home feed' }} />
       <Tab.Screen name="Reels" component={ReelsStack} options={{ tabBarAccessibilityLabel: 'Reels video feed' }} />
-      <Tab.Screen name="Upload" component={UploadScreen} options={{ tabBarAccessibilityLabel: 'Create a video' }} />
+      <Tab.Screen
+        name="Upload"
+        component={UploadScreen}
+        options={{ tabBarAccessibilityLabel: 'Create a video' }}
+        listeners={({ navigation }) => ({
+          tabPress: (event) => {
+            if (!user) {
+              event.preventDefault();
+              navigation.navigate('Login');
+            }
+          },
+        })}
+      />
       <Tab.Screen
         name="Messages"
         component={MessagesStack}
@@ -217,8 +232,28 @@ function MyTabs() {
           tabBarBadge: unreadMessages > 0 ? (unreadMessages > 99 ? '99+' : unreadMessages) : undefined,
           tabBarBadgeStyle: { backgroundColor: '#FF4057', color: '#fff', fontSize: 10 },
         }}
+        listeners={({ navigation }) => ({
+          tabPress: (event) => {
+            if (!user) {
+              event.preventDefault();
+              navigation.navigate('Login');
+            }
+          },
+        })}
       />
-      <Tab.Screen name="Profile" component={ProfileStack} options={{ tabBarAccessibilityLabel: 'Your profile' }} />
+      <Tab.Screen
+        name="Profile"
+        component={ProfileStack}
+        options={{ tabBarAccessibilityLabel: 'Your profile' }}
+        listeners={({ navigation }) => ({
+          tabPress: (event) => {
+            if (!user) {
+              event.preventDefault();
+              navigation.navigate('Login');
+            }
+          },
+        })}
+      />
     </Tab.Navigator>
   );
 }
@@ -355,6 +390,17 @@ export default function App() {
           <NavigationContainer theme={getNavTheme()} linking={linking}>
             <Stack.Navigator screenOptions={{ headerShown: false }}>
               <Stack.Screen name="App">
+                {() => (
+                  user
+                    ? user.profileSetupComplete === false
+                      ? <ProfileSetupScreen />
+                      : !user.skipOnboarding && user.onboardingComplete === false
+                        ? <InterestsScreen />
+                        : <MyTabs />
+                    : <MyTabs />
+                )}
+              </Stack.Screen>
+              <Stack.Screen name="Login">
                 {(navigationProps) => (
                   user
                     ? user.profileSetupComplete === false
@@ -362,7 +408,7 @@ export default function App() {
                       : !user.skipOnboarding && user.onboardingComplete === false
                         ? <InterestsScreen />
                         : <MyTabs />
-                    : <LandingScreen {...navigationProps} />
+                    : <AuthScreen {...navigationProps} />
                 )}
               </Stack.Screen>
               <Stack.Screen name="Auth">

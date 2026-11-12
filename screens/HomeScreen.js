@@ -62,25 +62,27 @@ export default function HomeScreen({ navigation }) {
     try {
       const queries = [];
       const blockedUserIds = [];
-      let blockOffset = 0;
-      let blockTotal = 0;
-      while (true) {
-        const blockedUsers = await databases.listDocuments(DATABASE_ID, COLLECTIONS.blocks, [
-          Query.equal('blockerId', user.$id),
-          Query.limit(100),
-          Query.offset(blockOffset),
-        ]);
-        blockedUserIds.push(...blockedUsers.documents.map((block) => block.blockedId).filter(Boolean));
-        blockTotal = blockedUsers.total;
-        blockOffset += blockedUsers.documents.length;
-        if (blockedUsers.documents.length === 0 || blockOffset >= blockTotal) break;
+      if (user?.$id) {
+        let blockOffset = 0;
+        let blockTotal = 0;
+        while (true) {
+          const blockedUsers = await databases.listDocuments(DATABASE_ID, COLLECTIONS.blocks, [
+            Query.equal('blockerId', user.$id),
+            Query.limit(100),
+            Query.offset(blockOffset),
+          ]);
+          blockedUserIds.push(...blockedUsers.documents.map((block) => block.blockedId).filter(Boolean));
+          blockTotal = blockedUsers.total;
+          blockOffset += blockedUsers.documents.length;
+          if (blockedUsers.documents.length === 0 || blockOffset >= blockTotal) break;
+        }
       }
 
       if (blockedUserIds.length > 0) {
         queries.push(Query.notEqual('userId', [...new Set(blockedUserIds)]));
       }
 
-      if (activeTab === 'following') {
+      if (activeTab === 'following' && user?.$id) {
         const follows = await databases.listDocuments(DATABASE_ID, COLLECTIONS.follows, [
           Query.equal('followerId', user.$id),
           Query.limit(100),
@@ -132,6 +134,10 @@ export default function HomeScreen({ navigation }) {
   }, [activeTab, user]);
 
   const fetchUnreadCount = useCallback(async () => {
+    if (!user?.$id) {
+      setUnreadCount(0);
+      return;
+    }
     try {
       const result = await databases.listDocuments(DATABASE_ID, COLLECTIONS.notifications, [
         Query.equal('userId', user.$id),
@@ -229,6 +235,7 @@ export default function HomeScreen({ navigation }) {
         renderItem={({ item, index }) => (
           <VideoCard
             item={item}
+            navigation={navigation}
             height={containerHeight}
             isActive={focused && index === activeIndex}
             muted={muted}
@@ -238,6 +245,7 @@ export default function HomeScreen({ navigation }) {
             }}
             onNotInterested={(videoId) => removeFromFeed((video) => video.$id === videoId)}
             onBlockUser={async (targetUserId) => {
+              if (!user?.$id) return;
               await blockUser(user.$id, targetUserId);
               removeFromFeed((video) => video.userId === targetUserId);
             }}
@@ -312,18 +320,21 @@ export default function HomeScreen({ navigation }) {
           {[
             { key: 'following', title: 'Following' },
             { key: 'foryou', title: 'For You' },
-          ].map(({ key, title }) => (
-            <TouchableOpacity
-              key={key}
-              onPress={() => selectTab(key)}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: activeTab === key }}
-              style={styles.tabButton}
-            >
-              <Text style={[styles.tabText, activeTab === key && styles.activeTabText]}>{title}</Text>
-              {activeTab === key && <View style={styles.activeTabIndicator} />}
-            </TouchableOpacity>
-          ))}
+          ].map(({ key, title }) => {
+            const tabTitle = key === 'following' && !user ? 'Latest' : title;
+            return (
+              <TouchableOpacity
+                key={key}
+                onPress={() => selectTab(key)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: activeTab === key }}
+                style={styles.tabButton}
+              >
+                <Text style={[styles.tabText, activeTab === key && styles.activeTabText]}>{tabTitle}</Text>
+                {activeTab === key && <View style={styles.activeTabIndicator} />}
+              </TouchableOpacity>
+            );
+          })}
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity
@@ -334,17 +345,27 @@ export default function HomeScreen({ navigation }) {
           >
             <Ionicons name="search" size={24} color="#fff" />
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.sideSlot, styles.notificationButton]}
-            onPress={() => navigation.navigate('Notifications')}
-            accessibilityRole="button"
-            accessibilityLabel={unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'}
-          >
-            <Ionicons name="notifications-outline" size={25} color="#fff" />
-            {unreadCount > 0 && <View style={styles.notificationDot} />}
-          </TouchableOpacity>
+          {user ? (
+            <TouchableOpacity
+              style={[styles.sideSlot, styles.notificationButton]}
+              onPress={() => navigation.navigate('Notifications')}
+              accessibilityRole="button"
+              accessibilityLabel={unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+            >
+              <Ionicons name="notifications-outline" size={25} color="#fff" />
+              {unreadCount > 0 && <View style={styles.notificationDot} />}
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
+      {!user ? (
+        <View style={[styles.guestBanner, { top: insets.top + 52 }]}>
+          <Text style={styles.guestBannerText}>You are browsing as a guest. Log in to interact.</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Login')} accessibilityRole="button">
+            <Text style={styles.guestLoginText}>Log In</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
       <TopLoadingBar isLoading={loading || refreshing || loadingMore} />
     </View>
   );
@@ -382,6 +403,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#000',
   },
+  guestBanner: { position: 'absolute', left: 12, right: 12, minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderRadius: 18, backgroundColor: 'rgba(17,24,32,0.94)', zIndex: 9 },
+  guestBannerText: { color: '#D5DCE2', fontSize: 10 },
+  guestLoginText: { color: COLORS.cyan, fontSize: 11, fontWeight: '800', marginLeft: 7 },
   tabsContainer: { flexDirection: 'row', alignItems: 'center', gap: 20 },
   tabButton: { alignItems: 'center', paddingVertical: 8 },
   tabText: {

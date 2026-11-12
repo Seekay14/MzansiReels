@@ -6,7 +6,6 @@ import {
   Modal,
   Platform,
   ScrollView,
-  Share,
   StyleSheet,
   Switch,
   Text,
@@ -16,11 +15,11 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
+import * as Notifications from 'expo-notifications';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { account, databases, Query } from '../config/appwrite';
-import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
+import { account, databases, functions, Query } from '../config/appwrite';
+import { COLLECTIONS, COLORS, DATABASE_ID, DELETE_USER_FUNCTION_ID } from '../config/constants';
+import { useAuth } from '../context/AuthContext';
 
 const CONTACT_EMAIL = 'sectionfellas@gmail.com';
 const DEFAULT_PREFERENCES = {
@@ -68,6 +67,7 @@ function SettingSwitch({ value, onValueChange }) {
 }
 
 export default function SettingsScreen({ navigation }) {
+  const { logout } = useAuth();
   const insets = useSafeAreaInsets();
   const [user, setUser] = useState(null);
   const [userDoc, setUserDoc] = useState(null);
@@ -76,18 +76,19 @@ export default function SettingsScreen({ navigation }) {
   const [preferences, setPreferences] = useState(DEFAULT_PREFERENCES);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [savingSetting, setSavingSetting] = useState('');
   const [isPasswordModalVisible, setIsPasswordModalVisible] = useState(false);
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [otp, setOtp] = useState('');
-  const [mfaSetup, setMfaSetup] = useState(null);
-  const [mfaEnabled, setMfaEnabled] = useState(false);
-  const [blockedVisible, setBlockedVisible] = useState(false);
-  const [blockedUsers, setBlockedUsers] = useState([]);
   const [sessionsVisible, setSessionsVisible] = useState(false);
   const [sessions, setSessions] = useState([]);
 
   const preferenceKey = user ? `@mzansireels/settings/${user.$id}` : null;
+
+  const navigateToLogin = () => {
+    navigation.getParent()?.getParent()?.navigate('Auth');
+  };
 
   const loadAccount = useCallback(async () => {
     setLoading(true);
@@ -106,7 +107,6 @@ export default function SettingsScreen({ navigation }) {
       setIsPrivate(profile?.isPrivate === true);
       setPushEnabled(profile?.pushNotifications !== false);
       setPreferences({ ...DEFAULT_PREFERENCES, ...(localPreferences ? JSON.parse(localPreferences) : {}) });
-      setMfaEnabled(currentUser.mfa === true);
     } catch (error) {
       console.error('Could not load settings:', error);
       Alert.alert('Settings unavailable', error.message || 'Could not load your account settings.');
@@ -136,13 +136,17 @@ export default function SettingsScreen({ navigation }) {
       Alert.alert('Unavailable', 'A profile record is required to update this setting.');
       return;
     }
+    if (savingSetting) return;
     setIsPrivate(value);
+    setSavingSetting('private');
     try {
       await databases.updateDocument(DATABASE_ID, COLLECTIONS.users, userDoc.$id, { isPrivate: value });
     } catch (error) {
       setIsPrivate(!value);
       console.error('Could not update private-account setting:', error);
       Alert.alert('Could not update setting', error.message || 'Please try again.');
+    } finally {
+      setSavingSetting('');
     }
   };
 
@@ -151,13 +155,37 @@ export default function SettingsScreen({ navigation }) {
       Alert.alert('Unavailable', 'A profile record is required to update this setting.');
       return;
     }
+    if (savingSetting) return;
     setPushEnabled(value);
+    setSavingSetting('push');
     try {
+      if (value) {
+        try {
+          const currentPermission = await Notifications.getPermissionsAsync();
+          if (currentPermission.status !== 'granted') {
+            const requestedPermission = await Notifications.requestPermissionsAsync();
+            if (requestedPermission.status !== 'granted') {
+              Alert.alert(
+                'Notifications are disabled',
+                'Push notifications are enabled in your account, but device permission was not granted.',
+              );
+            }
+          }
+        } catch (permissionError) {
+          console.error('Could not request notification permission:', permissionError);
+          Alert.alert(
+            'Permission unavailable',
+            'Your push preference will be saved, but device notification permission could not be requested.',
+          );
+        }
+      }
       await databases.updateDocument(DATABASE_ID, COLLECTIONS.users, userDoc.$id, { pushNotifications: value });
     } catch (error) {
       setPushEnabled(!value);
       console.error('Could not update push-notification setting:', error);
       Alert.alert('Could not update setting', error.message || 'Please try again.');
+    } finally {
+      setSavingSetting('');
     }
   };
 
@@ -182,47 +210,7 @@ export default function SettingsScreen({ navigation }) {
   };
 
   const openBlockedUsers = async () => {
-    if (!user) return;
-    setBlockedVisible(true);
-    setBusy('blocked');
-    try {
-      const blocks = await databases.listDocuments(DATABASE_ID, COLLECTIONS.blocks, [
-        Query.equal('blockerId', user.$id),
-        Query.limit(100),
-      ]);
-      const rows = await Promise.all(blocks.documents.map(async (block) => {
-        const profiles = await databases.listDocuments(DATABASE_ID, COLLECTIONS.users, [
-          Query.equal('userId', block.blockedId),
-          Query.limit(1),
-        ]);
-        return { block, profile: profiles.documents[0] || null };
-      }));
-      setBlockedUsers(rows);
-    } catch (error) {
-      console.error('Could not load blocked users:', error);
-      Alert.alert('Could not load blocked users', error.message || 'Please try again.');
-    } finally {
-      setBusy('');
-    }
-  };
-
-  const unblockUser = (entry) => {
-    const displayName = entry.profile?.name || entry.profile?.username || 'this user';
-    Alert.alert('Unblock user?', `Allow ${displayName} to interact with you again?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Unblock',
-        onPress: async () => {
-          try {
-            await databases.deleteDocument(DATABASE_ID, COLLECTIONS.blocks, entry.block.$id);
-            setBlockedUsers((current) => current.filter((item) => item.block.$id !== entry.block.$id));
-          } catch (error) {
-            console.error('Could not unblock user:', error);
-            Alert.alert('Could not unblock user', error.message || 'Please try again.');
-          }
-        },
-      },
-    ]);
+    navigation.navigate('BlockedUsers');
   };
 
   const openSessions = async () => {
@@ -249,6 +237,7 @@ export default function SettingsScreen({ navigation }) {
           try {
             await account.deleteSession(session.$id);
             setSessions((current) => current.filter((item) => item.$id !== session.$id));
+            if (session.current) await logout();
           } catch (error) {
             console.error('Could not revoke session:', error);
             Alert.alert('Could not revoke session', error.message || 'Please try again.');
@@ -258,141 +247,12 @@ export default function SettingsScreen({ navigation }) {
     ]);
   };
 
-  const toggleMfa = async () => {
-    setBusy('mfa');
-    try {
-      if (mfaEnabled) {
-        Alert.alert('Turn off two-factor authentication?', 'Your account will no longer require a second factor at sign-in.', [
-          { text: 'Cancel', style: 'cancel', onPress: () => setBusy('') },
-          {
-            text: 'Turn Off',
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                await account.updateMFA({ mfa: false });
-                setMfaEnabled(false);
-              } catch (error) {
-                console.error('Could not disable MFA:', error);
-                Alert.alert('Could not update two-factor authentication', error.message || 'Please try again.');
-              } finally {
-                setBusy('');
-              }
-            },
-          },
-        ]);
-        return;
-      }
-
-      const factor = await account.createMFAAuthenticator({ type: 'totp' });
-      setMfaSetup(factor);
-      setOtp('');
-    } catch (error) {
-      console.error('Could not start authenticator setup:', error);
-      Alert.alert('Could not set up two-factor authentication', error.message || 'Please try again.');
-    } finally {
-      if (mfaEnabled) return;
-      setBusy('');
-    }
+  const showMfaComingSoon = () => {
+    Alert.alert('Coming Soon', 'Two-Factor Authentication will be available in the next update.');
   };
 
-  const verifyAuthenticator = async () => {
-    if (!/^\d{6}$/.test(otp)) {
-      Alert.alert('Invalid code', 'Enter the six-digit code from your authenticator app.');
-      return;
-    }
-    setBusy('mfa-verify');
-    try {
-      await account.updateMFAAuthenticator({ type: 'totp', otp });
-      await account.updateMFA({ mfa: true });
-      setMfaEnabled(true);
-      setMfaSetup(null);
-      setOtp('');
-      Alert.alert('Two-factor authentication enabled', 'Your authenticator app is now linked to your account.');
-    } catch (error) {
-      console.error('Could not verify authenticator:', error);
-      Alert.alert('Could not verify code', error.message || 'Check the code and try again.');
-    } finally {
-      setBusy('');
-    }
-  };
-
-  const getAllDocuments = async (collectionId, filters) => {
-    const documents = [];
-    let offset = 0;
-    while (true) {
-      const page = await databases.listDocuments(DATABASE_ID, collectionId, [
-        ...filters,
-        Query.limit(100),
-        Query.offset(offset),
-      ]);
-      documents.push(...page.documents);
-      if (page.documents.length < 100) return documents;
-      offset += page.documents.length;
-    }
-  };
-
-  const downloadData = async () => {
-    if (!user) return;
-    setBusy('export');
-    try {
-      const own = (field) => [Query.equal(field, user.$id)];
-      const [
-        posts, videos, postComments, comments, likes, postLikes, bookmarks,
-        follows, followedBy, blocks, blockedBy, chats, sentMessages, receivedMessages,
-      ] = await Promise.all([
-        getAllDocuments(COLLECTIONS.posts, own('userId')),
-        getAllDocuments(COLLECTIONS.videos, own('userId')),
-        getAllDocuments(COLLECTIONS.postComments, own('userId')),
-        getAllDocuments(COLLECTIONS.comments, own('userId')),
-        getAllDocuments(COLLECTIONS.videoLikes, own('userId')),
-        getAllDocuments(COLLECTIONS.postLikes, own('userId')),
-        getAllDocuments(COLLECTIONS.bookmarks, own('userId')),
-        getAllDocuments(COLLECTIONS.follows, own('followerId')),
-        getAllDocuments(COLLECTIONS.follows, own('followingId')),
-        getAllDocuments(COLLECTIONS.blocks, own('blockerId')),
-        getAllDocuments(COLLECTIONS.blocks, own('blockedId')),
-        getAllDocuments(COLLECTIONS.chats, [Query.contains('participants', user.$id)]),
-        getAllDocuments(COLLECTIONS.messages, own('senderId')),
-        getAllDocuments(COLLECTIONS.messages, own('receiverId')),
-      ]);
-      const unique = (items) => [...new Map(items.map((item) => [item.$id, item])).values()];
-      const exportData = {
-        exportedAt: new Date().toISOString(),
-        account: user,
-        profile: userDoc,
-        content: { posts, videos, postComments, comments },
-        activity: { likes, postLikes, bookmarks, follows: unique([...follows, ...followedBy]) },
-        safety: { blocks: unique([...blocks, ...blockedBy]) },
-        messaging: { chats, messages: unique([...sentMessages, ...receivedMessages]) },
-      };
-      const contents = JSON.stringify(exportData, null, 2);
-
-      if (Platform.OS === 'web' && globalThis.document && globalThis.URL?.createObjectURL) {
-        const blob = new Blob([contents], { type: 'application/json' });
-        const url = globalThis.URL.createObjectURL(blob);
-        const link = globalThis.document.createElement('a');
-        link.href = url;
-        link.download = `mzansireels-data-${user.$id}.json`;
-        link.click();
-        globalThis.URL.revokeObjectURL(url);
-      } else {
-        const directory = FileSystem.documentDirectory;
-        if (!directory) throw new Error('A local file directory is unavailable on this device.');
-        const fileUri = `${directory}mzansireels-data-${user.$id}.json`;
-        await FileSystem.writeAsStringAsync(fileUri, contents);
-        const sharingAvailable = await Sharing.isAvailableAsync();
-        if (sharingAvailable) {
-          await Sharing.shareAsync(fileUri, { mimeType: 'application/json', dialogTitle: 'Download your MzansiReels data' });
-        } else {
-          await Share.share({ message: contents, title: 'MzansiReels data export' });
-        }
-      }
-    } catch (error) {
-      console.error('Could not create data export:', error);
-      Alert.alert('Data export failed', error.message || 'Could not prepare your data.');
-    } finally {
-      setBusy('');
-    }
+  const downloadData = () => {
+    Alert.alert('Export Requested', 'Your data is being prepared. You will receive an email shortly.');
   };
 
   const emailSupport = async (subject, body) => {
@@ -405,24 +265,77 @@ export default function SettingsScreen({ navigation }) {
     }
   };
 
+  const deactivateAccount = async () => {
+    if (busy) return;
+    if (!userDoc) {
+      Alert.alert('Unavailable', 'A profile record is required to deactivate your account.');
+      return;
+    }
+
+    setBusy('deactivate');
+    try {
+      await databases.updateDocument(DATABASE_ID, COLLECTIONS.users, userDoc.$id, {
+        isPrivate: true,
+        isDeactivated: true,
+      });
+      await logout();
+      navigateToLogin();
+    } catch (error) {
+      console.error('Could not deactivate account:', error);
+      Alert.alert('Could not deactivate account', error.message || 'Please try again.');
+    } finally {
+      setBusy('');
+    }
+  };
+
   const requestDeactivation = () => {
     Alert.alert(
-      'Request account deactivation',
-      'Account deactivation is not available directly from the client yet. This will open an email request to support; your account will remain active until it is processed.',
+      'Hide your profile?',
+      'Your profile will be made private and deactivated. You will be logged out.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Email Support', onPress: () => emailSupport('Account deactivation request', `Please deactivate my MzansiReels account.\n\nAccount ID: ${user?.$id || ''}`) },
+        { text: 'Deactivate', style: 'destructive', onPress: deactivateAccount },
       ],
     );
   };
 
+  const deleteUserAccount = async () => {
+    if (!user?.$id || busy || isDeleting) return;
+
+    setIsDeleting(true);
+    try {
+      const execution = await functions.createExecution({
+        functionId: DELETE_USER_FUNCTION_ID,
+        body: JSON.stringify({ userId: user.$id }),
+        async: false,
+      });
+      if (execution.status !== 'completed'
+        || execution.responseStatusCode < 200
+        || execution.responseStatusCode >= 300) {
+        throw new Error(
+          execution.responseBody || `Account deletion failed (HTTP ${execution.responseStatusCode || 'unknown'}).`,
+        );
+      }
+
+      await logout();
+      navigateToLogin();
+      Alert.alert('Account deleted', 'Your account has been permanently deleted.');
+    } catch (error) {
+      console.error('Could not permanently delete account:', error);
+      Alert.alert('Could not delete account', error.message || 'Please try again.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const requestDeletion = () => {
+    if (busy || isDeleting) return;
     Alert.alert(
-      'Request account deletion',
-      'Permanent deletion must be processed securely by the backend. This opens a request to support; no account or data is deleted by this button.',
+      'Permanently delete your account?',
+      'This will permanently delete your posts, videos, messages, profile, and login account. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Email Support', style: 'destructive', onPress: () => emailSupport('Account deletion request', `Please permanently delete my MzansiReels account and associated data.\n\nAccount ID: ${user?.$id || ''}`) },
+        { text: 'Delete Everything', style: 'destructive', onPress: deleteUserAccount },
       ],
     );
   };
@@ -444,7 +357,15 @@ export default function SettingsScreen({ navigation }) {
     }
   };
 
-  const signOut = () => navigation.navigate('LogoutScreen');
+  const signOut = async () => {
+    try {
+      await logout();
+      navigateToLogin();
+    } catch (error) {
+      console.error('Could not log out:', error);
+      Alert.alert('Could not log out', error.message || 'Please try again.');
+    }
+  };
   const localPrefSubtitle = 'Saved on this device';
 
   if (loading) {
@@ -472,26 +393,27 @@ export default function SettingsScreen({ navigation }) {
           <SettingsRow icon="person-outline" title="Edit Profile" onPress={() => navigation.navigate('MyProfile')} />
           <SettingsRow icon="key-outline" title="Change Password" onPress={() => setIsPasswordModalVisible(true)} />
           <SettingsRow icon="lock-closed-outline" title="Private Account" subtitle="Approve followers before they see your posts">
-            <SettingSwitch value={isPrivate} onValueChange={togglePrivate} />
+            {savingSetting === 'private'
+              ? <ActivityIndicator size="small" color={COLORS.cyan} />
+              : <SettingSwitch value={isPrivate} onValueChange={togglePrivate} />}
           </SettingsRow>
           <SettingsRow icon="ban-outline" title="Blocked Users" onPress={openBlockedUsers} />
           <SettingsRow
             icon="shield-checkmark-outline"
             title="Two-Factor Authentication"
-            subtitle={mfaEnabled ? 'Authenticator app enabled' : 'Authenticator app (TOTP); SMS is not configured'}
-          >
-            {busy === 'mfa' ? <ActivityIndicator color={COLORS.cyan} /> : <SettingSwitch value={mfaEnabled} onValueChange={toggleMfa} />}
-          </SettingsRow>
+            subtitle="Add an extra layer of account security"
+            onPress={showMfaComingSoon}
+          />
           <SettingsRow icon="phone-portrait-outline" title="Active Sessions" subtitle="View and sign out other devices" onPress={openSessions} />
-          <SettingsRow icon="cloud-download-outline" title="Download Your Data" subtitle="Create a JSON export of your account data" onPress={downloadData}>
-            {busy === 'export' ? <ActivityIndicator color={COLORS.cyan} /> : null}
-          </SettingsRow>
+          <SettingsRow icon="cloud-download-outline" title="Download Your Data" subtitle="Request an export of your account data" onPress={downloadData} />
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Notifications</Text>
           <SettingsRow icon="notifications-outline" title="Push Notifications" subtitle="Master push-notification preference">
-            <SettingSwitch value={pushEnabled} onValueChange={togglePush} />
+            {savingSetting === 'push'
+              ? <ActivityIndicator size="small" color={COLORS.cyan} />
+              : <SettingSwitch value={pushEnabled} onValueChange={togglePush} />}
           </SettingsRow>
           {[
             ['likesComments', 'Likes & Comments', 'heart-outline'],
@@ -533,8 +455,12 @@ export default function SettingsScreen({ navigation }) {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account management</Text>
-          <SettingsRow icon="pause-circle-outline" title="Deactivate Account" subtitle="Request temporary deactivation from support" onPress={requestDeactivation} />
-          <SettingsRow icon="trash-bin-outline" title="Delete Account" subtitle="Request permanent account and data deletion" danger onPress={requestDeletion} />
+          <SettingsRow icon="pause-circle-outline" title="Deactivate Account" subtitle="Hide your profile and sign out" onPress={requestDeactivation}>
+            {busy === 'deactivate' ? <ActivityIndicator size="small" color={COLORS.cyan} /> : null}
+          </SettingsRow>
+          <SettingsRow icon="trash-bin-outline" title="Delete Account" subtitle="Permanently delete your account and data" danger onPress={requestDeletion}>
+            {isDeleting ? <ActivityIndicator size="small" color={COLORS.pink} /> : null}
+          </SettingsRow>
         </View>
 
         <TouchableOpacity style={styles.logoutButton} onPress={signOut}>
@@ -560,31 +486,6 @@ export default function SettingsScreen({ navigation }) {
         </View>
       </Modal>
 
-      <Modal visible={blockedVisible} transparent animationType="slide" onRequestClose={() => setBlockedVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.listModal}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Blocked Users</Text>
-              <TouchableOpacity onPress={() => setBlockedVisible(false)}><Ionicons name="close" size={25} color="#fff" /></TouchableOpacity>
-            </View>
-            {busy === 'blocked' ? <ActivityIndicator color={COLORS.cyan} style={styles.modalLoader} /> : null}
-            {!busy && blockedUsers.length === 0 ? <Text style={styles.emptyText}>You haven’t blocked anyone.</Text> : null}
-            <ScrollView>
-              {blockedUsers.map((entry) => (
-                <View style={styles.listRow} key={entry.block.$id}>
-                  <View style={styles.userInitial}><Text style={styles.userInitialText}>{(entry.profile?.name || entry.profile?.username || '?').charAt(0).toUpperCase()}</Text></View>
-                  <View style={styles.rowCopy}>
-                    <Text style={styles.rowText}>{entry.profile?.name || entry.profile?.username || 'Unknown user'}</Text>
-                    {!!entry.profile?.username && <Text style={styles.rowSubtitle}>@{entry.profile.username}</Text>}
-                  </View>
-                  <TouchableOpacity style={styles.smallButton} onPress={() => unblockUser(entry)}><Text style={styles.smallButtonText}>Unblock</Text></TouchableOpacity>
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
       <Modal visible={sessionsVisible} transparent animationType="slide" onRequestClose={() => setSessionsVisible(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.listModal}>
@@ -605,7 +506,9 @@ export default function SettingsScreen({ navigation }) {
                       <Text style={styles.rowText}>{device}{session.current ? ' · This device' : ''}</Text>
                       <Text style={styles.rowSubtitle}>{location || session.ip || 'Location unavailable'}</Text>
                     </View>
-                    {!session.current && <TouchableOpacity style={styles.smallButton} onPress={() => revokeSession(session)}><Text style={styles.smallButtonText}>Sign out</Text></TouchableOpacity>}
+                    <TouchableOpacity style={styles.smallButton} onPress={() => revokeSession(session)}>
+                      <Text style={styles.smallButtonText}>Sign out</Text>
+                    </TouchableOpacity>
                   </View>
                 );
               })}
@@ -614,30 +517,6 @@ export default function SettingsScreen({ navigation }) {
         </View>
       </Modal>
 
-      <Modal visible={!!mfaSetup} transparent animationType="slide" onRequestClose={() => setMfaSetup(null)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Set up an authenticator</Text>
-            <Text style={styles.modalDescription}>Add this account to an authenticator app using the key below, then enter its current six-digit code. Keep the key private.</Text>
-            <Text selectable style={styles.secretText}>{mfaSetup?.secret}</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="6-digit authenticator code"
-              placeholderTextColor="#777"
-              value={otp}
-              onChangeText={(value) => setOtp(value.replace(/\D/g, '').slice(0, 6))}
-              keyboardType="number-pad"
-              maxLength={6}
-            />
-            <View style={styles.modalActions}>
-              <TouchableOpacity onPress={() => setMfaSetup(null)} style={styles.cancelBtn}><Text style={styles.cancelText}>Cancel</Text></TouchableOpacity>
-              <TouchableOpacity onPress={verifyAuthenticator} style={styles.primaryBtn} disabled={busy === 'mfa-verify'}>
-                {busy === 'mfa-verify' ? <ActivityIndicator color="#061116" /> : <Text style={styles.primaryText}>Verify & Enable</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }

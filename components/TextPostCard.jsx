@@ -14,8 +14,9 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { databases, ID, Query } from '../config/appwrite';
 import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
-import { getUserDoc, timeAgo, togglePostLike } from '../config/helpers';
+import { getUserDoc, requireAuth, timeAgo, togglePostLike } from '../config/helpers';
 import Avatar from './Avatar';
+import AnalyticsModal from './AnalyticsModal';
 import PostCommentModal from './PostCommentModal';
 import ShareModal from './ShareModal';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -62,7 +63,7 @@ function formatNumber(value) {
   return `${Number((count / unit.value).toFixed(1))}${unit.suffix}`;
 }
 
-export default function TextPostCard({ post, user, navigation, onHide, onDelete, onShared }) {
+export default function TextPostCard({ post, user, navigation, onHide, onDelete, onShared, desktop = false }) {
   const [likes, setLikes] = useState(Number(post.likes) || 0);
   const [views, setViews] = useState(Number(post.views) || 0);
   const [shares, setShares] = useState(Number(post.shares) || 0);
@@ -71,11 +72,12 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
   const [optionsVisible, setOptionsVisible] = useState(false);
   const [saving, setSaving] = useState(false);
   const [commentModalVisible, setCommentModalVisible] = useState(false);
+  const [analyticsModalVisible, setAnalyticsModalVisible] = useState(false);
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [commentCount, setCommentCount] = useState(Number(post.commentCount) || 0);
   const [authorVerified, setAuthorVerified] = useState(post.isVerified === true);
   const link = findUrl(post.content || '');
-  const ownPost = post.userId === user?.$id;
+  const isOwner = user?.$id === post.userId;
   const postedAt = post.uploadedAt || post.$createdAt;
 
   useEffect(() => {
@@ -92,7 +94,10 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
 
   useEffect(() => {
     let active = true;
-    if (!user?.$id) return undefined;
+    if (!user?.$id) {
+      setLiked(false);
+      return undefined;
+    }
     databases.listDocuments(DATABASE_ID, COLLECTIONS.postLikes, [
       Query.equal('postId', post.$id),
       Query.equal('userId', user.$id),
@@ -139,7 +144,7 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
   }, [post.userId]);
 
   const handleLike = async () => {
-    if (liking || !user?.$id) return;
+    if (!requireAuth('like this post', navigation, user) || liking) return;
     const previousLiked = liked;
     const previousLikes = likes;
     const nextLiked = !previousLiked;
@@ -147,7 +152,7 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
     setLiked(nextLiked);
     setLikes(Math.max(0, previousLikes + (nextLiked ? 1 : -1)));
     try {
-      const result = await togglePostLike(post.$id, user.$id, user.name, user.avatarUrl);
+      const result = await togglePostLike(post.$id, user.$id, previousLikes, user.name, user.avatarUrl);
       setLikes(result.likes);
       setLiked(result.isLiked);
     } catch (error) {
@@ -161,6 +166,7 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
   };
 
   const copyLink = async () => {
+    if (!requireAuth('share this post', navigation, user)) return;
     try {
       const shareUrl = post.imageUrl || post.videoUrl || `mzansireels://post/${post.$id}`;
       await Clipboard.setStringAsync(shareUrl);
@@ -173,7 +179,7 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
   };
 
   const savePost = async () => {
-    if (!user?.$id || saving) return;
+    if (!requireAuth('bookmark this post', navigation, user) || saving) return;
     setSaving(true);
     try {
       const existing = await databases.listDocuments(DATABASE_ID, COLLECTIONS.bookmarks, [
@@ -243,7 +249,7 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
 
   return (
     <>
-      <View style={styles.card}>
+      <View style={[styles.card, desktop && styles.desktopCard]}>
         <View style={styles.postHeader}>
           <TouchableOpacity
             onPress={() => openProfile(post.userId, post.userName)}
@@ -272,7 +278,19 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
             </TouchableOpacity>
             <View style={styles.postMeta}>
               <Text style={styles.postTime}>{postedAt ? timeAgo(postedAt) : 'Recently'}</Text>
-              <Text style={styles.postTime}> · {formatNumber(views)} Views</Text>
+              {isOwner ? (
+                <>
+                  <TouchableOpacity
+                    style={styles.analyticsButton}
+                    onPress={() => setAnalyticsModalVisible(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel="View post analytics"
+                  >
+                    <Ionicons name="bar-chart-outline" size={14} color={COLORS.cyan} />
+                  </TouchableOpacity>
+                  <Text style={styles.postTime}> · {formatNumber(views)} Views</Text>
+                </>
+              ) : null}
             </View>
           </View>
           <TouchableOpacity
@@ -324,7 +342,9 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
           <View style={styles.engagementActions}>
             <TouchableOpacity
               style={styles.commentButton}
-              onPress={() => setCommentModalVisible(true)}
+              onPress={() => {
+                if (requireAuth('comment on this post', navigation, user)) setCommentModalVisible(true);
+              }}
               accessibilityRole="button"
               accessibilityLabel={`View ${commentCount} comments`}
             >
@@ -333,7 +353,9 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.actionButton}
-              onPress={() => setShareModalVisible(true)}
+              onPress={() => {
+                if (requireAuth('share this post', navigation, user)) setShareModalVisible(true);
+              }}
               accessibilityRole="button"
               accessibilityLabel={`Share post, ${shares} shares`}
             >
@@ -350,16 +372,14 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
               <Ionicons name={liked ? 'heart' : 'heart-outline'} size={20} color={liked ? COLORS.cyan : '#AAB1BA'} />
               <Text style={[styles.actionCount, liked && styles.likedCount]}>{formatNumber(likes)}</Text>
             </TouchableOpacity>
-            <View style={styles.actionButton}>
-              <Ionicons name="bar-chart-outline" size={19} color="#AAB1BA" />
-              <Text style={styles.actionCount}>{formatNumber(views)}</Text>
-            </View>
           </View>
         </View>
-        {commentCount > 0 ? (
+        {isOwner && commentCount > 0 ? (
           <TouchableOpacity
             style={styles.viewCommentsButton}
-            onPress={() => setCommentModalVisible(true)}
+            onPress={() => {
+              if (requireAuth('comment on this post', navigation, user)) setCommentModalVisible(true);
+            }}
             accessibilityRole="button"
             accessibilityLabel={`View ${commentCount} replies`}
           >
@@ -372,9 +392,17 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
         visible={commentModalVisible}
         postId={post.$id}
         user={user}
+        navigation={navigation}
         onOpenProfile={openProfile}
         onClose={() => setCommentModalVisible(false)}
         onCommentAdded={handleCommentUpdate}
+      />
+
+      <AnalyticsModal
+        visible={isOwner && analyticsModalVisible}
+        post={{ ...post, likes, views, shares }}
+        commentCount={commentCount}
+        onClose={() => setAnalyticsModalVisible(false)}
       />
 
       <ShareModal
@@ -403,7 +431,7 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
           <TouchableOpacity activeOpacity={1} style={styles.sheet} onPress={() => {}}>
             <View style={styles.sheetHandle} />
             <Text style={styles.sheetTitle}>Post options</Text>
-            {ownPost && (
+            {isOwner && (
               <TouchableOpacity style={styles.sheetRow} onPress={deletePost} accessibilityRole="button">
                 <Ionicons name="trash-outline" size={21} color="#FF5B67" />
                 <Text style={styles.deleteText}>Delete Post</Text>
@@ -442,12 +470,14 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
 
 const styles = StyleSheet.create({
   card: { paddingTop: 14, paddingHorizontal: 15, paddingBottom: 8, marginHorizontal: 10, marginBottom: 11, borderWidth: 1, borderColor: '#252A33', borderRadius: 16, backgroundColor: '#14171E' },
+  desktopCard: { width: '100%', maxWidth: 600, alignSelf: 'center', marginHorizontal: 0, marginVertical: 8, borderRadius: 8, borderColor: '#3A3B3C', backgroundColor: '#242526' },
   postHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 11 },
   authorInfo: { flex: 1, marginLeft: 10 },
   authorNameRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 5 },
   authorName: { color: '#F2F4F6', fontSize: 14, fontWeight: '800' },
   postMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
   postTime: { color: '#858E99', fontSize: 10 },
+  analyticsButton: { width: 23, height: 20, alignItems: 'center', justifyContent: 'center', marginLeft: 5 },
   optionsButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18 },
   postContent: { color: '#E1E5E9', fontSize: 14, lineHeight: 21, marginBottom: 11 },
   sharedFromBanner: { flexDirection: 'row', alignItems: 'center', marginBottom: 9, paddingVertical: 5 },

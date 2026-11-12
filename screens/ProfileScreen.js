@@ -198,10 +198,7 @@ function MyProfileScreen({ navigation }) {
       : item.thumbnailUrl || '';
     if (item.mediaType !== 'post') {
       try {
-        thumbnailUrl = getVideoThumbnail(
-          item.videoUrl || (item.videoFileId ? `/files/${item.videoFileId}/view` : ''),
-          thumbnailUrl,
-        );
+        thumbnailUrl = getVideoThumbnail({ ...item, thumbnailUrl });
       } catch (error) {
         console.error('Could not create profile video preview URL:', error);
       }

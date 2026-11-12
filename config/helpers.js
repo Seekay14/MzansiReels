@@ -1,10 +1,26 @@
-import { databases, storage, ID, Query } from './appwrite';
+import { databases, storage, functions, ID, Query } from './appwrite';
 import { Permission, Role } from 'react-native-appwrite';
-import { DATABASE_ID, COLLECTIONS, BUCKET_ID, fileIdFromUrl } from './constants';
+import { Alert } from 'react-native';
+import {
+  DATABASE_ID,
+  COLLECTIONS,
+  BUCKET_ID,
+  PUSH_NOTIFICATION_FUNCTION_ID,
+  fileIdFromUrl,
+} from './constants';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { uploadMediaFile } from './mediaUpload';
-import { sendPushNotification } from './pushNotifications';
-export { getOrCreateChat, sendMessage } from './chatService';
+export { sendMessage } from './chatService';
+
+export function requireAuth(actionName, navigation, currentUser) {
+  if (currentUser) return true;
+
+  Alert.alert('Login Required', `You need to log in to ${actionName}.`, [
+    { text: 'Cancel', style: 'cancel' },
+    { text: 'Log In', onPress: () => navigation.navigate('Login') },
+  ]);
+  return false;
+}
 
 export async function getUserDoc(userId) {
   const res = await databases.listDocuments(DATABASE_ID, COLLECTIONS.users, [
@@ -68,10 +84,13 @@ export function getFileViewUrl(fileId) {
   return storage.getFileViewURL(BUCKET_ID, fileId).toString();
 }
 
-export function getVideoThumbnail(videoUrl, thumbnailUrl) {
-  if (thumbnailUrl) return thumbnailUrl;
+export function getVideoThumbnail(video) {
+  if (!video || typeof video !== 'object') return '';
+  if (typeof video.thumbnailUrl === 'string' && video.thumbnailUrl.trim()) {
+    return video.thumbnailUrl;
+  }
 
-  const fileId = fileIdFromUrl(videoUrl);
+  const fileId = video.videoFileId || fileIdFromUrl(video.videoUrl);
   if (!fileId) return '';
 
   return storage.getFilePreviewURL(BUCKET_ID, fileId, 400, 400).toString();
@@ -121,7 +140,7 @@ export async function sharePost(originalPost, currentUser, newCaption = '') {
   };
 }
 
-export async function togglePostLike(postId, userId, userName, senderAvatar = '') {
+export async function togglePostLike(postId, userId, currentLikes, userName = '', senderAvatar = '') {
   if (!postId || !userId) {
     throw new Error('A post ID and user ID are required to toggle a post like.');
   }
@@ -136,7 +155,10 @@ export async function togglePostLike(postId, userId, userName, senderAvatar = ''
   ]);
   const existingLike = likeResult.documents[0];
   const wasLiked = Boolean(existingLike);
-  const nextCount = Math.max(0, (Number(post.likes) || 0) + (wasLiked ? -1 : 1));
+  const baseLikes = Number.isFinite(Number(currentLikes))
+    ? Number(currentLikes)
+    : Number(post.likes) || 0;
+  const nextCount = Math.max(0, baseLikes + (wasLiked ? -1 : 1));
   let createdLike;
 
   if (wasLiked) {
@@ -160,16 +182,6 @@ export async function togglePostLike(postId, userId, userName, senderAvatar = ''
         await createNotification(post.userId, userName || 'Someone', senderAvatar, 'like', post.$id);
       } catch (error) {
         console.error('Post was liked, but the activity notification could not be created:', error);
-      }
-      try {
-        await sendPushNotification({
-          targetUserId: post.userId,
-          title: 'New Like!',
-          body: `${userName || 'Someone'} liked your post.`,
-          postId: post.$id,
-        });
-      } catch (error) {
-        console.error('Post was liked, but the push notification could not be sent:', error);
       }
     }
     return { isLiked: !wasLiked, likes: Number(updatedPost.likes) || 0 };
@@ -230,16 +242,6 @@ export async function toggleVideoLike(videoId, userId, userName, senderAvatar = 
       } catch (error) {
         console.error('Video was liked, but the activity notification could not be created:', error);
       }
-      try {
-        await sendPushNotification({
-          targetUserId: video.userId,
-          title: 'New Like!',
-          body: `${userName || 'Someone'} liked your post.`,
-          postId: video.$id,
-        });
-      } catch (error) {
-        console.error('Video was liked, but the push notification could not be sent:', error);
-      }
     }
     return {
       isLiked: !wasLiked,
@@ -290,17 +292,20 @@ export async function repairBrokenVideoUrls() {
 
 // Finds the profile document for an account, creating it if sign-up never managed to.
 export async function ensureUserDoc(user) {
+  if (!user?.$id) throw new Error('A signed-in user is required to load a profile.');
   const existing = await getUserDoc(user.$id);
   if (existing) return existing;
-  
-  // 👈 FIXED: Added default username and isVerified
+
   return databases.createDocument(DATABASE_ID, COLLECTIONS.users, ID.unique(), {
     userId: user.$id,
-    name: user.name || user.email?.split('@')[0] || 'Mzansi User',
-    username: `user_${user.$id.slice(-8).toLowerCase()}`,
+    name: '',
+    username: '',
+    avatarUrl: '',
     followers: 0,
     following: 0,
-    isVerified: false, 
+    pushNotifications: true,
+    isPrivate: false,
+    isVerified: false,
     interests: [],
     profileSetupComplete: false,
     onboardingComplete: false,
@@ -311,7 +316,7 @@ export async function createNotification(targetUserId, senderName, senderAvatar,
   if (!targetUserId || !type) {
     throw new Error('A target user and notification type are required.');
   }
-  return databases.createDocument(
+  const notification = await databases.createDocument(
     DATABASE_ID,
     COLLECTIONS.notifications,
     ID.unique(),
@@ -323,6 +328,7 @@ export async function createNotification(targetUserId, senderName, senderAvatar,
       postId: postId || '',
       isRead: false,
       createdAt: new Date().toISOString(),
+      shares: 0,
     },
     [
       Permission.read(Role.user(targetUserId)),
@@ -330,6 +336,33 @@ export async function createNotification(targetUserId, senderName, senderAvatar,
       Permission.delete(Role.user(targetUserId)),
     ],
   );
+
+  const actorName = senderName || 'Someone';
+  const notificationCopy = {
+    like: { title: 'New Like!', body: `${actorName} liked your post.` },
+    comment: { title: 'New Comment!', body: `${actorName} commented on your post.` },
+    follow: { title: 'New Follower!', body: `${actorName} followed you.` },
+    message: { title: 'New Message', body: `${actorName} sent you a message.` },
+  }[type] || { title: 'New Activity', body: `${actorName} sent you a notification.` };
+
+  try {
+    const recipientProfile = await getUserDoc(targetUserId);
+    if (recipientProfile?.pushNotifications === false) return notification;
+
+    await functions.createExecution({
+      functionId: PUSH_NOTIFICATION_FUNCTION_ID,
+      body: JSON.stringify({
+        targetUserId,
+        ...notificationCopy,
+        postId: postId || '',
+      }),
+      async: true,
+    });
+  } catch (error) {
+    console.error('Activity notification was created, but push could not be triggered or preference checked:', error);
+  }
+
+  return notification;
 }
 
 export async function notify(toUserId, senderName, type, senderAvatar = '', postId = '') {

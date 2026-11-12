@@ -88,7 +88,9 @@ export default function SearchScreen({ navigation }) {
   ), [q, searchResults, allVideos]);
   
   const users = useMemo(() => (q ? allUsers.filter((u) => (
-    u.name?.toLowerCase().includes(q) || u.username?.toLowerCase().includes(q)
+    u.userId && (
+      u.name?.toLowerCase().includes(q) || u.username?.toLowerCase().includes(q)
+    )
   )) : allUsers), [q, allUsers]);
   const popularVideos = useMemo(() => [...videos].sort(
     (a, b) => ((Number(b.likes) || 0) + (Number(b.views) || 0))
@@ -201,14 +203,14 @@ export default function SearchScreen({ navigation }) {
         />
       ) : (
         <FlatList
-          data={users}
+          data={users.filter((item) => item.userId)}
           keyExtractor={(u) => u.$id}
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.userRow} onPress={() => openUser(item.userId, item.name)}>
-              <Avatar uri={item.avatarUrl} userId={item.userId} name={item.name} size={46} />
+            <TouchableOpacity style={styles.userRow} onPress={() => openUser(item.userId, item.username || item.name)}>
+              <Avatar uri={item.avatarUrl} userId={item.userId} name={item.username || item.name} size={46} />
               <View style={{ marginLeft: 12, flex: 1 }}>
-                <Text style={styles.userName}>@{item.name}</Text>
-                <Text style={styles.userMeta}>{item.followers || 0} followers</Text>
+                <Text style={styles.userName}>{item.name || item.username || 'Mzansi User'}</Text>
+                <Text style={styles.userMeta}>@{item.username || 'user'} · {item.followers || 0} followers</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color="#555" />
             </TouchableOpacity>

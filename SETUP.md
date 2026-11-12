@@ -25,10 +25,43 @@ Create both in database `6af0bc84001abbbcb856`, then paste their IDs into `confi
 
 Add an index on each collection for the fields you query (likes: `videoId`, `userId`; follows: `followerId`, `followingId`).
 
-Permissions: for every collection the app writes to (videos, comments, users, messages,
-notifications, likes, follows), give role **Users** Create, Read, Update and Delete while
-developing. Tighten later with document-level security.
-Bucket `6af0bf150026128b0048`: Users create/delete, Any read (video and avatar URLs are public views).
+Permissions: grant each collection only the operations the app needs. Enable document
+security for messages, chats, and typing status. Do not grant collection-level access to
+messages or chats; their writes go through the authenticated `send-message` Appwrite
+Function so the server can safely assign participant permissions. Message documents allow
+both participants to read, and only the sender to edit or delete. The recipient marks
+messages read through the function. Chat documents allow participant reads/deletes; the
+function updates the preview.
+
+Deploy `send-message-function` as an Appwrite Function with ID **`send-message`**, enable
+execution by authenticated users, set `index.js` as its entrypoint, and install the
+dependencies from its `package.json`.
+Configure these function variables:
+
+| Variable | Value |
+|---|---|
+| `APPWRITE_ENDPOINT` | `https://cloud.appwrite.io/v1` (or your Appwrite endpoint) |
+| `APPWRITE_PROJECT_ID` | `6af0b93b00320e635f66` |
+| `APPWRITE_API_KEY` | Server-only API key with database read/write and file read/write scopes |
+| `DATABASE_ID` | `6af0bc84001abbbcb856` |
+| `USERS_COLLECTION_ID` | `6af0c69b0019c1c74d74` |
+| `MESSAGES_COLLECTION_ID` | `6af0c7fd002e8d46827c` |
+| `CHATS_COLLECTION_ID` | `6af324010030906d4c0b` |
+| `BLOCKS_COLLECTION_ID` | `6af31db90012d83cf0bb` |
+| `TYPING_COLLECTION_ID` | `6af31c57001d52c8fbd0` |
+| `STORAGE_BUCKET_ID` | `6af0bf150026128b0048` |
+
+Keep the API key only in Function secrets/environment; never put it in the Expo app.
+Enable file security on the existing storage bucket and remove broad bucket-level read
+access. Public feed/profile uploads can retain per-file public read permissions, while
+message attachments are shared only with the chat participants by the Function.
+
+Add indexes to the existing collections used by messaging queries: `users.userId`,
+`users.name`, `users.username`; `messages.chatId` and a composite `messages.receiverId` +
+`messages.isRead`; `chats.participants` (array index) and `chats.updatedAt`; and a
+composite `blocks.blockerId` + `blocks.blockedId`. Keep the existing collection IDs; do
+not create replacement collections. Check any other collection permissions separately
+before deployment.
 
 The likes and follows collections need no attributes beyond those listed above.
 

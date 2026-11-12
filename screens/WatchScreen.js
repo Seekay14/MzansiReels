@@ -15,8 +15,11 @@ export default function WatchScreen({ route, navigation }) {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const focused = useIsFocused();
-  const muted = false;
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [muted, setMuted] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(() => {
+    const initialIndex = allVideos?.findIndex((item) => item.$id === video.$id) ?? 0;
+    return Math.max(0, initialIndex);
+  });
   const [deletedVideoIds, setDeletedVideoIds] = useState([]);
   const [blockedUserIds, setBlockedUserIds] = useState([]);
 
@@ -24,9 +27,14 @@ export default function WatchScreen({ route, navigation }) {
   const feed = (allVideos && allVideos.length > 0 ? allVideos : [video])
     .filter((item) => !deletedVideoIds.includes(item.$id) && !blockedUserIds.includes(item.userId));
 
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }) => {
-    if (viewableItems.length > 0) setActiveIndex(viewableItems[0].index);
+    const activeItem = viewableItems.find((item) => (
+      item.isViewable && Number.isInteger(item.index)
+    ));
+    if (activeItem) setActiveIndex(activeItem.index);
   }).current;
+  const visibleActiveIndex = Math.min(activeIndex, Math.max(feed.length - 1, 0));
 
   return (
     <View style={styles.container}>
@@ -37,9 +45,11 @@ export default function WatchScreen({ route, navigation }) {
         renderItem={({ item, index }) => (
           <VideoCard
             item={item}
+            navigation={navigation}
             height={SCREEN_HEIGHT}
-            isActive={focused && index === activeIndex}
+            isActive={focused && index === visibleActiveIndex}
             muted={muted}
+            onToggleMute={() => setMuted((current) => !current)}
             onDeleted={(videoId) => setDeletedVideoIds((current) => [...current, videoId])}
             onNotInterested={(videoId) => setDeletedVideoIds((current) => [...current, videoId])}
             onBlockUser={async (userId) => {
@@ -55,7 +65,7 @@ export default function WatchScreen({ route, navigation }) {
         pagingEnabled
         showsVerticalScrollIndicator={false}
         onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
+        viewabilityConfig={viewabilityConfig}
       />
       
       {/* Floating Glassy Back Button */}

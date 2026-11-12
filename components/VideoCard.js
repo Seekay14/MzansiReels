@@ -1,6 +1,6 @@
-import React, { useCallback, useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
-  StyleSheet, Text, View, TouchableOpacity, Pressable, Modal, TextInput, Switch,
+  AppState, StyleSheet, Text, View, TouchableOpacity, Pressable, Modal, TextInput, Switch,
   KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Image, Animated, Share,
   TouchableWithoutFeedback,
 } from 'react-native';
@@ -9,17 +9,14 @@ import { useEvent } from 'expo';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
 import PostCommentModal from './PostCommentModal';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Network from 'expo-network';
 import { databases, storage, ID, Permission, Query, Role } from '../config/appwrite';
 import { BUCKET_ID, DATABASE_ID, COLLECTIONS, COLORS, fileIdFromUrl } from '../config/constants';
 import { useAuth } from '../context/AuthContext';
-import { getUserDoc, notify, reportVideo, toggleVideoLike } from '../config/helpers';
+import { getUserDoc, notify, reportVideo, requireAuth, toggleVideoLike } from '../config/helpers';
 import Avatar from './Avatar';
 
 export default function VideoCard({
@@ -28,7 +25,9 @@ export default function VideoCard({
   isActive,
   height,
   muted = false,
+  onToggleMute,
   onOpenProfile,
+  navigation,
   onDeleted,
   onNotInterested,
   onBlockUser,
@@ -58,24 +57,27 @@ export default function VideoCard({
   const [isSharingVideo, setIsSharingVideo] = useState(false);
   const [isDeletingVideo, setIsDeletingVideo] = useState(false);
   const [isDeleted, setIsDeleted] = useState(false);
-  const [dataSaverEnabled, setDataSaverEnabled] = useState(false);
-  const [dataSaverLoaded, setDataSaverLoaded] = useState(false);
-  const [isCellular, setIsCellular] = useState(false);
-  const [manualPlayback, setManualPlayback] = useState(false);
+  const [appIsActive, setAppIsActive] = useState(
+    AppState.currentState === 'active' || AppState.currentState === null,
+  );
 
   const heartScale = useRef(new Animated.Value(1)).current;
   const pausedOverlayOpacity = useRef(new Animated.Value(0)).current;
   const busy = useRef(false);
   const fetchedMeta = useRef(false);
   const viewCounted = useRef(false);
-  const blocksAutoplay = dataSaverLoaded && dataSaverEnabled && isCellular && !manualPlayback;
-  const autoplayReady = dataSaverLoaded && !blocksAutoplay;
+  useEffect(() => {
+    fetchedMeta.current = false;
+    setIsLiked(false);
+    setIsBookmarked(false);
+    setIsFollowing(false);
+  }, [item.$id, user?.$id]);
 
   // ── expo-video player ──
   const player = useVideoPlayer(item.videoUrl, (p) => {
     p.loop = true;
-    p.muted = muted;
-    if (isActive && !paused && autoplayReady) p.play();
+    p.audioMixingMode = 'auto';
+    p.muted = muted || !isActive;
   });
   const { isPlaying } = useEvent(player, 'playingChange', { isPlaying: player?.playing ?? false });
 
@@ -83,49 +85,32 @@ export default function VideoCard({
     setVideoCaption(item.content || item.caption || '');
     setVideoCategory(item.category || 'General');
     setIsPrivate(item.isPrivate === true);
-    setManualPlayback(false);
   }, [item.$id, item.content, item.caption, item.category, item.isPrivate]);
 
-  useFocusEffect(useCallback(() => {
-    if (!isActive) return undefined;
-    let active = true;
-    setDataSaverLoaded(false);
-    const updateNetworkState = (networkState) => {
-      setIsCellular(networkState.type === Network.NetworkStateType.CELLULAR);
-    };
-
-    Promise.all([
-      user?.$id ? AsyncStorage.getItem(`@mzansireels/settings/${user.$id}`) : Promise.resolve(null),
-      Network.getNetworkStateAsync(),
-    ]).then(([storedPreferences, networkState]) => {
-      if (!active) return;
-      const saved = storedPreferences ? JSON.parse(storedPreferences) : {};
-      setDataSaverEnabled(saved.dataSaver === true);
-      updateNetworkState(networkState);
-      setDataSaverLoaded(true);
-    }).catch((error) => {
-      console.error('Could not load data-saver preference or network state:', error);
-      if (active) setDataSaverLoaded(true);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      setAppIsActive(nextState === 'active');
     });
+    return () => subscription.remove();
+  }, []);
 
-    const subscription = Network.addNetworkStateListener(updateNetworkState);
-    return () => {
-      active = false;
-      subscription.remove();
-    };
-  }, [isActive, user?.$id]));
+  useEffect(() => {
+    if (!player) return;
+    player.muted = muted || !isActive || !appIsActive;
+  }, [appIsActive, isActive, muted, player]);
 
   useEffect(() => {
     if (!player) return;
     try {
-      if (isActive && !paused && autoplayReady) player.play();
-      else player.pause();
+      if (isActive && appIsActive && !paused) {
+        player.play();
+      } else {
+        player.pause();
+      }
     } catch (error) {
-      console.error('Player action failed:', error);
+      console.error(`Could not update Reel playback for ${item.$id}:`, error);
     }
-  }, [autoplayReady, isActive, paused, player]);
-
-  useEffect(() => { if (player) player.muted = muted; }, [muted, player]);
+  }, [appIsActive, isActive, item.$id, paused, player]);
 
   useEffect(() => {
     let active = true;
@@ -145,18 +130,13 @@ export default function VideoCard({
 
   useEffect(() => {
     Animated.timing(pausedOverlayOpacity, {
-      toValue: paused || blocksAutoplay ? 1 : 0,
-      duration: paused || blocksAutoplay ? 220 : 160,
+      toValue: paused ? 1 : 0,
+      duration: paused ? 220 : 160,
       useNativeDriver: true,
     }).start();
-  }, [blocksAutoplay, paused, pausedOverlayOpacity]);
+  }, [paused, pausedOverlayOpacity]);
 
   const togglePlayback = () => {
-    if (blocksAutoplay) {
-      setManualPlayback(true);
-      setPaused(false);
-      return;
-    }
     setPaused((wasPaused) => !wasPaused);
   };
 
@@ -166,7 +146,7 @@ export default function VideoCard({
       return;
     }
 
-    if (paused || blocksAutoplay || !isPlaying || viewCounted.current || videoCollectionId === COLLECTIONS.posts) return undefined;
+    if (paused || !isPlaying || viewCounted.current || videoCollectionId === COLLECTIONS.posts) return undefined;
 
     const timer = setTimeout(async () => {
       viewCounted.current = true;
@@ -185,7 +165,7 @@ export default function VideoCard({
     }, 3000);
 
     return () => clearTimeout(timer);
-  }, [blocksAutoplay, isActive, isPlaying, item.$id, paused, videoCollectionId]);
+  }, [isActive, isPlaying, item.$id, paused, videoCollectionId]);
 
   // Detect native playback errors (Just logs, does not hide video)
   const { status, error } = useEvent(player, 'statusChange', { status: player?.status });
@@ -195,19 +175,19 @@ export default function VideoCard({
 
   // ── Fetch Meta (Likes, Comments, Bookmarks, Follows) ──
   useEffect(() => {
-    if (!isActive || fetchedMeta.current || !user) return;
+    if (!isActive || fetchedMeta.current) return;
     fetchedMeta.current = true;
     
     (async () => {
-      // 1. Check if Liked
-      try {
-        const res = await databases.listDocuments(DATABASE_ID, COLLECTIONS.videoLikes, [
-          Query.equal('videoId', item.$id), Query.equal('userId', user.$id), Query.limit(1),
-        ]);
-        if (res.documents[0]) setIsLiked(true);
-      } catch (e) { console.log(e.message); }
+      if (user?.$id) {
+        try {
+          const res = await databases.listDocuments(DATABASE_ID, COLLECTIONS.videoLikes, [
+            Query.equal('videoId', item.$id), Query.equal('userId', user.$id), Query.limit(1),
+          ]);
+          if (res.documents[0]) setIsLiked(true);
+        } catch (e) { console.log(e.message); }
+      }
 
-      // 2. Get Comment Count
       try {
         const res = await databases.listDocuments(DATABASE_ID, COLLECTIONS.comments, [
           Query.equal('videoId', item.$id), Query.limit(1),
@@ -215,31 +195,31 @@ export default function VideoCard({
         setCommentCount(res.total);
       } catch (e) { console.log(e.message); }
 
-      // 3. Check if Bookmarked
-      try {
-        const res = await databases.listDocuments(DATABASE_ID, COLLECTIONS.bookmarks, [
-          Query.equal('videoId', item.$id), Query.equal('userId', user.$id), Query.limit(1),
-        ]);
-        if (res.documents[0]) setIsBookmarked(true);
-      } catch (e) { console.log(e.message); }
-
-      // 4. Check if Following Creator
-      if (item.userId !== user.$id) {
+      if (user?.$id) {
         try {
-          const res = await databases.listDocuments(DATABASE_ID, COLLECTIONS.follows, [
-            Query.equal('followerId', user.$id), 
-            Query.equal('followingId', item.userId), 
-            Query.limit(1)
+          const res = await databases.listDocuments(DATABASE_ID, COLLECTIONS.bookmarks, [
+            Query.equal('videoId', item.$id), Query.equal('userId', user.$id), Query.limit(1),
           ]);
-          if (res.documents[0]) setIsFollowing(true);
+          if (res.documents[0]) setIsBookmarked(true);
         } catch (e) { console.log(e.message); }
+
+        if (item.userId !== user.$id) {
+          try {
+            const res = await databases.listDocuments(DATABASE_ID, COLLECTIONS.follows, [
+              Query.equal('followerId', user.$id),
+              Query.equal('followingId', item.userId),
+              Query.limit(1)
+            ]);
+            if (res.documents[0]) setIsFollowing(true);
+          } catch (e) { console.log(e.message); }
+        }
       }
     })();
-  }, [isActive, user, item.$id, item.userId]);
+  }, [isActive, user?.$id, item.$id, item.userId]);
 
   // ── Actions ──
   const handleLike = async () => {
-    if (busy.current || !user) return;
+    if (!requireAuth('like this Reel', navigation, user) || busy.current) return;
     busy.current = true;
 
     Animated.sequence([
@@ -267,7 +247,7 @@ export default function VideoCard({
   };
 
   const handleFollow = async () => {
-    if (!user) return;
+    if (!requireAuth('follow this creator', navigation, user)) return;
     try {
       if (isFollowing) {
         const res = await databases.listDocuments(DATABASE_ID, COLLECTIONS.follows, [
@@ -395,6 +375,7 @@ export default function VideoCard({
   };
 
   const shareVideo = async () => {
+    if (!requireAuth('share this Reel', navigation, user)) return;
     setIsSharingVideo(true);
     try {
       if (Platform.OS === 'web') {
@@ -511,7 +492,7 @@ export default function VideoCard({
   if (isDeleted) return null;
 
   const handleBookmark = async () => {
-    if (!user) return;
+    if (!requireAuth('bookmark this Reel', navigation, user)) return;
     try {
       if (isBookmarked) {
         const res = await databases.listDocuments(DATABASE_ID, COLLECTIONS.bookmarks, [
@@ -550,6 +531,19 @@ export default function VideoCard({
             nativeControls={false}
             allowsFullscreen={false}
           />
+          {status === 'loading' ? (
+            <ActivityIndicator style={styles.playerIndicator} color="#fff" size="large" />
+          ) : status === 'error' ? (
+            <View style={styles.playerError} pointerEvents="none">
+              <Text style={styles.playerErrorText}>
+                {error?.message || 'This Reel could not be played.'}
+              </Text>
+            </View>
+          ) : !item.videoUrl ? (
+            <View style={styles.playerError} pointerEvents="none">
+              <Text style={styles.playerErrorText}>This Reel has no playable video URL.</Text>
+            </View>
+          ) : null}
         </View>
       </TouchableWithoutFeedback>
 
@@ -594,6 +588,14 @@ export default function VideoCard({
 
       {/* 5. RIGHT FLOATING ACTION COLUMN */}
       <View style={[styles.rightOverlay, { bottom: insets.bottom + 20 }]}>
+        <TouchableOpacity
+          style={styles.muteButton}
+          onPress={onToggleMute}
+          accessibilityRole="button"
+          accessibilityLabel={muted ? 'Unmute Reel audio' : 'Mute Reel audio'}
+        >
+          <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={22} color="#fff" />
+        </TouchableOpacity>
         <View style={styles.avatarSection}>
           <TouchableOpacity onPress={() => onOpenProfile?.(item)}>
             <View style={styles.avatarWrapper}>
@@ -620,7 +622,12 @@ export default function VideoCard({
           <Text style={styles.actionText}>{likes}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionButton} onPress={() => setIsCommentsVisible(true)}>
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={() => {
+            if (requireAuth('comment on this Reel', navigation, user)) setIsCommentsVisible(true);
+          }}
+        >
           <Ionicons name="chatbubble" size={34} color="#fff" />
           <Text style={styles.actionText}>{commentCount}</Text>
         </TouchableOpacity>
@@ -649,6 +656,7 @@ export default function VideoCard({
         visible={isCommentsVisible}
         videoId={item.$id}
         user={user}
+        navigation={navigation}
         onClose={() => setIsCommentsVisible(false)}
         onCommentsLoaded={setCommentCount}
         onOpenProfile={(commentUserId, commentUserName) => onOpenProfile?.({
@@ -865,6 +873,15 @@ const styles = StyleSheet.create({
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     width: '100%', height: '100%',
   },
+  playerIndicator: { ...StyleSheet.absoluteFillObject, alignSelf: 'center' },
+  playerError: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 36,
+    backgroundColor: 'rgba(0,0,0,0.42)',
+  },
+  playerErrorText: { color: '#fff', fontSize: 14, textAlign: 'center' },
 
   // Gradient overlay at bottom
   bottomGradient: {
@@ -885,6 +902,17 @@ const styles = StyleSheet.create({
     maxWidth: 64,
     alignItems: 'center',
     zIndex: 10,
+  },
+  muteButton: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 15,
+    borderRadius: 21,
+    backgroundColor: 'rgba(0,0,0,0.48)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
   },
 
   avatarSection: {

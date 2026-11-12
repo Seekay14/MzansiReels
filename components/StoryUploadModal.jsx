@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -7,6 +7,7 @@ import {
   Platform,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -18,16 +19,25 @@ import { uploadStory } from '../config/storyService';
 
 const MAX_STORY_VIDEO_MS = 45_000;
 
-export default function StoryUploadModal({ visible, user, onClose, onUploaded }) {
+export default function StoryUploadModal({ visible, user, onClose, onUploaded, mode = 'story' }) {
   const [asset, setAsset] = useState(null);
   const [mediaType, setMediaType] = useState('');
+  const [textContent, setTextContent] = useState('');
   const [durationVerified, setDurationVerified] = useState(false);
+  const [verifiedDurationMs, setVerifiedDurationMs] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const uploadLock = useRef(false);
 
   const clearSelection = () => {
     setAsset(null);
     setMediaType('');
+    setTextContent('');
     setDurationVerified(false);
+    setVerifiedDurationMs(null);
+    setUploadMessage('');
+    setUploadProgress(0);
   };
 
   const rejectLongVideo = () => {
@@ -59,6 +69,7 @@ export default function StoryUploadModal({ visible, user, onClose, onUploaded })
       }
 
       setAsset({ ...selected, type });
+      setTextContent('');
       setMediaType(type);
       setDurationVerified(type === 'image');
     } catch (error) {
@@ -78,27 +89,49 @@ export default function StoryUploadModal({ visible, user, onClose, onUploaded })
       return;
     }
     setDurationVerified(true);
+    setVerifiedDurationMs(status.durationMillis);
   };
 
   const shareStory = async () => {
-    if (!user?.$id || !asset?.uri || uploading || (mediaType === 'video' && !durationVerified)) return;
+    if (uploading || uploadLock.current || (mediaType === 'video' && !durationVerified)) return;
+    if (!user?.$id) {
+      Alert.alert('Sign in required', 'Sign in before sharing a story.');
+      return;
+    }
+    if (mediaType === 'text' ? !textContent.trim() : !asset?.uri) {
+      Alert.alert('Add content', 'Write a text status or select an image or video.');
+      return;
+    }
+    uploadLock.current = true;
     setUploading(true);
+    setUploadMessage('Validating story…');
+    setUploadProgress(0);
     try {
-      const story = await uploadStory(asset, user);
+      const story = await uploadStory(asset, user, {
+        content: textContent,
+        mediaType,
+        durationMs: verifiedDurationMs,
+        onStatusChange: ({ message }) => setUploadMessage(message || ''),
+        onProgress: ({ progress }) => setUploadProgress(Math.round(progress)),
+      });
       onUploaded?.(story);
       clearSelection();
-      Alert.alert('Story uploaded!', 'Your story is available for the next 24 hours.', [
-        { text: 'OK', onPress: onClose },
-      ]);
+      Alert.alert(
+        'Success',
+        'Story uploaded!',
+        [{ text: 'OK', onPress: onClose }],
+      );
     } catch (error) {
       console.error('Could not upload story:', error);
       if (error.code === 'STORY_VIDEO_TOO_LONG') {
-        clearSelection();
+        setUploadMessage(error.message);
         Alert.alert('Video too long. Stories must be 45 seconds or less.');
       } else {
-        Alert.alert('Upload failed', error.message || 'Your story could not be shared.');
+        setUploadMessage(error.message || 'Your story could not be shared.');
+        Alert.alert('Upload Failed', error.message || 'Your story could not be shared.');
       }
     } finally {
+      uploadLock.current = false;
       setUploading(false);
     }
   };
@@ -108,6 +141,13 @@ export default function StoryUploadModal({ visible, user, onClose, onUploaded })
     clearSelection();
     onClose?.();
   };
+  const chooseText = () => {
+    clearSelection();
+    setMediaType('text');
+  };
+  const canShare = mediaType === 'text'
+    ? Boolean(textContent.trim())
+    : Boolean(asset);
 
   return (
     <Modal
@@ -121,20 +161,40 @@ export default function StoryUploadModal({ visible, user, onClose, onUploaded })
           <TouchableOpacity onPress={close} disabled={uploading} accessibilityLabel="Close story upload">
             <Ionicons name="close" size={26} color="#fff" />
           </TouchableOpacity>
-          <Text style={styles.title}>Add to your story</Text>
+          <Text style={styles.title}>{mode === 'status' ? 'Add Status' : 'Add to your story'}</Text>
           <TouchableOpacity
             onPress={shareStory}
-            disabled={!asset || uploading || (mediaType === 'video' && !durationVerified)}
+            disabled={!canShare || uploading || (mediaType === 'video' && !durationVerified)}
             accessibilityRole="button"
-            accessibilityLabel="Share story"
+            accessibilityLabel={mode === 'status' ? 'Post status' : 'Share story'}
           >
             {uploading
               ? <ActivityIndicator size="small" color={COLORS.cyan} />
-              : <Text style={[styles.share, (!asset || (mediaType === 'video' && !durationVerified)) && styles.disabled]}>Share</Text>}
+              : (
+                <Text style={[styles.share, (!canShare || (mediaType === 'video' && !durationVerified)) && styles.disabled]}>
+                  {mode === 'status' ? 'Post' : 'Share'}
+                </Text>
+              )}
           </TouchableOpacity>
         </View>
 
-        {asset ? (
+        {mediaType === 'text' ? (
+          <View style={styles.textEditor}>
+            <TextInput
+              style={styles.textInput}
+              value={textContent}
+              onChangeText={setTextContent}
+              placeholder="Write a status..."
+              placeholderTextColor="#8B95A7"
+              maxLength={500}
+              multiline
+              autoFocus
+              textAlignVertical="center"
+              accessibilityLabel="Text status"
+            />
+            <Text style={styles.characterCount}>{textContent.length}/500</Text>
+          </View>
+        ) : asset ? (
           <View style={styles.preview}>
             {mediaType === 'image' ? (
               <Image source={{ uri: asset.uri }} style={styles.media} resizeMode="contain" />
@@ -176,13 +236,23 @@ export default function StoryUploadModal({ visible, user, onClose, onUploaded })
               <Ionicons name="videocam-outline" size={32} color={COLORS.cyan} />
               <Text style={styles.choiceText}>Choose video (45s max)</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.choice} onPress={chooseText} disabled={uploading}>
+              <Ionicons name="text-outline" size={32} color={COLORS.cyan} />
+              <Text style={styles.choiceText}>Write a text status</Text>
+            </TouchableOpacity>
           </View>
         )}
         {uploading ? (
           <View style={styles.uploading}>
             <ActivityIndicator color={COLORS.cyan} />
-            <Text style={styles.verification}>Uploading your story…</Text>
+            <Text style={styles.verification}>
+              {uploadMessage || 'Uploading your story…'}
+              {uploadProgress > 0 ? ` ${uploadProgress}%` : ''}
+            </Text>
           </View>
+        ) : null}
+        {!uploading && uploadMessage ? (
+          <Text style={styles.verification}>{uploadMessage}</Text>
         ) : null}
       </View>
     </Modal>
@@ -215,6 +285,17 @@ const styles = StyleSheet.create({
   },
   choiceText: { color: '#F3F5F7', fontSize: 15, fontWeight: '700' },
   preview: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 18 },
+  textEditor: { flex: 1, justifyContent: 'center', padding: 24 },
+  textInput: {
+    minHeight: 220,
+    padding: 22,
+    borderRadius: 18,
+    backgroundColor: '#171A22',
+    color: '#F3F5F7',
+    fontSize: 22,
+    textAlign: 'center',
+  },
+  characterCount: { color: '#8B95A7', fontSize: 12, marginTop: 10, textAlign: 'right' },
   media: { width: '100%', height: '85%' },
   durationProbe: { position: 'absolute', width: 1, height: 1, opacity: 0 },
   verification: { marginTop: 16, color: '#B8C0CA', fontSize: 13 },

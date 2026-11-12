@@ -204,7 +204,11 @@ export default function AuthScreen({ navigation }) {
   };
 
   const handleContinue = () => {
-    if (pendingAccount?.user) setUser(pendingAccount.user);
+    if (pendingAccount?.user) {
+      setUser(pendingAccount.user, {
+        skipOnboarding: pendingAccount.profile.profileSetupComplete === true,
+      });
+    }
   };
 
   const handleSwitchAccount = async () => {
@@ -215,7 +219,6 @@ export default function AuthScreen({ navigation }) {
       setUser(null);
       setPendingAccount(null);
       setActiveTab('login');
-      setName('');
       setEmail('');
       setPassword('');
       setShowPassword(false);
