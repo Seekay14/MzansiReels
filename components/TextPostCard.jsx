@@ -20,6 +20,7 @@ import AnalyticsModal from './AnalyticsModal';
 import PostCommentModal from './PostCommentModal';
 import ShareModal from './ShareModal';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import { useTheme } from '../context/ThemeContext';
 
 function InlinePostVideo({ uri }) {
   const player = useVideoPlayer(uri, (instance) => {
@@ -64,6 +65,7 @@ function formatNumber(value) {
 }
 
 export default function TextPostCard({ post, user, navigation, onHide, onDelete, onShared, desktop = false }) {
+  const { colors } = useTheme();
   const [likes, setLikes] = useState(Number(post.likes) || 0);
   const [views, setViews] = useState(Number(post.views) || 0);
   const [shares, setShares] = useState(Number(post.shares) || 0);
@@ -249,7 +251,12 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
 
   return (
     <>
-      <View style={[styles.card, desktop && styles.desktopCard]}>
+      <View style={[
+        styles.card,
+        { backgroundColor: colors.card, borderColor: colors.border },
+        desktop && styles.desktopCard,
+        desktop && { backgroundColor: colors.card, borderColor: colors.border },
+      ]}>
         <View style={styles.postHeader}>
           <TouchableOpacity
             onPress={() => openProfile(post.userId, post.userName)}
@@ -271,13 +278,13 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
               accessibilityRole="button"
               accessibilityLabel={`View ${post.userName || 'creator'} profile`}
             >
-              <Text style={styles.authorName}>{post.userName || 'Mzansi Creator'}</Text>
+              <Text style={[styles.authorName, { color: colors.text }]}>{post.userName || 'Mzansi Creator'}</Text>
               {authorVerified ? (
                 <Ionicons name="checkmark-circle" size={15} color={COLORS.cyan} />
               ) : null}
             </TouchableOpacity>
             <View style={styles.postMeta}>
-              <Text style={styles.postTime}>{postedAt ? timeAgo(postedAt) : 'Recently'}</Text>
+              <Text style={[styles.postTime, { color: colors.muted }]}>{postedAt ? timeAgo(postedAt) : 'Recently'}</Text>
               {isOwner ? (
                 <>
                   <TouchableOpacity
@@ -288,7 +295,7 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
                   >
                     <Ionicons name="bar-chart-outline" size={14} color={COLORS.cyan} />
                   </TouchableOpacity>
-                  <Text style={styles.postTime}> · {formatNumber(views)} Views</Text>
+                  <Text style={[styles.postTime, { color: colors.muted }]}> · {formatNumber(views)} Views</Text>
                 </>
               ) : null}
             </View>
@@ -319,7 +326,7 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
             </TouchableOpacity>
           </View>
         ) : null}
-        {post.content ? <Text style={styles.postContent}>{post.content}</Text> : null}
+        {post.content ? <Text style={[styles.postContent, { color: colors.text }]}>{post.content}</Text> : null}
         {post.postType === 'image' && post.imageUrl ? (
           <Image source={{ uri: post.imageUrl }} style={styles.postImage} resizeMode="cover" />
         ) : null}
@@ -341,6 +348,16 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
         <View style={styles.actions}>
           <View style={styles.engagementActions}>
             <TouchableOpacity
+              style={styles.actionButton}
+              onPress={handleLike}
+              disabled={liking}
+              accessibilityRole="button"
+              accessibilityLabel={liked ? 'Unlike post' : 'Like post'}
+            >
+              <Ionicons name={liked ? 'heart' : 'heart-outline'} size={20} color={liked ? COLORS.cyan : '#AAB1BA'} />
+              <Text style={[styles.actionCount, liked && styles.likedCount]}>{formatNumber(likes)}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               style={styles.commentButton}
               onPress={() => {
                 if (requireAuth('comment on this post', navigation, user)) setCommentModalVisible(true);
@@ -361,16 +378,6 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
             >
               <Ionicons name="repeat-outline" size={20} color="#AAB1BA" />
               <Text style={styles.actionCount}>{formatNumber(shares)}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={handleLike}
-              disabled={liking}
-              accessibilityRole="button"
-              accessibilityLabel={liked ? 'Unlike post' : 'Like post'}
-            >
-              <Ionicons name={liked ? 'heart' : 'heart-outline'} size={20} color={liked ? COLORS.cyan : '#AAB1BA'} />
-              <Text style={[styles.actionCount, liked && styles.likedCount]}>{formatNumber(likes)}</Text>
             </TouchableOpacity>
           </View>
         </View>

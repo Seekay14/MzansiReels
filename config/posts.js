@@ -1,7 +1,7 @@
 import { Alert } from 'react-native';
 import { databases, ID } from './appwrite';
 import { COLLECTIONS, DATABASE_ID } from './constants';
-import { getFileViewUrl } from './helpers';
+import { generateAndUploadThumbnail, getFileViewUrl } from './helpers';
 import { uploadMediaFile } from './mediaUpload';
 
 export async function createPost({
@@ -59,12 +59,36 @@ export async function createPost({
       ? { ...sharedData, videoUrl }
       : { ...sharedData, imageUrl, videoUrl, shares: 0 };
 
-    return await databases.createDocument(
+    const documentId = ID.unique();
+    const document = await databases.createDocument(
       DATABASE_ID,
       postType === 'video' ? COLLECTIONS.videos : COLLECTIONS.posts,
-      ID.unique(),
+      documentId,
       data,
     );
+
+    if (postType !== 'video') return document;
+
+    try {
+      const thumbnailUrl = await generateAndUploadThumbnail(asset.uri, documentId, currentUser.$id);
+      const parsedThumbnailUrl = new URL(thumbnailUrl);
+      if (parsedThumbnailUrl.protocol !== 'http:' && parsedThumbnailUrl.protocol !== 'https:') {
+        throw new Error('Could not generate a valid video thumbnail URL.');
+      }
+      return await databases.updateDocument(
+        DATABASE_ID,
+        COLLECTIONS.videos,
+        documentId,
+        { thumbnailUrl: parsedThumbnailUrl.toString() },
+      );
+    } catch (error) {
+      console.warn(`Video ${documentId} was posted without a thumbnail:`, error);
+      onUploadStatus?.({
+        status: 'warning',
+        message: 'Video posted, but its thumbnail could not be generated or saved.',
+      });
+      return document;
+    }
   } catch (error) {
     console.error(error);
     Alert.alert('Upload failed', error.message || String(error));

@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import {
   AppState, StyleSheet, Text, View, TouchableOpacity, Pressable, Modal, TextInput, Switch,
   KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Image, Animated, Share,
@@ -38,10 +38,12 @@ export default function VideoCard({
   const usesPostsCollection = videoCollectionId === COLLECTIONS.posts;
 
   const [paused, setPaused] = useState(false);
+  const [needsPlaybackGesture, setNeedsPlaybackGesture] = useState(false);
   const [likes, setLikes] = useState(item.likes || 0);
   const [viewCount, setViewCount] = useState(item.views || 0);
   const [isLiked, setIsLiked] = useState(false);
   const [creatorVerified, setCreatorVerified] = useState(false);
+  const [creatorProfile, setCreatorProfile] = useState(null);
   const [commentCount, setCommentCount] = useState(0);
   const [isCommentsVisible, setIsCommentsVisible] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
@@ -94,7 +96,7 @@ export default function VideoCard({
     return () => subscription.remove();
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!player) return;
     player.muted = muted || !isActive || !appIsActive;
   }, [appIsActive, isActive, muted, player]);
@@ -114,12 +116,16 @@ export default function VideoCard({
 
   useEffect(() => {
     let active = true;
+    setCreatorProfile(null);
+    setCreatorVerified(false);
     if (!item.userId) {
-      setCreatorVerified(false);
       return undefined;
     }
     getUserDoc(item.userId).then((profile) => {
-      if (active) setCreatorVerified(profile?.isVerified === true);
+      if (active) {
+        setCreatorProfile(profile);
+        setCreatorVerified(profile?.isVerified === true);
+      }
     }).catch((error) => {
       console.error('Could not load Reel creator verification status:', error);
     });
@@ -138,6 +144,34 @@ export default function VideoCard({
 
   const togglePlayback = () => {
     setPaused((wasPaused) => !wasPaused);
+  };
+
+  const handleToggleMute = () => {
+    const nextMuted = !muted;
+    if (isActive && player) {
+      player.muted = nextMuted || !appIsActive;
+      if (Platform.OS === 'web' && !nextMuted && !paused && !isPlaying && appIsActive) {
+        try {
+          player.play();
+        } catch (error) {
+          console.error(`Could not start Reel playback for ${item.$id}:`, error);
+        }
+      }
+    }
+    onToggleMute?.();
+  };
+
+  const handlePlayWithSound = () => {
+    if (!isActive || !appIsActive || !player) return;
+    setNeedsPlaybackGesture(false);
+    setPaused(false);
+    if (muted) onToggleMute?.();
+    player.muted = false;
+    try {
+      player.play();
+    } catch (error) {
+      console.error(`Could not start Reel playback for ${item.$id}:`, error);
+    }
   };
 
   useEffect(() => {
@@ -172,6 +206,25 @@ export default function VideoCard({
   useEffect(() => {
     if (status === 'error') console.log('Video playback error:', error);
   }, [status, error]);
+
+  useEffect(() => {
+    if (
+      Platform.OS !== 'web'
+      || !isActive
+      || !appIsActive
+      || paused
+      || isPlaying
+      || status !== 'readyToPlay'
+    ) {
+      setNeedsPlaybackGesture(false);
+      return undefined;
+    }
+
+    const timer = setTimeout(() => {
+      if (!player.playing) setNeedsPlaybackGesture(true);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [appIsActive, isActive, isPlaying, item.$id, paused, player, status]);
 
   // ── Fetch Meta (Likes, Comments, Bookmarks, Follows) ──
   useEffect(() => {
@@ -380,7 +433,7 @@ export default function VideoCard({
     try {
       if (Platform.OS === 'web') {
         await Share.share({
-          message: `Check out @${item.userName}'s video on MzansiReels! ${videoCaption}`,
+          message: `Check out @${creatorUsername}'s video on MzansiReels! ${videoCaption}`,
           url: item.videoUrl,
           title: 'MzansiReels',
         });
@@ -511,6 +564,15 @@ export default function VideoCard({
     } catch (error) { Alert.alert('Error', 'Could not update bookmark.'); }
   };
 
+  const creatorDisplayName = creatorProfile?.displayName
+    || creatorProfile?.name
+    || item.displayName
+    || item.userName
+    || 'Name unavailable';
+  const creatorUsername = creatorProfile?.username
+    || item.username
+    || (item.userName && !/\s/.test(item.userName) ? item.userName : 'username unavailable');
+
   return (
     <View style={[styles.card, { height: height || '100%' }]}>
       
@@ -553,6 +615,17 @@ export default function VideoCard({
       >
         <Ionicons name="play" size={80} color="rgba(255,255,255,0.78)" />
       </Animated.View>
+      {Platform.OS === 'web' && isActive && needsPlaybackGesture && (
+        <TouchableOpacity
+          style={styles.playWithSoundButton}
+          onPress={handlePlayWithSound}
+          accessibilityRole="button"
+          accessibilityLabel="Play Reel with sound"
+        >
+          <Ionicons name="play" size={18} color="#fff" />
+          <Text style={styles.playWithSoundText}>Tap to play with sound</Text>
+        </TouchableOpacity>
+      )}
 
       {/* 4. BOTTOM GRADIENT & OVERLAY */}
       <LinearGradient 
@@ -564,14 +637,16 @@ export default function VideoCard({
       <View style={[styles.bottomOverlay, { bottom: Math.max(insets.bottom, 20) + 10 }]} pointerEvents="box-none">
         <TouchableOpacity
           onPress={() => onOpenProfile?.(item)}
-          style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start' }}
+          style={{ alignSelf: 'flex-start', maxWidth: '100%' }}
           accessibilityRole="button"
-          accessibilityLabel={`View ${item.userName || 'creator'} profile`}
+          accessibilityLabel={`View @${creatorUsername} profile`}
         >
-          <Text style={styles.username}>@{item.userName || 'user'}</Text>
-          {creatorVerified && (
-            <Ionicons name="checkmark-circle" size={16} color={COLORS.cyan} style={{ marginLeft: 5, marginBottom: 6 }} />
-          )}
+          <View style={styles.creatorHandleRow}>
+            <Text style={styles.username} numberOfLines={1} ellipsizeMode="tail">@{creatorUsername}</Text>
+            {creatorVerified && (
+              <Ionicons name="checkmark-circle" size={16} color={COLORS.cyan} />
+            )}
+          </View>
         </TouchableOpacity>
         
         <Text style={styles.caption} numberOfLines={2}>{videoCaption}</Text>
@@ -590,7 +665,7 @@ export default function VideoCard({
       <View style={[styles.rightOverlay, { bottom: insets.bottom + 20 }]}>
         <TouchableOpacity
           style={styles.muteButton}
-          onPress={onToggleMute}
+          onPress={handleToggleMute}
           accessibilityRole="button"
           accessibilityLabel={muted ? 'Unmute Reel audio' : 'Mute Reel audio'}
         >
@@ -602,7 +677,7 @@ export default function VideoCard({
               <Avatar
                 userId={item.userId}
                 fallbackUrl={item.avatarUrl}
-                name={item.userName}
+                name={creatorDisplayName}
                 size={48}
               />
             </View>
@@ -882,6 +957,21 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.42)',
   },
   playerErrorText: { color: '#fff', fontSize: 14, textAlign: 'center' },
+  playWithSoundButton: {
+    position: 'absolute',
+    top: '50%',
+    alignSelf: 'center',
+    zIndex: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 24,
+    backgroundColor: 'rgba(0,0,0,0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.45)',
+  },
+  playWithSoundText: { color: '#fff', fontSize: 14, fontWeight: '700', marginLeft: 8 },
 
   // Gradient overlay at bottom
   bottomGradient: {
@@ -889,7 +979,8 @@ const styles = StyleSheet.create({
   },
 
   bottomOverlay: { position: 'absolute', left: 15, right: 80, zIndex: 10 },
-  username: { color: '#fff', fontSize: 17, fontWeight: '800', marginBottom: 6, ...shadow },
+  creatorHandleRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', maxWidth: '100%', gap: 6 },
+  username: { flexShrink: 1, color: '#fff', fontSize: 17, fontWeight: '800', ...shadow },
   caption: { color: '#fff', fontSize: 15, lineHeight: 20, fontWeight: '400', marginBottom: 2, ...shadow },
   hashtags: { color: COLORS.cyan, fontSize: 14, fontWeight: '600', marginBottom: 6, ...shadow },
   soundContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },

@@ -26,6 +26,7 @@ import { groupStories } from '../components/StoriesRow';
 import StoryViewer from '../components/StoryViewer';
 import StoryUploadModal from '../components/StoryUploadModal';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { fetchActiveStories } from '../config/storyService';
 
 const mutedChatsKey = (userId) => `muted_chats_${userId}`;
@@ -50,6 +51,7 @@ function formatChatTime(value) {
 }
 
 function ConversationRow({ item, muted, pinned, onPin, onMute, onArchive, onDelete, onOpen, onOpenProfile }) {
+  const { colors } = useTheme();
   const renderRightActions = () => (
     <View style={styles.swipeActions}>
       <TouchableOpacity
@@ -100,7 +102,7 @@ function ConversationRow({ item, muted, pinned, onPin, onMute, onArchive, onDele
       friction={1.8}
       rightThreshold={42}
     >
-      <View style={styles.row}>
+      <View style={[styles.row, { backgroundColor: colors.card }]}>
         <View style={styles.avatarContainer}>
           <TouchableOpacity
             onPress={() => onOpenProfile(item)}
@@ -116,7 +118,11 @@ function ConversationRow({ item, muted, pinned, onPin, onMute, onArchive, onDele
           <TouchableOpacity style={styles.conversationContent} onPress={() => onOpen(item)} activeOpacity={0.75}>
             <View style={styles.conversationTopLine}>
               <View style={styles.nameAndBadge}>
-                <Text style={[styles.name, hasUnread ? styles.unreadName : styles.readName]} numberOfLines={1}>
+                <Text style={[
+                  styles.name,
+                  hasUnread ? styles.unreadName : styles.readName,
+                  { color: hasUnread ? colors.text : colors.muted },
+                ]} numberOfLines={1}>
                   {item.name}
                 </Text>
                 {item.isVerified ? <Ionicons name="checkmark-circle" size={14} color={COLORS.cyan} /> : null}
@@ -137,7 +143,11 @@ function ConversationRow({ item, muted, pinned, onPin, onMute, onArchive, onDele
                     accessibilityLabel={item.lastIsRead ? 'Read' : 'Sent'}
                   />
                 ) : null}
-                <Text style={[styles.preview, hasUnread ? styles.unreadPreview : styles.readPreview]} numberOfLines={1}>
+                <Text style={[
+                  styles.preview,
+                  hasUnread ? styles.unreadPreview : styles.readPreview,
+                  { color: hasUnread ? colors.text : colors.muted },
+                ]} numberOfLines={1}>
                   {preview}
                 </Text>
               </View>
@@ -162,6 +172,7 @@ function ConversationRow({ item, muted, pinned, onPin, onMute, onArchive, onDele
 }
 
 export default function MessagesScreen({ navigation }) {
+  const { colors } = useTheme();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const [conversations, setConversations] = useState([]);
@@ -638,8 +649,8 @@ export default function MessagesScreen({ navigation }) {
   );
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
+    <View style={[styles.container, { backgroundColor: colors.bg }]}>
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <BrandTitle />
         <View style={styles.headerActions}>
           <TouchableOpacity
@@ -651,7 +662,7 @@ export default function MessagesScreen({ navigation }) {
             accessibilityRole="button"
             accessibilityLabel={searchVisible ? 'Close chat search' : 'Search chats'}
           >
-            <Ionicons name={searchVisible ? 'close' : 'search'} size={22} color="#F1F4F7" />
+            <Ionicons name={searchVisible ? 'close' : 'search'} size={22} color={colors.text} />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.newMessageBtn}
@@ -687,10 +698,10 @@ export default function MessagesScreen({ navigation }) {
 
       {activeSection === 'chats' && searchVisible ? (
         <View style={styles.searchContainer}>
-          <View style={styles.searchBar}>
+            <View style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name="search" size={18} color="#888" style={styles.searchIcon} />
             <TextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, { color: colors.text }]}
               placeholder="Search chats..."
               placeholderTextColor="#888"
               value={searchText}
@@ -712,13 +723,13 @@ export default function MessagesScreen({ navigation }) {
           <View style={styles.callsIcon}>
             <Ionicons name="call-outline" size={30} color={COLORS.cyan} />
           </View>
-          <Text style={styles.callsTitle}>Your calls</Text>
-          <Text style={styles.callsDescription}>
+          <Text style={[styles.callsTitle, { color: colors.text }]}>Your calls</Text>
+          <Text style={[styles.callsDescription, { color: colors.muted }]}>
             Call history will appear here when calling is connected to MzansiReels.
           </Text>
           <View style={styles.callsUnavailable}>
             <Ionicons name="information-circle-outline" size={18} color="#8B95A7" />
-            <Text style={styles.callsUnavailableText}>Audio and video calls are not connected yet.</Text>
+            <Text style={[styles.callsUnavailableText, { color: colors.muted }]}>Audio and video calls are not connected yet.</Text>
           </View>
           <TouchableOpacity
             style={styles.startCallButton}
@@ -748,7 +759,7 @@ export default function MessagesScreen({ navigation }) {
               onPress={() => setShowArchived((current) => !current)}
             >
               <Ionicons name="archive-outline" size={18} color={COLORS.cyan} />
-              <Text style={styles.archiveToggleText}>{showArchived ? 'Back to chats' : 'Archived chats'}</Text>
+              <Text style={[styles.archiveToggleText, { color: colors.text }]}>{showArchived ? 'Back to chats' : 'Archived chats'}</Text>
               <Ionicons name="chevron-forward" size={16} color="#717B86" />
             </TouchableOpacity>
           )}

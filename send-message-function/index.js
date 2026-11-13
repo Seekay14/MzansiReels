@@ -25,7 +25,7 @@ function parseBody(body) {
 
 function getUserJwt(req) {
   const headers = req.headers || {};
-  return headers['x-appwrite-user-jwt'] || headers['X-Appwrite-User-JWT'];
+  return headers['user-jwt'] || headers['x-appwrite-user-jwt'] || headers['X-Appwrite-User-JWT'];
 }
 
 function getConversationId(firstUserId, secondUserId) {

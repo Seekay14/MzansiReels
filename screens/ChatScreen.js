@@ -15,6 +15,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { client, databases, storage, Query } from '../config/appwrite';
 import { DATABASE_ID, COLLECTIONS, BUCKET_ID, COLORS } from '../config/constants';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { blockUser, getFileViewUrl, getUserDoc, notify } from '../config/helpers';
 import { uploadMediaFile } from '../config/mediaUpload';
 import {
@@ -207,6 +208,7 @@ export default function ChatScreen({ route, navigation }) {
   const otherId = routeOtherId || route?.params?.userId || null;
   const otherName = routeOtherName || route?.params?.userName || 'User';
   const { user } = useAuth();
+  const { colors: appColors, mode: appThemeMode } = useTheme();
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
@@ -262,7 +264,15 @@ export default function ChatScreen({ route, navigation }) {
   const typingWriteQueue = useRef(Promise.resolve());
   const publishedTypingState = useRef(false);
   const recordingRef = useRef(null);
-  const chatTheme = CHAT_THEMES[themePickerVisible ? themePreviewId : chatThemeId] || CHAT_THEMES.default;
+  const selectedChatThemeId = themePickerVisible ? themePreviewId : chatThemeId;
+  const selectedChatTheme = CHAT_THEMES[selectedChatThemeId] || CHAT_THEMES.default;
+  const chatTheme = appThemeMode === 'light' && selectedChatThemeId === 'default'
+    ? {
+      ...selectedChatTheme,
+      background: appColors.bg,
+      incoming: appColors.card,
+    }
+    : selectedChatTheme;
   const headerName = otherUserDoc?.name || otherName;
   const headerUsername = otherUserDoc?.username
     ? `@${otherUserDoc.username.replace(/^@/, '')}`
@@ -622,22 +632,15 @@ export default function ChatScreen({ route, navigation }) {
     setSendError('');
     setSendingMessage(true);
     try {
-      const { chat, message: doc } = await sendMessageToParticipants(
-        user.$id,
-        otherId,
+      await createChatMessage({
         text,
         attachmentUrl,
         attachmentType,
-        '',
         replyToId,
-      );
+      });
       if (attachmentType === 'text') {
         setNewMessage((current) => current === messageText ? '' : current);
       }
-      if (!chatId) setChatId(chat.$id);
-      setMessages((prev) => (
-        prev.some((message) => message.$id === doc.$id) ? prev : [...prev, doc]
-      ));
       requestAnimationFrame(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }));
       setReplyingTo((current) => current?.$id === replyToId ? null : current);
       try {
@@ -647,10 +650,64 @@ export default function ChatScreen({ route, navigation }) {
       }
       return true;
     } catch (error) {
+      console.error('Could not send message:', error);
       setSendError(error.message || 'Message could not be sent. Please try again.');
       return false;
     } finally {
       setSendingMessage(false);
+    }
+  };
+
+  const createChatMessage = async ({
+    text,
+    attachmentUrl = '',
+    attachmentType = 'text',
+    stickerUrl = '',
+    replyToId = '',
+  }) => {
+    const now = new Date();
+    const createdAt = now.toISOString();
+    const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const data = {
+      senderId: user.$id,
+      receiverId: otherId,
+      chatId: chatId || '',
+      text,
+      attachmentUrl,
+      attachmentType,
+      stickerUrl,
+      replyToId,
+      reactions: '',
+      isRead: false,
+      expiresAt,
+    };
+    const optimisticId = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const optimisticMessage = {
+      ...data,
+      $id: optimisticId,
+      $createdAt: createdAt,
+    };
+    setMessages((current) => mergeMessages(current, [optimisticMessage]));
+    try {
+      const { chat, message: savedMessage } = await sendMessageToParticipants(
+        user.$id,
+        otherId,
+        text,
+        attachmentUrl,
+        attachmentType,
+        stickerUrl,
+        replyToId,
+        chatId || '',
+      );
+      setChatId(chat.$id);
+      setMessages((current) => mergeMessages(
+        current.filter((message) => message.$id !== optimisticId),
+        [savedMessage],
+      ));
+      return savedMessage;
+    } catch (error) {
+      setMessages((current) => current.filter((message) => message.$id !== optimisticId));
+      throw error;
     }
   };
 
@@ -661,21 +718,13 @@ export default function ChatScreen({ route, navigation }) {
       return;
     }
 
+    setSendError('');
     try {
-      const { chat, message: savedMessage } = await sendMessageToParticipants(
-        user.$id,
-        otherId,
-        '',
-        '',
-        'sticker',
+      await createChatMessage({
+        text: '',
+        attachmentType: 'sticker',
         stickerUrl,
-      );
-      if (!chatId) setChatId(chat.$id);
-      setMessages((current) => (
-        current.some((message) => message.$id === savedMessage.$id)
-          ? current
-          : [...current, savedMessage]
-      ));
+      });
       requestAnimationFrame(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }));
       try {
         await notify(otherId, user.name, 'message', user.avatarUrl);
@@ -683,6 +732,7 @@ export default function ChatScreen({ route, navigation }) {
         console.error('Sticker sent, but its notification could not be created:', notificationError);
       }
     } catch (error) {
+      console.error('Could not send sticker:', error);
       setSendError(error.message || 'Sticker could not be sent. Please try again.');
     }
   };
@@ -1305,8 +1355,8 @@ export default function ChatScreen({ route, navigation }) {
       style={[styles.container, { backgroundColor: chatTheme.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={[styles.header, { paddingTop: insets.top + 10, backgroundColor: chatTheme.background }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15 }}><Ionicons name="arrow-back" size={26} color="#fff" /></TouchableOpacity>
+      <View style={[styles.header, { paddingTop: insets.top + 10, backgroundColor: chatTheme.background, borderBottomColor: appColors.border }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15 }}><Ionicons name="arrow-back" size={26} color={appColors.text} /></TouchableOpacity>
         <TouchableOpacity
           onPress={() => otherId && navigation.navigate('UserProfile', {
             userId: otherId,
@@ -1329,12 +1379,12 @@ export default function ChatScreen({ route, navigation }) {
             accessibilityRole="button"
             accessibilityLabel={`View ${headerName}'s profile`}
           >
-            <Text style={styles.headerTitle}>{headerName}</Text>
+            <Text style={[styles.headerTitle, { color: appColors.text }]}>{headerName}</Text>
             {otherUserDoc?.isVerified === true ? (
               <Ionicons name="checkmark-circle" size={16} color={COLORS.cyan} />
             ) : null}
           </TouchableOpacity>
-          <Text style={styles.headerStatus}>
+          <Text style={[styles.headerStatus, { color: appColors.muted }]}>
             {headerUsername || 'Direct messages'}
             {otherUserDoc?.isOnline ? `${headerUsername ? ' · ' : ''}Online` : ''}
           </Text>
@@ -1396,10 +1446,11 @@ export default function ChatScreen({ route, navigation }) {
             }}
             contentContainerStyle={{ padding: 15, paddingBottom: 20 }}
             renderItem={({ item }) => {
+              if (item.expiresAt && new Date(item.expiresAt).getTime() <= Date.now()) return null;
               const isMe = item.senderId === user?.$id;
               const attachmentType = item.attachmentType || item.messageType || 'text';
-              const attachmentUrl = item.attachmentUrl || item.text;
-              const isSticker = attachmentType === 'sticker';
+              const attachmentUrl = item.attachmentUrl;
+              const isSticker = attachmentType === 'sticker' || Boolean(item.stickerUrl);
               const isImage = attachmentType === 'image';
               const isVideo = attachmentType === 'video';
               const isAudio = attachmentType === 'audio';
@@ -1432,21 +1483,19 @@ export default function ChatScreen({ route, navigation }) {
                       </Text>
                     </View>
                   ) : null}
-                  {isSticker ? (
+                  {isSticker && item.stickerUrl ? (
                     <Image source={{ uri: item.stickerUrl }} style={styles.stickerMsg} />
-                  ) : isImage ? (
-                    <Image source={{ uri: attachmentUrl }} style={styles.imageMsg} />
-                  ) : isVideo ? (
-                    <ChatVideoMessage uri={attachmentUrl} />
-                  ) : isAudio ? (
-                    <ChatAudioMessage uri={attachmentUrl} />
-                  ) : (
-                    <Text style={[styles.text, isMe ? { color: chatTheme.outgoingText } : { color: '#fff' }]}>
+                  ) : null}
+                  {item.text ? (
+                    <Text style={[styles.text, isMe ? { color: chatTheme.outgoingText } : { color: appColors.text }]}>
                       {messageSearchText.trim() && item.text?.toLowerCase().includes(messageSearchText.trim().toLowerCase())
                         ? renderHighlightedText(item.text, messageSearchText.trim())
                         : item.text}
                     </Text>
-                  )}
+                  ) : null}
+                  {attachmentUrl && isImage ? <Image source={{ uri: attachmentUrl }} style={styles.imageMsg} /> : null}
+                  {attachmentUrl && isVideo ? <ChatVideoMessage uri={attachmentUrl} /> : null}
+                  {attachmentUrl && isAudio ? <ChatAudioMessage uri={attachmentUrl} /> : null}
                   <View style={styles.messageMeta}>
                     <Text style={[styles.time, isMe ? { color: 'rgba(0,0,0,0.6)' } : { color: COLORS.muted }]}>{formatTime(item.$createdAt)}</Text>
                     {isMe ? (
@@ -1481,6 +1530,7 @@ export default function ChatScreen({ route, navigation }) {
       ) : null}
       <View style={[
         styles.composerContainer,
+        { backgroundColor: chatTheme.background, borderTopColor: appColors.border },
         { paddingBottom: systemKeyboardVisible || showEmojiPicker ? 0 : Math.max(insets.bottom, 10) },
       ]}>
         {replyingTo ? (

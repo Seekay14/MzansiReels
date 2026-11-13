@@ -26,6 +26,8 @@ import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
 import { fetchActiveStories } from '../config/storyService';
 import { useAuth } from '../context/AuthContext';
 import { requireAuth } from '../config/helpers';
+import { useTheme } from '../context/ThemeContext';
+import { useSearchMenu } from '../context/SearchMenuContext';
 import * as ImagePicker from 'expo-image-picker';
 import Avatar from '../components/Avatar';
 
@@ -33,6 +35,8 @@ const PAGE_SIZE = 20;
 
 export default function HomeFeed({ navigation }) {
   const { user } = useAuth();
+  const { colors } = useTheme();
+  const { openSearchMenu } = useSearchMenu();
   const { width } = useWindowDimensions();
   const [layoutWidth, setLayoutWidth] = useState(width);
   const screenWidth = layoutWidth || width;
@@ -437,7 +441,12 @@ export default function HomeFeed({ navigation }) {
 
   return (
     <View
-      style={[styles.screen, isDesktop && styles.desktopScreen]}
+      style={[
+        styles.screen,
+        { backgroundColor: colors.bg },
+        isDesktop && styles.desktopScreen,
+        isDesktop && { backgroundColor: colors.bg },
+      ]}
       onLayout={({ nativeEvent }) => {
         const nextWidth = nativeEvent.layout.width;
         setLayoutWidth((current) => (
@@ -445,7 +454,12 @@ export default function HomeFeed({ navigation }) {
         ));
       }}
     >
-      <View style={[styles.topBar, isDesktop && styles.desktopTopBar]}>
+      <View style={[
+        styles.topBar,
+        { backgroundColor: colors.bg, borderBottomColor: colors.border },
+        isDesktop && styles.desktopTopBar,
+        isDesktop && { backgroundColor: colors.card, borderBottomColor: colors.border },
+      ]}>
         <BrandTitle />
         <View style={styles.topActions}>
           {user ? (
@@ -455,24 +469,22 @@ export default function HomeFeed({ navigation }) {
               accessibilityRole="button"
               accessibilityLabel="Notifications"
             >
-              <Ionicons name="notifications-outline" size={22} color="#F1F4F7" />
+              <Ionicons name="notifications-outline" size={22} color={colors.text} />
             </TouchableOpacity>
           ) : null}
           <TouchableOpacity
             style={styles.topIconButton}
-            onPress={() => {
-              if (requireAuth('start a message', navigation, user)) navigation.navigate('NewMessage');
-            }}
+            onPress={openSearchMenu}
             accessibilityRole="button"
-            accessibilityLabel="New message"
+            accessibilityLabel="Search"
           >
-            <Ionicons name="paper-plane-outline" size={21} color="#F1F4F7" />
+            <Ionicons name="search-outline" size={22} color={colors.text} />
           </TouchableOpacity>
         </View>
       </View>
       {!user ? (
-        <View style={styles.guestBanner}>
-          <Text style={styles.guestBannerText}>You are browsing as a guest. Log in to interact.</Text>
+        <View style={[styles.guestBanner, { backgroundColor: colors.card }]}>
+          <Text style={[styles.guestBannerText, { color: colors.text }]}>You are browsing as a guest. Log in to interact.</Text>
           <TouchableOpacity onPress={() => navigation.navigate('Login')} accessibilityRole="button">
             <Text style={styles.guestLoginText}>Log In</Text>
           </TouchableOpacity>
@@ -500,8 +512,8 @@ export default function HomeFeed({ navigation }) {
         ]}
       >
         {isDesktop ? (
-          <View style={[styles.sidebar, styles.leftSidebar, { width: sidebarWidth }]}>
-            <Text style={styles.sidebarHeading}>Navigation</Text>
+          <View style={[styles.sidebar, styles.leftSidebar, { width: sidebarWidth, borderRightColor: colors.border }]}>
+            <Text style={[styles.sidebarHeading, { color: colors.muted }]}>Navigation</Text>
             {[
               { label: 'Home', icon: 'home-outline', route: 'Home', active: true },
               { label: 'Reels', icon: 'play-circle-outline', route: 'Reels' },
@@ -515,8 +527,8 @@ export default function HomeFeed({ navigation }) {
                 accessibilityRole="button"
                 accessibilityLabel={item.label}
               >
-                <Ionicons name={item.icon} size={21} color={item.active ? COLORS.cyan : '#B0B3B8'} />
-                <Text style={[styles.sidebarLinkText, item.active && styles.sidebarLinkTextActive]}>
+                <Ionicons name={item.icon} size={21} color={item.active ? colors.accent : colors.muted} />
+                <Text style={[styles.sidebarLinkText, { color: colors.text }, item.active && styles.sidebarLinkTextActive]}>
                   {item.label}
                 </Text>
               </TouchableOpacity>
@@ -527,8 +539,8 @@ export default function HomeFeed({ navigation }) {
               accessibilityRole="button"
               accessibilityLabel="Search"
             >
-              <Ionicons name="search-outline" size={21} color="#B0B3B8" />
-              <Text style={styles.sidebarLinkText}>Search</Text>
+              <Ionicons name="search-outline" size={21} color={colors.muted} />
+              <Text style={[styles.sidebarLinkText, { color: colors.text }]}>Search</Text>
             </TouchableOpacity>
           </View>
         ) : null}
@@ -537,13 +549,14 @@ export default function HomeFeed({ navigation }) {
             styles.feedColumn,
             isDesktop && styles.desktopFeedColumn,
             isDesktop && { width: feedWidth },
+            isDesktop && { backgroundColor: colors.card, borderColor: colors.border },
           ]}
         >
           {feedContent}
         </View>
         {showRightSidebar ? (
-          <View style={[styles.sidebar, styles.rightSidebar, { width: sidebarWidth }]}>
-            <Text style={styles.sidebarHeading}>Suggested Creators</Text>
+          <View style={[styles.sidebar, styles.rightSidebar, { width: sidebarWidth, borderLeftColor: colors.border }]}>
+            <Text style={[styles.sidebarHeading, { color: colors.muted }]}>Suggested Creators</Text>
             {suggestedCreators.length ? suggestedCreators.map((creator) => (
               <TouchableOpacity
                 key={creator.userId}
@@ -557,12 +570,12 @@ export default function HomeFeed({ navigation }) {
               >
                 <Avatar uri={creator.avatarUrl} userId={creator.userId} name={creator.name} size={40} />
                 <View style={styles.creatorCopy}>
-                  <Text style={styles.creatorName} numberOfLines={1}>{creator.name}</Text>
-                  <Text style={styles.creatorSubtitle}>Suggested for you</Text>
+                  <Text style={[styles.creatorName, { color: colors.text }]} numberOfLines={1}>{creator.name}</Text>
+                  <Text style={[styles.creatorSubtitle, { color: colors.muted }]}>Suggested for you</Text>
                 </View>
               </TouchableOpacity>
             )) : (
-              <Text style={styles.sidebarEmpty}>Creators from your feed will appear here.</Text>
+              <Text style={[styles.sidebarEmpty, { color: colors.muted }]}>Creators from your feed will appear here.</Text>
             )}
           </View>
         ) : null}

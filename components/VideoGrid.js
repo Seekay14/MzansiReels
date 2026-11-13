@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Text, View, FlatList, TouchableOpacity, RefreshControl, StyleSheet, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../config/constants';
+import { COLORS, fileIdFromUrl } from '../config/constants';
 import { getVideoThumbnail } from '../config/helpers';
+import { formatCompactCount } from '../config/formatNumbers';
 
 function VideoGridTile({ item, onPress, onLongPress }) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -16,7 +17,7 @@ function VideoGridTile({ item, onPress, onLongPress }) {
       console.error('Could not create video grid preview URL:', error);
     }
   }
-  const showViews = item.views !== undefined && item.views !== null;
+  const showViews = item.mediaType !== 'post';
 
   useEffect(() => {
     setImageFailed(false);
@@ -35,25 +36,44 @@ function VideoGridTile({ item, onPress, onLongPress }) {
             source={{ uri: thumbnailUrl }}
             style={styles.thumbnail}
             resizeMode="cover"
-            onError={() => setImageFailed(true)}
+            onLoad={() => {
+              if (__DEV__ && showViews) {
+                console.debug('PROFILE VIDEO THUMBNAIL LOADED:', {
+                  videoDocumentId: item.$id,
+                  thumbnailField: item.thumbnailUrl || '',
+                  thumbnailFileId: fileIdFromUrl(item.thumbnailUrl) || '',
+                  videoFileId: item.videoFileId || fileIdFromUrl(item.videoUrl) || '',
+                  generatedThumbnailUrl: thumbnailUrl,
+                });
+              }
+            }}
+            onError={(event) => {
+              if (__DEV__ && showViews) {
+                console.error('PROFILE VIDEO THUMBNAIL LOAD FAILED:', {
+                  videoDocumentId: item.$id,
+                  thumbnailField: item.thumbnailUrl || '',
+                  thumbnailFileId: fileIdFromUrl(item.thumbnailUrl) || '',
+                  videoFileId: item.videoFileId || fileIdFromUrl(item.videoUrl) || '',
+                  generatedThumbnailUrl: thumbnailUrl,
+                  error: event.nativeEvent?.error || 'Image network failure',
+                });
+              }
+              setImageFailed(true);
+            }}
           />
         ) : (
           <View style={styles.placeholder}>
             <Ionicons name="play" size={24} color="#AAB2BD" />
           </View>
         )}
-        <View style={styles.overlay}>
-          <View style={styles.meta}>
-            <Ionicons
-              name="play"
-              size={12}
-              color="#fff"
-            />
-            <Text style={styles.metaText}>
-              {showViews ? Number(item.views) || 0 : Number(item.likes) || 0}
-            </Text>
+        {showViews ? (
+          <View style={styles.overlay}>
+            <View style={styles.meta}>
+              <Ionicons name="play" size={12} color="#fff" />
+              <Text style={styles.metaText}>{formatCompactCount(item.views)}</Text>
+            </View>
           </View>
-        </View>
+        ) : null}
       </View>
     </TouchableOpacity>
   );
@@ -71,7 +91,7 @@ export default function VideoGrid({
   return (
     <FlatList
       data={videos}
-      keyExtractor={(item) => item.$id}
+      keyExtractor={(item) => `${item.mediaType || 'video'}-${item.$id}`}
       numColumns={3}
       ListHeaderComponent={header}
       showsVerticalScrollIndicator={false}

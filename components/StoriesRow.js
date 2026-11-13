@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -9,7 +9,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from './Avatar';
 import { COLORS } from '../config/constants';
+import { useTheme } from '../context/ThemeContext';
 import { getStoryCreatedAt, isStoryActive } from '../config/storyUtils';
+import { getUserDocs } from '../config/helpers';
 
 export function groupStories(stories, currentUserId) {
   const grouped = new Map();
@@ -36,6 +38,8 @@ export function groupStories(stories, currentUserId) {
 }
 
 export default function StoriesRow({ stories, user, onOpenStory }) {
+  const { colors } = useTheme();
+  const [creatorProfiles, setCreatorProfiles] = useState({});
   const groups = useMemo(
     () => groupStories(
       stories.filter((story) => story.userId !== user?.$id),
@@ -44,10 +48,31 @@ export default function StoriesRow({ stories, user, onOpenStory }) {
     [stories, user?.$id],
   );
 
+  useEffect(() => {
+    let active = true;
+    const loadCreatorProfiles = async () => {
+      const userIds = groups.map((group) => group.userId);
+      if (!userIds.length) {
+        setCreatorProfiles({});
+        return;
+      }
+      try {
+        const profiles = await getUserDocs(userIds);
+        if (active) {
+          setCreatorProfiles(Object.fromEntries(profiles.map((profile) => [profile.userId, profile])));
+        }
+      } catch (error) {
+        console.error('Could not load story creator profiles:', error);
+      }
+    };
+    loadCreatorProfiles();
+    return () => { active = false; };
+  }, [groups]);
+
   if (!groups.length) return null;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { borderBottomColor: colors.border }]}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -56,20 +81,28 @@ export default function StoriesRow({ stories, user, onOpenStory }) {
         {groups.map((group, index) => {
           const story = group.latest;
           const mediaType = story.mediaType || story.type;
+          const creatorProfile = creatorProfiles[group.userId];
+          const creatorUsername = (creatorProfile?.username || story.username || '').replace(/^@+/, '');
+          const creatorName = creatorProfile?.displayName
+            || creatorProfile?.name
+            || creatorProfile?.username
+            || story.username
+            || story.userName
+            || 'Name unavailable';
           return (
             <TouchableOpacity
               key={group.userId}
               style={styles.item}
               onPress={() => onOpenStory(index)}
               accessibilityRole="button"
-              accessibilityLabel={`View ${story.userName || 'creator'}'s story`}
+              accessibilityLabel={`View ${creatorName}'s story`}
             >
               <View style={styles.ring}>
                 <View style={styles.avatarFrame}>
                   <Avatar
-                    uri={story.avatarUrl}
+                    uri={creatorProfile?.avatarUrl || story.avatarUrl}
                     userId={story.userId}
-                    name={story.userName || 'Creator'}
+                    name={creatorName}
                     size={58}
                   />
                   {mediaType === 'video' ? (
@@ -79,9 +112,14 @@ export default function StoriesRow({ stories, user, onOpenStory }) {
                   ) : null}
                 </View>
               </View>
-              <Text numberOfLines={1} style={styles.name}>
-                {story.userName || 'Creator'}
+              <Text numberOfLines={1} style={[styles.name, { color: colors.text }]}>
+                {creatorName}
               </Text>
+              {creatorUsername ? (
+                <Text numberOfLines={1} style={[styles.username, { color: colors.muted }]}>
+                  @{creatorUsername}
+                </Text>
+              ) : null}
             </TouchableOpacity>
           );
         })}
@@ -94,6 +132,12 @@ const styles = StyleSheet.create({
   container: {
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
+  },
+  username: {
+    width: '100%',
+    fontSize: 9,
+    textAlign: 'center',
+    marginTop: 1,
   },
   list: {
     paddingHorizontal: 13,

@@ -8,10 +8,12 @@ npx expo install --fix            # aligns every package with SDK 58
 npx expo-doctor
 npx expo lint
 ```
-`expo-av` has been removed in favor of `expo-video`. Native uploads can generate a video
-thumbnail with `expo-video-thumbnails`, and creators can choose a custom cover image.
-If a web upload has no selected cover, it is saved without a thumbnail rather than
-displaying placeholder artwork.
+`expo-av` has been removed in favor of `expo-video`. Video uploads generate a thumbnail
+before saving it to Appwrite Storage: native uses `expo-video-thumbnails`, and web
+captures a frame from the selected local video. The thumbnail file is uploaded with
+public-read permission, and its Appwrite preview URL is saved in the video document.
+If generation fails, the video is still posted and the profile grid shows its video
+placeholder instead of trying to preview the video file as an image.
 Because `expo-video` and the image picker plugin changed, build a development build
 (`npx expo run:android` / `run:ios`) if Expo Go complains.
 
@@ -64,6 +66,11 @@ not create replacement collections. Check any other collection permissions separ
 before deployment.
 
 The likes and follows collections need no attributes beyond those listed above.
+
+Add an optional String attribute named `thumbnailUrl` to the existing videos collection.
+It stores the Appwrite preview URL of the uploaded thumbnail image. Keep file security
+enabled on the storage bucket; uploaded videos and their thumbnails receive public read
+permission per file so both owners and visitors can view profiles.
 
 The registration onboarding flow uses the `users` collection's existing `username`
 and `avatarUrl` string attributes and its `interests` string-array attribute, plus:

@@ -8,6 +8,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from './Avatar';
 import { COLORS } from '../config/constants';
+import { useTheme } from '../context/ThemeContext';
 
 export default function CreatePostComposer({
   user,
@@ -17,12 +18,18 @@ export default function CreatePostComposer({
   onPressEmoji,
   desktop = false,
 }) {
+  const { colors } = useTheme();
   const prompt = user?.name
     ? `What's on your mind, ${user.name}?`
     : "What's on your mind?";
 
   return (
-    <View style={[styles.container, desktop && styles.desktopContainer]}>
+    <View style={[
+      styles.container,
+      { backgroundColor: colors.card, borderColor: colors.border },
+      desktop && styles.desktopContainer,
+      desktop && { backgroundColor: colors.card, borderColor: colors.border },
+    ]}>
       <Avatar
         uri={user?.avatarUrl}
         userId={user?.$id}
@@ -30,13 +37,13 @@ export default function CreatePostComposer({
         size={40}
       />
       <TouchableOpacity
-        style={styles.promptPill}
+        style={[styles.promptPill, { backgroundColor: colors.input }]}
         onPress={onPressComposer}
         activeOpacity={0.75}
         accessibilityRole="button"
         accessibilityLabel={prompt}
       >
-        <Text style={styles.promptText} numberOfLines={1}>{prompt}</Text>
+        <Text style={[styles.promptText, { color: colors.muted }]} numberOfLines={1}>{prompt}</Text>
       </TouchableOpacity>
       <View style={styles.actions}>
         <TouchableOpacity

@@ -1,6 +1,6 @@
 import { databases, storage, functions, ID, Query } from './appwrite';
 import { Permission, Role } from 'react-native-appwrite';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import {
   DATABASE_ID,
   COLLECTIONS,
@@ -8,7 +8,6 @@ import {
   PUSH_NOTIFICATION_FUNCTION_ID,
   fileIdFromUrl,
 } from './constants';
-import * as VideoThumbnails from 'expo-video-thumbnails';
 import { uploadMediaFile } from './mediaUpload';
 export { sendMessage } from './chatService';
 
@@ -86,14 +85,57 @@ export function getFileViewUrl(fileId) {
 
 export function getVideoThumbnail(video) {
   if (!video || typeof video !== 'object') return '';
-  if (typeof video.thumbnailUrl === 'string' && video.thumbnailUrl.trim()) {
-    return video.thumbnailUrl;
+
+  const videoFileId = video.videoFileId || fileIdFromUrl(video.videoUrl) || '';
+  const thumbnailField = typeof video.thumbnailUrl === 'string' ? video.thumbnailUrl.trim() : '';
+  if (thumbnailField) {
+    try {
+      const url = new URL(thumbnailField);
+      if (url.protocol === 'http:' || url.protocol === 'https:') {
+        if (__DEV__) {
+          console.debug('PROFILE VIDEO THUMBNAIL:', {
+            videoDocumentId: video.$id || '',
+            thumbnailField,
+            thumbnailFileId: fileIdFromUrl(thumbnailField) || '',
+            videoFileId,
+            generatedThumbnailUrl: url.toString(),
+          });
+        }
+        return url.toString();
+      }
+    } catch (error) {
+      if (__DEV__) {
+        console.warn('Invalid profile video thumbnail URL:', {
+          videoDocumentId: video.$id || '',
+          thumbnailField,
+          thumbnailFileId: fileIdFromUrl(thumbnailField) || '',
+          videoFileId,
+          error: error.message,
+        });
+      }
+      return '';
+    }
+
+    if (__DEV__) {
+      console.warn('Invalid profile video thumbnail URL protocol:', {
+        videoDocumentId: video.$id || '',
+        thumbnailField,
+        thumbnailFileId: fileIdFromUrl(thumbnailField) || '',
+        videoFileId,
+      });
+    }
+    return '';
   }
 
-  const fileId = video.videoFileId || fileIdFromUrl(video.videoUrl);
-  if (!fileId) return '';
-
-  return storage.getFilePreviewURL(BUCKET_ID, fileId, 400, 400).toString();
+  if (__DEV__) {
+    console.warn('Profile video has no thumbnail URL:', {
+      videoDocumentId: video.$id || '',
+      thumbnailField,
+      thumbnailFileId: '',
+      videoFileId,
+    });
+  }
+  return '';
 }
 
 export async function sharePost(originalPost, currentUser, newCaption = '') {
@@ -386,21 +428,112 @@ export function timeAgo(iso) {
   return new Date(iso).toLocaleDateString();
 }
 
-// Generates a thumbnail from the video and uploads it
-export async function generateAndUploadThumbnail(videoUri, videoId, userId) {
-  const { uri } = await VideoThumbnails.getThumbnailAsync(videoUri, { time: 1000 });
-  const response = await fetch(uri);
-  if (!response.ok) throw new Error('Could not read the generated video thumbnail.');
-  const blob = await response.blob();
-  const fileId = await uploadMediaFile({
-    uri,
-    fileName: `thumb_${videoId}.jpg`,
-    mimeType: 'image/jpeg',
-    fileSize: blob.size,
-  }, {
-    userId,
-    kind: 'image',
-    folder: `videos/${userId}/thumbnails`,
+function generateWebVideoThumbnail(videoUri) {
+  return new Promise((resolve, reject) => {
+    if (typeof document === 'undefined') {
+      reject(new Error('Video thumbnails are not supported in this web environment.'));
+      return;
+    }
+
+    const video = document.createElement('video');
+    const canvas = document.createElement('canvas');
+    let timeout;
+    let settled = false;
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    };
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const capture = () => {
+      if (settled) return;
+      if (!video.videoWidth || !video.videoHeight) {
+        fail(new Error('The selected video did not provide a thumbnail frame.'));
+        return;
+      }
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      try {
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            fail(new Error('Could not encode the video thumbnail.'));
+            return;
+          }
+          settled = true;
+          cleanup();
+          resolve(blob);
+        }, 'image/jpeg', 0.85);
+      } catch (error) {
+        fail(error);
+      }
+    };
+
+    timeout = setTimeout(() => {
+      fail(new Error('Timed out while generating a video thumbnail.'));
+    }, 15000);
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'metadata';
+    video.crossOrigin = 'anonymous';
+    video.onloadeddata = () => {
+      const duration = Number.isFinite(video.duration) ? video.duration : 0;
+      const seekTime = duration > 1 ? 1 : 0;
+      if (seekTime > 0 && video.currentTime !== seekTime) {
+        video.currentTime = seekTime;
+      } else {
+        capture();
+      }
+    };
+    video.onseeked = capture;
+    video.onerror = () => fail(new Error('Could not read the selected video to generate a thumbnail.'));
+    video.src = videoUri;
+    video.load();
   });
-  return getAvatarPreviewUrl(fileId);
+}
+
+export async function generateAndUploadThumbnail(videoUri, videoId, userId) {
+  if (!videoUri || !videoId || !userId) {
+    throw new Error('A video URI, video document ID, and owner ID are required to generate a thumbnail.');
+  }
+
+  let thumbnailUri;
+  let webThumbnailUrl;
+  try {
+    if (Platform.OS === 'web') {
+      const blob = await generateWebVideoThumbnail(videoUri);
+      webThumbnailUrl = URL.createObjectURL(blob);
+      thumbnailUri = webThumbnailUrl;
+    } else {
+      const VideoThumbnails = await import('expo-video-thumbnails');
+      const thumbnail = await VideoThumbnails.getThumbnailAsync(videoUri, { time: 1000 });
+      thumbnailUri = thumbnail.uri;
+    }
+
+    const response = await fetch(thumbnailUri);
+    if (!response.ok) throw new Error('Could not read the generated video thumbnail.');
+    const blob = await response.blob();
+    const fileId = await uploadMediaFile({
+      uri: thumbnailUri,
+      fileName: `thumb_${videoId}.jpg`,
+      mimeType: 'image/jpeg',
+      fileSize: blob.size,
+    }, {
+      userId,
+      kind: 'image',
+      publicRead: true,
+      folder: `videos/${userId}/thumbnails`,
+    });
+    return getAvatarPreviewUrl(fileId);
+  } finally {
+    if (webThumbnailUrl) URL.revokeObjectURL(webThumbnailUrl);
+  }
 }

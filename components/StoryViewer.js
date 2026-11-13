@@ -257,8 +257,12 @@ export default function StoryViewer({
   const expiresAt = getStoryExpiresAt(story);
   if (expiresAt === null || expiresAt <= Date.now()) return null;
   const mediaType = story.mediaType || story.type;
-  const authorName = authorProfile?.name || story.userName || 'Creator';
-  const authorUsername = authorProfile?.username || story.username;
+  const authorName = authorProfile?.displayName
+    || authorProfile?.name
+    || story.username
+    || story.userName
+    || 'Name unavailable';
+  const authorUsername = (authorProfile?.username || story.username || '').replace(/^@+/, '');
   const mediaUrl = story.mediaUrl
     || (mediaType === 'video' ? story.videoUrl : story.imageUrl)
     || story.videoUrl

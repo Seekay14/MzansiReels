@@ -238,7 +238,7 @@ export default function PostCommentModal({
                 <Ionicons name="checkmark-circle" size={14} color={COLORS.cyan} />
               ) : null}
             </TouchableOpacity>
-            <Text style={styles.time}>{timestamp ? timeAgo(timestamp) : 'Just now'}</Text>
+            <Text style={styles.time}>· {timestamp ? timeAgo(timestamp) : 'Just now'}</Text>
           </View>
           <View style={[styles.commentBubble, item.replyDepth > 0 && styles.replyBubble]}>
             <Text style={styles.commentText}>{item.text}</Text>
@@ -403,20 +403,20 @@ const styles = StyleSheet.create({
   headerSpacer: { width: 44 },
   title: { flex: 1, color: '#F3F5F7', fontSize: 17, fontWeight: '800', textAlign: 'center' },
   closeButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  list: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 10 },
+  list: { paddingHorizontal: 16, paddingTop: 24, paddingBottom: 10 },
   emptyList: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 16 },
   commentRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 20 },
   replyRow: { marginBottom: 14 },
   commentBody: { flex: 1, marginLeft: 11 },
   replyBody: { marginLeft: 8 },
   commentMeta: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
-  commentAuthor: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  commentAuthor: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   userName: { color: '#F3F5F7', fontSize: 13, fontWeight: '800' },
-  time: { color: '#818B96', fontSize: 11, marginLeft: 8 },
-  commentBubble: { padding: 10, borderRadius: 13, backgroundColor: '#1A1E26' },
+  time: { color: '#818B96', fontSize: 12, marginLeft: 6 },
+  commentBubble: { paddingVertical: 10, paddingHorizontal: 0, borderRadius: 13, backgroundColor: '#1A1E26' },
   replyBubble: { backgroundColor: '#202630' },
   commentText: { color: '#DCE1E6', fontSize: 14, lineHeight: 20 },
-  commentActions: { flexDirection: 'row', alignItems: 'center', gap: 15, marginTop: 7, marginLeft: 2 },
+  commentActions: { flexDirection: 'row', alignItems: 'center', gap: 15, marginTop: 7 },
   commentAction: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, minHeight: 26, paddingHorizontal: 7, borderRadius: 13, backgroundColor: '#1A1E26' },
   replyActionText: { color: '#AAB3BD', fontSize: 11, fontWeight: '700' },
   likeCount: { color: '#929AA5', fontSize: 11 },

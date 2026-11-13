@@ -1,9 +1,10 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Image,
+  Platform,
   RefreshControl,
   Share,
   StyleSheet,
@@ -17,120 +18,123 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { databases, Query } from '../config/appwrite';
-import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
+import { COLLECTIONS, COLORS, DATABASE_ID, fileIdFromUrl } from '../config/constants';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { ensureUserDoc, getVideoThumbnail } from '../config/helpers';
+import { formatCompactCount } from '../config/formatNumbers';
+import {
+  fetchAllProfileDocuments,
+  fetchProfileActivityContent,
+  fetchProfileDocumentsByIds,
+  fetchProfileFollowCounts,
+  filterVisibleProfileContent,
+} from '../config/profileContentService';
 import { uploadProfilePicture } from '../config/profilePictureService';
 import Avatar from '../components/Avatar';
 import LaunchCountdownCard from '../components/LaunchCountdownCard';
 import MzansiLoader from '../components/MzansiLoader';
-import TopLoadingBar from '../components/TopLoadingBar';
 import TextPostCard from '../components/TextPostCard';
+import TopLoadingBar from '../components/TopLoadingBar';
 import UserProfileScreen from './UserProfileScreen';
 
 const PROFILE_TABS = [
-  { id: 'videos', label: 'Videos', icon: 'grid-outline' },
   { id: 'posts', label: 'Posts', icon: 'document-text-outline' },
-  { id: 'saved', label: 'Saved', icon: 'bookmark-outline' },
-  { id: 'liked', label: 'Liked', icon: 'heart-outline' },
+  { id: 'videos', label: 'videos', icon: 'videocam-outline' },
+  { id: 'liked', label: 'liked', icon: 'heart-outline' },
+  { id: 'saved', label: 'saved', icon: 'bookmark-outline' },
 ];
-
-async function fetchDocumentsByIds(collectionId, ids) {
-  if (ids.length === 0) return [];
-  const result = await databases.listDocuments(DATABASE_ID, collectionId, [
-    Query.equal('$id', ids),
-    Query.limit(100),
-  ]);
-  const documentsById = new Map(result.documents.map((document) => [document.$id, document]));
-  return ids.map((id) => documentsById.get(id)).filter(Boolean);
-}
 
 function MyProfileScreen({ navigation }) {
   const { user, setUser } = useAuth();
+  const profileUserId = user?.$id;
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const isDesktop = Platform.OS === 'web' && width > 768;
   const [userDoc, setUserDoc] = useState(null);
   const [videos, setVideos] = useState([]);
+  const [uploadedVideos, setUploadedVideos] = useState([]);
+  const [uploadedPosts, setUploadedPosts] = useState([]);
+  const [failedThumbnailIds, setFailedThumbnailIds] = useState({});
   const [postsCount, setPostsCount] = useState(0);
-  const [activeTab, setActiveTab] = useState('videos');
+  const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
+  const [activeTab, setActiveTab] = useState('posts');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const loadRequest = useRef(0);
 
   const fetchProfile = useCallback(async () => {
-    if (!user?.$id) return;
+    if (!profileUserId) return;
+    const requestId = ++loadRequest.current;
     setErrorMessage('');
+    setVideos([]);
+    setUploadedVideos([]);
+    setUploadedPosts([]);
+    setFailedThumbnailIds({});
+    setPostsCount(0);
+    setFollowCounts({ followers: 0, following: 0 });
     try {
       const doc = await ensureUserDoc(user);
+      if (requestId !== loadRequest.current) return;
       setUserDoc(doc);
 
-      const [ownVideos, ownPosts] = await Promise.all([
-        databases.listDocuments(DATABASE_ID, COLLECTIONS.videos, [
-          Query.equal('userId', user.$id),
+      const [ownVideos, ownPosts, relationCounts] = await Promise.all([
+        fetchAllProfileDocuments(COLLECTIONS.videos, [
+          Query.equal('userId', profileUserId),
           Query.orderDesc('uploadedAt'),
-          Query.limit(100),
         ]),
-        databases.listDocuments(DATABASE_ID, COLLECTIONS.posts, [
-          Query.equal('userId', user.$id),
+        fetchAllProfileDocuments(COLLECTIONS.posts, [
+          Query.equal('userId', profileUserId),
           Query.orderDesc('uploadedAt'),
-          Query.limit(100),
         ]),
+        fetchProfileFollowCounts(profileUserId, doc),
       ]);
-      setPostsCount(ownVideos.total + ownPosts.total);
-
-      if (activeTab === 'videos') {
-        setVideos(ownVideos.documents);
-      } else if (activeTab === 'posts') {
-        setVideos(ownPosts.documents.map((post) => ({ ...post, mediaType: 'post' })));
+      if (requestId !== loadRequest.current) return;
+      setPostsCount(ownVideos.length + ownPosts.length);
+      setFollowCounts(relationCounts);
+      setUploadedVideos(ownVideos);
+      setUploadedPosts(ownPosts);
+      if (activeTab === 'liked') {
+        const activity = await fetchProfileActivityContent(profileUserId, 'likes');
+        const visibleItems = await filterVisibleProfileContent(activity, profileUserId);
+        if (requestId === loadRequest.current) setVideos(visibleItems);
       } else if (activeTab === 'saved') {
-        const bookmarks = await databases.listDocuments(DATABASE_ID, COLLECTIONS.bookmarks, [
-          Query.equal('userId', user.$id),
+        const bookmarks = await fetchAllProfileDocuments(COLLECTIONS.bookmarks, [
+          Query.equal('userId', profileUserId),
           Query.orderDesc('$createdAt'),
-          Query.limit(100),
         ]);
-        const videoIds = [...new Set(bookmarks.documents.map((item) => item.videoId).filter(Boolean))];
-        setVideos(await fetchDocumentsByIds(COLLECTIONS.videos, videoIds));
-      } else {
-        const [videoLikes, postLikes] = await Promise.all([
-          databases.listDocuments(DATABASE_ID, COLLECTIONS.videoLikes, [
-            Query.equal('userId', user.$id),
-            Query.orderDesc('$createdAt'),
-            Query.limit(100),
-          ]),
-          databases.listDocuments(DATABASE_ID, COLLECTIONS.postLikes, [
-            Query.equal('userId', user.$id),
-            Query.orderDesc('$createdAt'),
-            Query.limit(100),
-          ]),
+        const [savedVideos, savedPosts] = await Promise.all([
+          fetchProfileDocumentsByIds(COLLECTIONS.videos, bookmarks.map((item) => item.videoId)),
+          fetchProfileDocumentsByIds(COLLECTIONS.posts, bookmarks.map((item) => item.postId)),
         ]);
-        const videoIds = [...new Set(videoLikes.documents.map((like) => like.videoId).filter(Boolean))];
-        const postIds = [...new Set(postLikes.documents.map((like) => like.postId).filter(Boolean))];
-        const [likedVideos, likedPosts] = await Promise.all([
-          fetchDocumentsByIds(COLLECTIONS.videos, videoIds),
-          fetchDocumentsByIds(COLLECTIONS.posts, postIds),
-        ]);
-        const combined = [
-          ...likedVideos,
-          ...likedPosts.map((post) => ({ ...post, mediaType: 'post' })),
-        ];
-        combined.sort((a, b) => (
-          new Date(b.uploadedAt || b.$createdAt) - new Date(a.uploadedAt || a.$createdAt)
-        ));
-        setVideos(combined);
+        const savedItems = [
+          ...savedVideos,
+          ...savedPosts.map((post) => ({ ...post, mediaType: 'post' })),
+        ].sort((a, b) => new Date(b.uploadedAt || b.$createdAt) - new Date(a.uploadedAt || a.$createdAt));
+        const visibleItems = await filterVisibleProfileContent(savedItems, profileUserId);
+        if (requestId === loadRequest.current) setVideos(visibleItems);
       }
     } catch (error) {
+      if (requestId !== loadRequest.current) return;
       console.error('Could not load profile:', error);
       setErrorMessage('Could not load your profile. Pull down to try again.');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (requestId === loadRequest.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [activeTab, user]);
+  }, [activeTab, profileUserId, user]);
 
   useFocusEffect(useCallback(() => {
     setLoading(true);
     fetchProfile();
+    return () => {
+      loadRequest.current += 1;
+    };
   }, [fetchProfile]));
 
   const pickAvatar = async () => {
@@ -162,7 +166,7 @@ function MyProfileScreen({ navigation }) {
 
   const shareProfile = async () => {
     try {
-      const username = userDoc?.username || user?.name?.toLowerCase().replace(/\s+/g, '') || 'user';
+      const username = userDoc?.username || user?.username || 'username unavailable';
       await Share.share({ message: `Check out @${username} on MzansiReels!` });
     } catch (error) {
       console.error('Could not share profile:', error);
@@ -170,15 +174,27 @@ function MyProfileScreen({ navigation }) {
     }
   };
 
+  const openReelsViewer = (videoId) => {
+    const activeItems = activeTab === 'videos'
+      ? uploadedVideos
+      : activeTab === 'posts'
+        ? uploadedPosts
+        : videos;
+    const allVideos = activeItems.filter((item) => item.mediaType !== 'post');
+    const video = allVideos.find((item) => item.$id === videoId);
+    if (!video) return;
+    navigation.navigate('Home', {
+      screen: 'Watch',
+      params: { video, allVideos },
+    });
+  };
+
   const openVideo = (video) => {
     if (video.mediaType === 'post') {
       navigation.navigate('Home', { screen: 'Feed' });
       return;
     }
-    navigation.navigate('Home', {
-      screen: 'Watch',
-      params: { video, allVideos: videos },
-    });
+    openReelsViewer(video.$id);
   };
 
   const handleLongPress = (video) => {
@@ -188,15 +204,15 @@ function MyProfileScreen({ navigation }) {
     ]);
   };
 
-  const username = userDoc?.username || user?.name?.toLowerCase().replace(/\s+/g, '') || 'user';
-  const displayName = userDoc?.name || user?.name || 'Mzansi User';
+  const username = userDoc?.username || user?.username || 'username unavailable';
+  const displayName = userDoc?.displayName || userDoc?.name || user?.displayName || user?.name || 'Name unavailable';
   const tileSize = width / 3;
 
   const renderVideo = ({ item }) => {
     let thumbnailUrl = item.mediaType === 'post'
-      ? item.imageUrl
+      ? item.imageUrl || ''
       : item.thumbnailUrl || '';
-    if (item.mediaType !== 'post') {
+    if (item.mediaType !== 'post' || item.postType === 'video') {
       try {
         thumbnailUrl = getVideoThumbnail({ ...item, thumbnailUrl });
       } catch (error) {
@@ -206,6 +222,7 @@ function MyProfileScreen({ navigation }) {
 
     const isTextPost = item.mediaType === 'post' && item.postType === 'text';
     const isPost = item.mediaType === 'post';
+    const isVideo = !isPost;
 
     return (
       <TouchableOpacity
@@ -222,26 +239,70 @@ function MyProfileScreen({ navigation }) {
           <View style={styles.textPostTile}>
             <Ionicons name="text-outline" size={30} color="#AAB2BD" />
           </View>
-        ) : thumbnailUrl ? (
+        ) : thumbnailUrl && !failedThumbnailIds[item.$id] ? (
           <Image
             source={{ uri: thumbnailUrl }}
             style={[StyleSheet.absoluteFillObject, { aspectRatio: 1 }]}
             resizeMode="cover"
+            onLoad={() => {
+              if (__DEV__ && isVideo) {
+                console.debug('PROFILE VIDEO THUMBNAIL LOADED:', {
+                  videoDocumentId: item.$id,
+                  thumbnailField: item.thumbnailUrl || '',
+                  thumbnailFileId: fileIdFromUrl(item.thumbnailUrl) || '',
+                  videoFileId: item.videoFileId || fileIdFromUrl(item.videoUrl) || '',
+                  generatedThumbnailUrl: thumbnailUrl,
+                });
+              }
+            }}
+            onError={(event) => {
+              if (__DEV__ && isVideo) {
+                console.error('PROFILE VIDEO THUMBNAIL LOAD FAILED:', {
+                  videoDocumentId: item.$id,
+                  thumbnailField: item.thumbnailUrl || '',
+                  thumbnailFileId: fileIdFromUrl(item.thumbnailUrl) || '',
+                  videoFileId: item.videoFileId || fileIdFromUrl(item.videoUrl) || '',
+                  generatedThumbnailUrl: thumbnailUrl,
+                  error: event.nativeEvent?.error || 'Image network failure',
+                });
+              }
+              setFailedThumbnailIds((current) => ({ ...current, [item.$id]: true }));
+            }}
           />
         ) : (
           <View style={styles.videoPlaceholder}>
             <Ionicons name={isPost ? 'image-outline' : 'videocam-outline'} size={28} color="#727985" />
           </View>
         )}
-        {!isPost ? (
+        {isVideo ? (
           <View style={styles.tileMeta}>
             <Ionicons name="play" size={12} color="#fff" />
-            <Text style={styles.tileMetaText}>{item.views || 0}</Text>
+            <Text style={styles.tileMetaText}>{formatCompactCount(item.views)}</Text>
           </View>
         ) : null}
       </TouchableOpacity>
     );
   };
+
+  const renderPost = ({ item }) => (
+    <TextPostCard
+      post={item}
+      user={user}
+      navigation={navigation}
+      desktop={isDesktop}
+      onDelete={(postId) => setUploadedPosts((current) => current.filter((post) => post.$id !== postId))}
+      onShared={(sharedPost, originalShares, originalPostId) => {
+        setUploadedPosts((current) => [
+          sharedPost,
+          ...current.map((post) => (
+            post.$id === originalPostId
+              ? { ...post, shares: originalShares }
+              : post
+          )).filter((post) => post.$id !== sharedPost.$id),
+        ]);
+      }}
+    />
+  );
 
   const renderEmptyGrid = () => (
     <View style={styles.emptyGrid}>
@@ -250,41 +311,18 @@ function MyProfileScreen({ navigation }) {
       ))}
       <View pointerEvents="none" style={styles.emptyGridMessage}>
         <Ionicons name={
-          activeTab === 'videos' ? 'videocam-outline'
-            : activeTab === 'posts' ? 'document-text-outline'
+          activeTab === 'posts' ? 'document-text-outline'
+            : activeTab === 'videos' ? 'videocam-outline'
               : activeTab === 'saved' ? 'bookmark-outline' : 'heart-outline'
         } size={23} color={COLORS.cyan} />
         <Text style={styles.emptyGridTitle}>
-          {activeTab === 'videos' ? 'Upload your first reel!'
-            : activeTab === 'posts' ? 'No posts yet'
-              : activeTab === 'saved' ? 'No saved reels yet' : 'No liked content yet'}
+          {activeTab === 'posts' ? 'No posts yet'
+            : activeTab === 'videos' ? 'No videos yet'
+              : activeTab === 'saved' ? 'No saved content yet' : 'No liked content yet'}
         </Text>
         {activeTab === 'videos' && <Text style={styles.emptyGridSubtitle}>Tap + to get started</Text>}
       </View>
     </View>
-  );
-
-  const renderPost = ({ item }) => (
-    <TextPostCard
-      post={item}
-      user={user}
-      navigation={navigation}
-      onDelete={(postId) => setVideos((current) => current.filter((post) => post.$id !== postId))}
-      onShared={(sharedPost, originalShares, originalPostId) => {
-        setVideos((current) => current.map((post) => (
-          post.$id === originalPostId
-            ? { ...post, shares: originalShares }
-            : post
-        )));
-        if (activeTab === 'posts') {
-          setVideos((current) => [sharedPost, ...current.filter((post) => post.$id !== sharedPost.$id)]);
-        }
-      }}
-    />
-  );
-
-  const renderEmptyPosts = () => (
-    <Text style={styles.emptyPosts}>You haven’t shared any posts yet.</Text>
   );
 
   const header = (
@@ -293,7 +331,7 @@ function MyProfileScreen({ navigation }) {
         <TouchableOpacity onPress={shareProfile} style={styles.headerIcon} accessibilityRole="button" accessibilityLabel="Share profile">
           <Ionicons name="share-social-outline" size={22} color="#F6F8FA" />
         </TouchableOpacity>
-        <Text numberOfLines={1} style={styles.usernameHeader}>@{username}</Text>
+        <Text numberOfLines={1} style={[styles.usernameHeader, { color: colors.text }]}>@{username}</Text>
         <TouchableOpacity
           onPress={() => navigation.navigate('Settings')}
           style={styles.headerIcon}
@@ -321,9 +359,8 @@ function MyProfileScreen({ navigation }) {
         </TouchableOpacity>
 
         <View style={styles.identity}>
-          <Text style={styles.displayName}>{displayName}</Text>
           <View style={styles.handleRow}>
-            <Text style={styles.handleText}>@{username}</Text>
+            <Text numberOfLines={1} ellipsizeMode="tail" style={styles.handleText}>@{username}</Text>
             {userDoc?.isVerified === true && (
               <Ionicons name="checkmark-circle" size={17} color={COLORS.cyan} style={styles.verifiedIcon} />
             )}
@@ -334,7 +371,7 @@ function MyProfileScreen({ navigation }) {
             accessibilityRole="button"
             accessibilityLabel={userDoc?.bio ? 'Edit bio' : 'Add a bio'}
           >
-            <Text style={[styles.bioText, !userDoc?.bio && styles.bioPlaceholder]}>
+            <Text style={[styles.bioText, { color: colors.text }, !userDoc?.bio && { color: colors.muted }]}>
               {userDoc?.bio || 'Tap to add a bio...'}
             </Text>
           </TouchableOpacity>
@@ -348,18 +385,36 @@ function MyProfileScreen({ navigation }) {
       </View>
 
       <View style={styles.statsRow}>
-        <View style={styles.statBox}>
-          <Text style={styles.statNumber}>{postsCount}</Text>
-          <Text style={styles.statLabel}>Posts</Text>
-        </View>
-        <View style={styles.statBox}>
-          <Text style={styles.statNumber}>{userDoc?.followers || 0}</Text>
-          <Text style={styles.statLabel}>Followers</Text>
-        </View>
-        <View style={styles.statBox}>
-          <Text style={styles.statNumber}>{userDoc?.following || 0}</Text>
-          <Text style={styles.statLabel}>Following</Text>
-        </View>
+        <TouchableOpacity
+          style={styles.statBox}
+          activeOpacity={0.72}
+          onPress={() => setActiveTab('posts')}
+          accessibilityRole="button"
+          accessibilityLabel={`View ${postsCount} posts`}
+        >
+          <Text style={[styles.statNumber, { color: colors.text }]}>{postsCount}</Text>
+          <Text style={[styles.statLabel, { color: colors.muted }]}>Posts</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.statBox}
+          activeOpacity={0.72}
+          onPress={() => navigation.navigate('FollowersList', { userId: user?.$id, username })}
+          accessibilityRole="button"
+          accessibilityLabel={`View ${followCounts.followers} followers`}
+        >
+          <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactCount(followCounts.followers)}</Text>
+          <Text style={[styles.statLabel, { color: colors.muted }]}>Followers</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.statBox}
+          activeOpacity={0.72}
+          onPress={() => navigation.navigate('FollowingList', { userId: user?.$id, username })}
+          accessibilityRole="button"
+          accessibilityLabel={`View ${followCounts.following} following`}
+        >
+          <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactCount(followCounts.following)}</Text>
+          <Text style={[styles.statLabel, { color: colors.muted }]}>Following</Text>
+        </TouchableOpacity>
       </View>
 
       <LaunchCountdownCard />
@@ -405,7 +460,7 @@ function MyProfileScreen({ navigation }) {
 
   if (loading && !refreshing) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: colors.bg }]}>
         <View style={styles.loadingContainer}>
           <MzansiLoader />
         </View>
@@ -415,17 +470,23 @@ function MyProfileScreen({ navigation }) {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <TopLoadingBar isLoading={loading || refreshing} />
       {errorMessage ? <Text style={styles.errorMessage}>{errorMessage}</Text> : null}
       <FlatList
-        key={activeTab === 'posts' ? 'profile-post-feed' : 'profile-grid-three-columns'}
-        data={videos}
+        key={activeTab === 'posts' ? 'profile-posts-list' : 'profile-grid-three-columns'}
+        data={activeTab === 'posts'
+          ? uploadedPosts
+          : activeTab === 'videos'
+            ? uploadedVideos
+            : videos}
         numColumns={activeTab === 'posts' ? 1 : 3}
         keyExtractor={(item) => `${item.mediaType || 'video'}-${item.$id}`}
         renderItem={activeTab === 'posts' ? renderPost : renderVideo}
         ListHeaderComponent={header}
-        ListEmptyComponent={activeTab === 'posts' ? renderEmptyPosts : renderEmptyGrid}
+        ListEmptyComponent={activeTab === 'posts'
+          ? <Text style={styles.emptyPosts}>You haven’t shared any posts yet.</Text>
+          : renderEmptyGrid}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -462,10 +523,9 @@ const styles = StyleSheet.create({
   avatarWrapper: { position: 'relative', width: 112, height: 112, alignItems: 'center', justifyContent: 'center', marginRight: 19 },
   cameraBadge: { position: 'absolute', right: 3, bottom: 3, width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 15, backgroundColor: COLORS.cyan, borderWidth: 3, borderColor: COLORS.bg },
   identity: { flex: 1, justifyContent: 'center' },
-  displayName: { color: '#fff', fontSize: 21, fontWeight: '900', letterSpacing: -0.3 },
-  handleRow: { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
-  handleText: { color: '#9CA4AE', fontSize: 13, fontWeight: '600' },
-  verifiedIcon: { marginLeft: 5 },
+  handleRow: { minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 3 },
+  handleText: { flexShrink: 1, color: '#fff', fontSize: 15, fontWeight: '800' },
+  verifiedIcon: { flexShrink: 0 },
   bioText: { color: '#E8EAED', fontSize: 13, lineHeight: 18, marginTop: 10 },
   bioPlaceholder: { color: '#818995' },
   locationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 7 },
@@ -488,7 +548,7 @@ const styles = StyleSheet.create({
   videoTile: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.bg, overflow: 'hidden' },
   videoPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#191C24' },
   textPostTile: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#292929' },
-  tileMeta: { position: 'absolute', right: 7, bottom: 7, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.52)' },
+  tileMeta: { position: 'absolute', left: 7, bottom: 7, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.62)' },
   tileMetaText: { color: '#fff', fontSize: 10, fontWeight: '700', marginLeft: 3 },
   emptyGrid: { flexDirection: 'row', flexWrap: 'wrap', position: 'relative' },
   skeletonTile: { borderWidth: 1, borderColor: COLORS.bg, backgroundColor: '#151820' },

@@ -63,13 +63,19 @@ function parseFunctionResponse(responseBody) {
 
 async function callMessagingFunction(body) {
   const jwt = await account.createJWT({ duration: 600 });
+  const headers = Object.fromEntries(
+    [['x-appwrite-user-jwt', jwt.jwt]].map(([name, value]) => [
+      name.toLowerCase().replace(/_/g, '-').replace(/^x-appwrite-/, ''),
+      value,
+    ]),
+  );
   const execution = await functions.createExecution({
     functionId: MESSAGE_FUNCTION_ID,
     body: JSON.stringify(body),
     async: false,
     xpath: '/',
     method: 'POST',
-    headers: { 'x-appwrite-user-jwt': jwt.jwt },
+    headers,
   });
   const result = parseFunctionResponse(execution.responseBody);
   if (
@@ -163,6 +169,7 @@ export async function sendMessageToParticipants(
   attachmentType = 'text',
   stickerUrl = '',
   replyToId = '',
+  chatId = '',
 ) {
   try {
     if (!senderId || !receiverId || senderId === receiverId) {
@@ -184,6 +191,7 @@ export async function sendMessageToParticipants(
     }
     const result = await callMessagingFunction({
       action: 'send',
+      chatId,
       receiverId,
       text,
       attachmentUrl,
@@ -198,12 +206,11 @@ export async function sendMessageToParticipants(
       code: error.code,
       type: error.type,
       message: error.message || String(error),
-      chatIdPresent: false,
+      chatIdPresent: Boolean(chatId),
       senderIdPresent: Boolean(senderId),
       receiverIdPresent: Boolean(receiverId),
       attachmentType,
     });
-    Alert.alert('DB Error', error.message || 'Message could not be saved to Appwrite.');
     throw error;
   }
 }
@@ -264,16 +271,22 @@ export async function fetchMessages(chatId, offset = 0) {
   }
 
   try {
+    const totalResult = await databases.listDocuments(DATABASE_ID, COLLECTIONS.messages, [
+      Query.equal('chatId', chatId),
+      Query.orderAsc('$createdAt'),
+      Query.limit(1),
+    ]);
+    const pageOffset = Math.max(totalResult.total - MESSAGE_PAGE_SIZE - offset, 0);
     const result = await databases.listDocuments(DATABASE_ID, COLLECTIONS.messages, [
       Query.equal('chatId', chatId),
-      Query.orderDesc('$createdAt'),
+      Query.orderAsc('$createdAt'),
       Query.limit(MESSAGE_PAGE_SIZE),
-      Query.offset(offset),
+      Query.offset(pageOffset),
     ]);
     return {
-      documents: result.documents.reverse(),
+      documents: result.documents,
       nextOffset: offset + result.documents.length,
-      hasMore: result.documents.length === MESSAGE_PAGE_SIZE,
+      hasMore: pageOffset > 0,
     };
   } catch (error) {
     console.error('Could not fetch messages:', error);

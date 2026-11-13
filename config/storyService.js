@@ -1,6 +1,6 @@
 import { account, databases, ID, Query, storage } from './appwrite';
 import { BUCKET_ID, COLLECTIONS, DATABASE_ID } from './constants';
-import { getFileViewUrl } from './helpers';
+import { getFileViewUrl, getUserDoc } from './helpers';
 import { uploadMediaFile } from './mediaUpload';
 import { isStoryActive, STORY_TTL_MS } from './storyUtils';
 
@@ -49,6 +49,12 @@ export async function uploadStory(
     if (authenticatedUser.$id !== currentUser.$id) {
       throw new Error('Your signed-in account does not match this story owner. Please sign in again.');
     }
+    let creatorProfile = null;
+    try {
+      creatorProfile = await getUserDoc(authenticatedUser.$id);
+    } catch (error) {
+      console.warn('Could not load story creator profile; using authenticated account details:', error);
+    }
 
     const normalizedContent = typeof content === 'string' ? content.trim() : '';
     if (mediaType === 'text') {
@@ -93,8 +99,13 @@ export async function uploadStory(
       ID.unique(),
       {
         userId: authenticatedUser.$id,
-        userName: authenticatedUser.name || currentUser.name || '',
-        avatarUrl: currentUser.avatarUrl || '',
+        userName: creatorProfile?.displayName
+          || creatorProfile?.name
+          || currentUser.displayName
+          || authenticatedUser.name
+          || currentUser.name
+          || '',
+        avatarUrl: creatorProfile?.avatarUrl || currentUser.avatarUrl || '',
         mediaUrl,
         mediaType,
         content: normalizedContent,

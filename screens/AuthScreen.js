@@ -13,6 +13,37 @@ import Avatar from '../components/Avatar';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const REMEMBERED_EMAIL_KEY = '@mzansireels/remembered-login-email';
 
+const AUTH_MESSAGES = {
+  emptyEmail: 'Please enter your email address.',
+  emptyPassword: 'Please enter your password.',
+  emptyConfirmation: 'Please confirm your password.',
+  invalidEmail: 'Please enter a valid email address.',
+  duplicateEmail: 'An account with this email already exists.',
+  invalidCredentials: 'Incorrect email or password.',
+  network: 'Unable to connect. Please check your internet connection.',
+  loginFailure: 'Could not log in. Please try again.',
+  signupFailure: 'Could not create your account. Please try again.',
+};
+
+const getAuthErrorMessage = (error, action) => {
+  if (error?.type === 'user_already_exists' || (action === 'signup' && error?.code === 409)) {
+    return AUTH_MESSAGES.duplicateEmail;
+  }
+  if (error?.type === 'user_invalid_credentials') {
+    return AUTH_MESSAGES.invalidCredentials;
+  }
+  if (error?.type === 'user_invalid_email') {
+    return AUTH_MESSAGES.invalidEmail;
+  }
+
+  const errorText = `${error?.message || ''} ${error?.type || ''}`.toLowerCase();
+  if (/network request failed|network error|networkerror|fetch failed|failed to fetch|load failed|no internet|offline|connection (?:refused|timed out|reset)|timed out|socket hang up/.test(errorText)) {
+    return AUTH_MESSAGES.network;
+  }
+
+  return action === 'signup' ? AUTH_MESSAGES.signupFailure : AUTH_MESSAGES.loginFailure;
+};
+
 export default function AuthScreen({ navigation }) {
   const { setUser } = useAuth();
   const [activeTab, setActiveTab] = useState('login'); 
@@ -128,14 +159,17 @@ export default function AuthScreen({ navigation }) {
   ];
 
   const handleLogin = async () => {
-    if (!email.trim() || !password) return setMessage('Please fill in all fields.');
+    const normalizedEmail = email.trim();
+    if (!normalizedEmail) return setMessage(AUTH_MESSAGES.emptyEmail);
+    if (!EMAIL_PATTERN.test(normalizedEmail)) return setMessage(AUTH_MESSAGES.invalidEmail);
+    if (!password) return setMessage(AUTH_MESSAGES.emptyPassword);
     setLoading(true);
     setMessage('');
     try {
-      await account.createEmailPasswordSession(email.trim(), password);
+      await account.createEmailPasswordSession(normalizedEmail, password);
       try {
         if (rememberMe) {
-          await AsyncStorage.setItem(REMEMBERED_EMAIL_KEY, email.trim());
+          await AsyncStorage.setItem(REMEMBERED_EMAIL_KEY, normalizedEmail);
         } else {
           await AsyncStorage.removeItem(REMEMBERED_EMAIL_KEY);
         }
@@ -146,7 +180,7 @@ export default function AuthScreen({ navigation }) {
       const profile = await ensureUserDoc(user);
       setPendingAccount({ user, profile });
     } catch (error) {
-      setMessage(error.message);
+      setMessage(getAuthErrorMessage(error, 'login'));
     } finally {
       setLoading(false);
     }
@@ -154,14 +188,13 @@ export default function AuthScreen({ navigation }) {
 
   const handleSignup = async () => {
     const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail || !password || !confirmPassword) {
-      setMessage('Please fill in all fields.');
-      return;
-    }
+    if (!normalizedEmail) return setMessage(AUTH_MESSAGES.emptyEmail);
     if (!EMAIL_PATTERN.test(normalizedEmail)) {
-      setMessage('Please enter a valid email address.');
+      setMessage(AUTH_MESSAGES.invalidEmail);
       return;
     }
+    if (!password) return setMessage(AUTH_MESSAGES.emptyPassword);
+    if (!confirmPassword) return setMessage(AUTH_MESSAGES.emptyConfirmation);
     if (password.length < 8) {
       setMessage('Password must be at least 8 characters.');
       return;
@@ -177,8 +210,8 @@ export default function AuthScreen({ navigation }) {
       try {
         await account.create(ID.unique(), normalizedEmail, password);
       } catch (error) {
-        if (error.code === 409 || error.type === 'user_already_exists') {
-          setMessage('An account with this email already exists. Please log in or use another email.');
+        if (error?.code === 409 || error?.type === 'user_already_exists') {
+          setMessage(AUTH_MESSAGES.duplicateEmail);
           return;
         }
         throw error;
@@ -189,7 +222,7 @@ export default function AuthScreen({ navigation }) {
       await setUser({ ...signupUser, profileSetupComplete: false, interests: [] });
     } catch (error) {
       console.error('Could not complete account registration:', error);
-      setMessage(error.message || 'Could not create your account. Please try again.');
+      setMessage(getAuthErrorMessage(error, 'signup'));
     } finally {
       setLoading(false);
     }

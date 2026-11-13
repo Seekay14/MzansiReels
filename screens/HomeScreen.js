@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Platform,
   RefreshControl,
   StyleSheet,
   Text,
@@ -19,12 +18,14 @@ import TopLoadingBar from '../components/TopLoadingBar';
 import { databases, Query } from '../config/appwrite';
 import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
 import { useAuth } from '../context/AuthContext';
+import { useSearchMenu } from '../context/SearchMenuContext';
 import { blockUser } from '../config/helpers';
 
 const PAGE_SIZE = 20;
 
 export default function HomeScreen({ navigation }) {
   const { user } = useAuth();
+  const { openSearchMenu } = useSearchMenu();
   const insets = useSafeAreaInsets();
   const focused = useIsFocused();
   const [videos, setVideos] = useState([]);
@@ -33,7 +34,7 @@ export default function HomeScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('foryou');
   const [activeIndex, setActiveIndex] = useState(0);
-  const muted = Platform.OS === 'web';
+  const [muted, setMuted] = useState(false);
   const [containerHeight, setContainerHeight] = useState(0);
   const [feedError, setFeedError] = useState('');
   const [unreadCount, setUnreadCount] = useState(0);
@@ -239,6 +240,7 @@ export default function HomeScreen({ navigation }) {
             height={containerHeight}
             isActive={focused && index === activeIndex}
             muted={muted}
+            onToggleMute={() => setMuted((current) => !current)}
             onDeleted={(videoId) => {
               setVideos((current) => current.filter((video) => video.$id !== videoId));
               videoCount.current = Math.max(0, videoCount.current - 1);
@@ -337,14 +339,6 @@ export default function HomeScreen({ navigation }) {
           })}
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={[styles.sideSlot, styles.notificationButton]}
-            onPress={() => navigation.navigate('Search')}
-            accessibilityRole="button"
-            accessibilityLabel="Discover and search"
-          >
-            <Ionicons name="search" size={24} color="#fff" />
-          </TouchableOpacity>
           {user ? (
             <TouchableOpacity
               style={[styles.sideSlot, styles.notificationButton]}
@@ -356,6 +350,14 @@ export default function HomeScreen({ navigation }) {
               {unreadCount > 0 && <View style={styles.notificationDot} />}
             </TouchableOpacity>
           ) : null}
+          <TouchableOpacity
+            style={[styles.sideSlot, styles.notificationButton]}
+            onPress={openSearchMenu}
+            accessibilityRole="button"
+            accessibilityLabel="Search"
+          >
+            <Ionicons name="search-outline" size={25} color="#fff" />
+          </TouchableOpacity>
         </View>
       </View>
       {!user ? (
