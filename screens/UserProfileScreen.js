@@ -15,8 +15,9 @@ import {
 } from 'react-native';
 import * as Linking from 'expo-linking';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { databases, ID, Query } from '../config/appwrite';
+import { client, databases, ID, Query } from '../config/appwrite';
 import { DATABASE_ID, COLLECTIONS, COLORS } from '../config/constants';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -32,6 +33,8 @@ import Avatar from '../components/Avatar';
 import TextPostCard from '../components/TextPostCard';
 import { formatCompactCount } from '../config/formatNumbers';
 import {
+  createFollowRelationship,
+  deleteFollowRelationships,
   fetchAllProfileDocuments,
   fetchProfileActivityContent,
   fetchProfileFollowCounts,
@@ -73,6 +76,12 @@ export default function UserProfileScreen({ route, navigation }) {
   const [loadedUserId, setLoadedUserId] = useState(null);
   const [loadError, setLoadError] = useState('');
   const loadRequest = useRef(0);
+  const followRefreshRequest = useRef(0);
+  const userDocRef = useRef(userDoc);
+
+  useEffect(() => {
+    userDocRef.current = userDoc;
+  }, [userDoc]);
 
   const load = useCallback(async () => {
     const requestId = ++loadRequest.current;
@@ -174,10 +183,72 @@ export default function UserProfileScreen({ route, navigation }) {
     }
   }, [activeTab, profileUserId, userId, isSelf, user?.$id]);
 
-  useEffect(() => {
+  const refreshFollowState = useCallback(async () => {
+    if (isSelf || !user?.$id || !userId) return;
+    const requestId = ++followRefreshRequest.current;
+    try {
+      const [outgoingFollow, incomingFollow, relationCounts, mutuals] = await Promise.all([
+        databases.listDocuments(DATABASE_ID, COLLECTIONS.follows, [
+          Query.equal('followerId', user.$id),
+          Query.equal('followingId', userId),
+          Query.limit(1),
+        ]),
+        databases.listDocuments(DATABASE_ID, COLLECTIONS.follows, [
+          Query.equal('followerId', userId),
+          Query.equal('followingId', user.$id),
+          Query.limit(1),
+        ]),
+        fetchProfileFollowCounts(userId, userDocRef.current),
+        fetchProfileMutuals(user.$id, userId),
+      ]);
+      if (requestId !== followRefreshRequest.current) return;
+      setFollowDocId(outgoingFollow.documents[0]?.$id || null);
+      setIsFollowing(Boolean(outgoingFollow.documents[0]));
+      setFollowsYou(Boolean(incomingFollow.documents[0]));
+      setFollowCounts(relationCounts);
+      setMutualProfiles(mutuals);
+    } catch (error) {
+      if (requestId === followRefreshRequest.current) {
+        console.warn('Could not refresh follow status:', error);
+      }
+    }
+  }, [isSelf, user?.$id, userId]);
+
+  useFocusEffect(useCallback(() => {
     load();
-    return () => { loadRequest.current += 1; };
-  }, [load]);
+    return () => {
+      loadRequest.current += 1;
+      followRefreshRequest.current += 1;
+    };
+  }, [load]));
+
+  useFocusEffect(useCallback(() => {
+    if (isSelf || !user?.$id || !userId) return undefined;
+    let active = true;
+    let refreshTimer = null;
+    const unsubscribe = client.subscribe(
+      `databases.${DATABASE_ID}.collections.${COLLECTIONS.follows}.documents`,
+      (event) => {
+        if (!active) return;
+        const relationship = event.payload || {};
+        const involvesProfile = relationship.followerId === userId
+          || relationship.followingId === userId;
+        const involvesViewer = relationship.followerId === user.$id
+          || relationship.followingId === user.$id;
+        if (!involvesProfile && !involvesViewer) return;
+        if (refreshTimer) clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(() => {
+          if (active) refreshFollowState();
+        }, 120);
+      },
+    );
+    return () => {
+      active = false;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      unsubscribe();
+      followRefreshRequest.current += 1;
+    };
+  }, [isSelf, refreshFollowState, user?.$id, userId]));
 
   const username = userDoc?.username || userName || 'username unavailable';
   const displayName = userDoc?.displayName || userDoc?.name || username;
@@ -192,17 +263,17 @@ export default function UserProfileScreen({ route, navigation }) {
       ? `Followed by ${mutualFirstName} and ${mutualFriendsCount - 1} ${mutualFriendsCount === 2 ? 'other' : 'others'}`
       : '';
 
-  const persistFollowCounts = async (delta, nextCounts) => {
+  const persistFollowCounts = async () => {
     try {
       const currentProfile = await ensureUserDoc(user);
-      const nextFollowingCount = Math.max(0, (Number(currentProfile.following) || 0) + delta);
+      const currentCounts = await fetchProfileFollowCounts(user.$id, currentProfile);
       await databases.updateDocument(DATABASE_ID, COLLECTIONS.users, currentProfile.$id, {
-        following: nextFollowingCount,
+        following: currentCounts.following,
       });
-      setUserDoc((current) => current ? { ...current, followers: nextCounts.followers } : current);
+      setUserDoc((current) => current ? { ...current, following: currentCounts.following } : current);
     } catch (error) {
       console.error('Follow relationship saved, but your following count could not be updated:', error);
-      Alert.alert('Follow saved', 'Your relationship was saved, but the following count will refresh from your relationships.');
+      Alert.alert('Follow saved', 'Your relationship was saved, but the following count could not be refreshed.');
     }
   };
 
@@ -224,39 +295,15 @@ export default function UserProfileScreen({ route, navigation }) {
     try {
       let changedRelationship = false;
       if (wasFollowing) {
-        let relationshipId = previousFollowDocId;
-        if (!relationshipId) {
-          const existing = await databases.listDocuments(DATABASE_ID, COLLECTIONS.follows, [
-            Query.equal('followerId', user.$id),
-            Query.equal('followingId', userId),
-            Query.limit(1),
-          ]);
-          relationshipId = existing.documents[0]?.$id;
-        }
-        if (relationshipId) {
-          await databases.deleteDocument(DATABASE_ID, COLLECTIONS.follows, relationshipId);
-          changedRelationship = true;
-        } else {
-          setFollowCounts(previousCounts);
-        }
+        changedRelationship = (await deleteFollowRelationships(user.$id, userId)) > 0;
+        if (!changedRelationship) setFollowCounts(previousCounts);
       } else {
-        const existing = await databases.listDocuments(DATABASE_ID, COLLECTIONS.follows, [
-          Query.equal('followerId', user.$id),
-          Query.equal('followingId', userId),
-          Query.limit(1),
-        ]);
-        if (existing.documents[0]) {
-          setFollowDocId(existing.documents[0].$id);
+        const result = await createFollowRelationship(user.$id, userId);
+        setFollowDocId(result.relationship.$id);
+        if (!result.created) {
           setFollowCounts(previousCounts);
           setIsFollowing(true);
         } else {
-          const relationship = await databases.createDocument(
-            DATABASE_ID,
-            COLLECTIONS.follows,
-            ID.unique(),
-            { followerId: user.$id, followingId: userId },
-          );
-          setFollowDocId(relationship.$id);
           changedRelationship = true;
           try {
             await createNotification(userId, user.displayName || user.name, user.avatarUrl, 'follow');
@@ -267,7 +314,8 @@ export default function UserProfileScreen({ route, navigation }) {
       }
 
       if (wasFollowing) setFollowDocId(null);
-      if (changedRelationship) await persistFollowCounts(countDelta, optimisticCounts);
+      if (changedRelationship) await persistFollowCounts();
+      await refreshFollowState();
     } catch (error) {
       setFollowDocId(previousFollowDocId);
       setFollowCounts(previousCounts);
@@ -363,9 +411,14 @@ export default function UserProfileScreen({ route, navigation }) {
       params: { video, allVideos: displayItems.filter((item) => item.mediaType !== 'post') },
     });
   };
-  const followLabel = isFollowing
-    ? (followsYou ? 'Friends' : 'Following')
-    : (followsYou ? 'Follow Back' : 'Follow');
+  const isFriends = isFollowing && followsYou;
+  const followLabel = isFriends
+    ? 'Friends'
+    : isFollowing
+      ? 'Following'
+      : followsYou
+        ? 'Follow Back'
+        : 'Follow';
   const renderProfilePost = ({ item }) => (
     <TextPostCard
       post={item}

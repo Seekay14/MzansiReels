@@ -1,4 +1,5 @@
 import 'react-native-url-polyfill/auto';
+import linkedAppwriteConfig from '../appwrite.config.json';
 import {
   Client,
   Account,
@@ -11,9 +12,15 @@ import {
   Query,
 } from 'react-native-appwrite';
 
-export const APPWRITE_ENDPOINT = 'https://cloud.appwrite.io/v1';
-export const APPWRITE_PROJECT_ID = '6af0b93b00320e635f66';
-export const APPWRITE_PLATFORM = 'com.yourname.mzansireels';
+export const APPWRITE_ENDPOINT = (
+  process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT || linkedAppwriteConfig.endpoint
+).trim().replace(/\/+$/, '');
+export const APPWRITE_PROJECT_ID = (
+  process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID || linkedAppwriteConfig.projectId
+).trim();
+export const APPWRITE_PLATFORM = (
+  process.env.EXPO_PUBLIC_APPWRITE_PLATFORM || 'com.yourname.mzansireels'
+).trim();
 
 const client = new Client()
   .setEndpoint(APPWRITE_ENDPOINT)

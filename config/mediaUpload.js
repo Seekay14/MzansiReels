@@ -1,7 +1,7 @@
 import { Permission, Role } from 'react-native-appwrite';
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
-import { storage, ID, APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID } from './appwrite';
+import { storage, APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, ID } from './appwrite';
 import { BUCKET_ID } from './constants';
 
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
@@ -100,10 +100,10 @@ export async function convertExpoAssetToFile(asset, { kind = 'image', fileName, 
 async function getWebStorage() {
   if (!webStoragePromise) {
     webStoragePromise = import('appwrite').then(({ Client, Storage }) => {
-      const client = new Client()
+      const webClient = new Client()
         .setEndpoint(APPWRITE_ENDPOINT)
         .setProject(APPWRITE_PROJECT_ID);
-      return new Storage(client);
+      return new Storage(webClient);
     }).catch((error) => {
       webStoragePromise = undefined;
       throw error;

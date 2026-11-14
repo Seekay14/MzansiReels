@@ -1,35 +1,39 @@
 {
-    "organizationId": "6af0b92d0004df8ddf78",
-    "projectId": "6af0b93b00320e635f66",
-    "projectName": "MzansiReels",
-    "endpoint": "https://fra.cloud.appwrite.io/v1",
-    "functions": [
-        {
-            "$id": "send-message",
-            "name": "send-message",
-            "runtime": "node-16.0",
-            "buildSpecification": "s-2vcpu-2gb",
-            "runtimeSpecification": "s-0.5vcpu-512mb",
-            "execute": [],
-            "events": [],
-            "scopes": [
-                "users.read"
-            ],
-            "schedule": "",
-            "interval": 0,
-            "timeout": 15,
-            "enabled": true,
-            "logging": true,
-            "entrypoint": "src/main.js",
-            "commands": "npm install",
-            "ignore": [
-                "node_modules",
-                ".npm"
-            ],
-            "deploymentRetention": 0,
-            "path": "functions/send-message",
-            "previewDomainTarget": "region",
-            "previewDomainLabel": "send-message-6af6"
-        }
-    ]
+    "organizationId":  "6af0b92d0004df8ddf78",
+    "projectId":  "6af0b93b00320e635f66",
+    "projectName":  "MzansiReels",
+    "endpoint":  "https://fra.cloud.appwrite.io/v1",
+    "functions":  [
+                      {
+                          "$id":  "send-message",
+                          "name":  "send-message",
+                          "runtime":  "node-16.0",
+                          "buildSpecification":  "s-2vcpu-2gb",
+                          "runtimeSpecification":  "s-0.5vcpu-512mb",
+                          "execute":  [
+                                          "users"
+                                      ],
+                          "events":  [
+
+                                     ],
+                          "scopes":  [
+                                         "users.read"
+                                     ],
+                          "schedule":  "",
+                          "interval":  0,
+                          "timeout":  15,
+                          "enabled":  true,
+                          "logging":  true,
+                          "entrypoint":  "index.js",
+                          "ignore":  [
+                                         "node_modules",
+                                         ".npm"
+                                     ],
+                          "deploymentRetention":  0,
+                          "path":  "send-message-function",
+                          "previewDomainTarget":  "region",
+                          "previewDomainLabel":  "send-message-6af6",
+                          "commands":  "npm install"
+                      }
+                  ]
 }

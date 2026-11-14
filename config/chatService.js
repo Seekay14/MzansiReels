@@ -5,6 +5,86 @@ import { COLLECTIONS, DATABASE_ID, MESSAGE_FUNCTION_ID } from './constants';
 const MESSAGE_TYPES = new Set(['text', 'image', 'video', 'audio', 'sticker']);
 const MESSAGE_PAGE_SIZE = 100;
 
+function createAuthenticationError(error) {
+  const authenticationError = new Error('Please sign in again to continue.');
+  authenticationError.name = 'MessagingAuthenticationError';
+  authenticationError.kind = 'authentication';
+  authenticationError.code = error?.code;
+  authenticationError.type = error?.type;
+  return authenticationError;
+}
+
+export function logMessagingError(context, error) {
+  if (__DEV__) {
+    console.error(context, {
+      code: error?.code,
+      type: error?.type,
+      message: error?.message || String(error),
+    });
+  }
+}
+
+export async function verifyMessagingUser(expectedUserId) {
+  let authenticatedUser;
+  try {
+    authenticatedUser = await account.get();
+  } catch (error) {
+    logMessagingError('Could not verify the Appwrite messaging session:', error);
+    if (Number(error?.code) === 401) throw createAuthenticationError(error);
+    throw error;
+  }
+
+  if (expectedUserId && authenticatedUser.$id !== expectedUserId) {
+    const error = new Error('The active Appwrite account does not match the messaging account.');
+    error.kind = 'account_mismatch';
+    throw error;
+  }
+  return authenticatedUser;
+}
+
+export function getChatParticipantIds(value) {
+  let participants = value;
+  if (typeof value === 'string') {
+    const serialized = value.trim();
+    if (!serialized) return [];
+    try {
+      participants = JSON.parse(serialized);
+    } catch {
+      participants = serialized.split(',');
+    }
+  }
+  if (typeof participants === 'string') participants = participants.split(',');
+  if (!Array.isArray(participants)) return [];
+  return [...new Set(participants
+    .filter((participantId) => typeof participantId === 'string')
+    .map((participantId) => participantId.trim())
+    .filter(Boolean))];
+}
+
+export function getMessagingErrorMessage(error, fallback = 'Please try again.') {
+  const code = Number(error?.code ?? error?.responseStatusCode);
+  if (error?.kind === 'authentication') return 'Please sign in again to continue.';
+  if (error?.kind === 'account_mismatch') {
+    return 'Your active account changed. Reopen this conversation and try again.';
+  }
+  if (code === 401) {
+    if (/action ['"]?execute/i.test(error?.message || '')) {
+      return 'You do not have permission to run the messaging service. Ask an administrator to enable authenticated Function execution.';
+    }
+    return 'Appwrite rejected this request. Your session has not been cleared; check the project, Function, and collection permissions.';
+  }
+  if (code === 403) return "You don't have permission to access this conversation.";
+  if (code === 404) return 'This user or conversation is unavailable.';
+  if (code === 400) return 'The chat request is invalid. Check the messaging schema and query configuration.';
+  if (code === 409) return 'This conversation changed elsewhere. Refresh it and try again.';
+  if (
+    code === 0
+    || error?.type === 'fetch_error'
+    || /network|fetch failed|connection/i.test(error?.message || '')
+  ) return 'Check your internet connection.';
+  return fallback;
+}
+
 export async function findChat(currentUserId, targetUserId) {
   if (!currentUserId || !targetUserId || currentUserId === targetUserId) {
     throw new Error('A valid current user and target user are required to find a chat.');
@@ -19,11 +99,12 @@ export async function findChat(currentUserId, targetUserId) {
         Query.limit(100),
         Query.offset(offset),
       ]);
-      const existingChat = result.documents.find((chat) => (
-        Array.isArray(chat.participants)
-        && chat.participants.length === 2
-        && chat.participants.includes(targetUserId)
-      ));
+      const existingChat = result.documents.find((chat) => {
+        const participants = getChatParticipantIds(chat.participants);
+        return participants.length === 2
+          && participants.includes(currentUserId)
+          && participants.includes(targetUserId);
+      });
       if (existingChat) return existingChat;
 
       offset += result.documents.length;
@@ -32,7 +113,7 @@ export async function findChat(currentUserId, targetUserId) {
 
     return null;
   } catch (error) {
-    console.error('Could not find chat:', error);
+    if (__DEV__) console.error('Could not find chat:', error);
     throw error;
   }
 }
@@ -42,11 +123,11 @@ export async function getChatForParticipants(chatId, currentUserId, targetUserId
     throw new Error('A chat and both participant IDs are required.');
   }
   const chat = await databases.getDocument(DATABASE_ID, COLLECTIONS.chats, chatId);
+  const participants = getChatParticipantIds(chat.participants);
   if (
-    !Array.isArray(chat.participants)
-    || chat.participants.length !== 2
-    || !chat.participants.includes(currentUserId)
-    || !chat.participants.includes(targetUserId)
+    participants.length !== 2
+    || !participants.includes(currentUserId)
+    || !participants.includes(targetUserId)
   ) {
     throw new Error('You are not a participant in this conversation.');
   }
@@ -61,8 +142,16 @@ function parseFunctionResponse(responseBody) {
   }
 }
 
-async function callMessagingFunction(body) {
-  const jwt = await account.createJWT({ duration: 600 });
+async function callMessagingFunction(body, expectedUserId) {
+  await verifyMessagingUser(expectedUserId);
+  let jwt;
+  try {
+    jwt = await account.createJWT({ duration: 600 });
+  } catch (error) {
+    logMessagingError('Could not create an Appwrite messaging JWT:', error);
+    if (Number(error?.code) === 401) throw createAuthenticationError(error);
+    throw error;
+  }
   const headers = Object.fromEntries(
     [['x-appwrite-user-jwt', jwt.jwt]].map(([name, value]) => [
       name.toLowerCase().replace(/_/g, '-').replace(/^x-appwrite-/, ''),
@@ -96,14 +185,10 @@ export async function getOrCreateChat(currentUserId, targetUserId) {
   if (!currentUserId || !targetUserId || currentUserId === targetUserId) {
     throw new Error('A valid current user and target user are required to find a chat.');
   }
-  const authenticatedUser = await account.get();
-  if (authenticatedUser.$id !== currentUserId) {
-    throw new Error('Your signed-in account does not match the chat participant.');
-  }
   return (await callMessagingFunction({
     action: 'get_or_create_chat',
     receiverId: targetUserId,
-  })).chat;
+  }, currentUserId)).chat;
 }
 
 export async function sendMessage(
@@ -131,10 +216,6 @@ export async function sendMessage(
       throw new Error(`An attachment URL is required for ${messageType} messages.`);
     }
 
-    const authenticatedUser = await account.get();
-    if (authenticatedUser.$id !== senderId) {
-      throw new Error('Your signed-in account does not match the message sender.');
-    }
     const result = await callMessagingFunction({
       action: 'send',
       chatId,
@@ -143,20 +224,22 @@ export async function sendMessage(
       attachmentUrl,
       attachmentType: messageType,
       replyToId,
-    });
+    }, senderId);
     return result.message;
   } catch (error) {
-    console.error('Could not send message:', {
-      collectionId: error.collectionId || COLLECTIONS.messages,
-      code: error.code,
-      type: error.type,
-      message: error.message || String(error),
-      chatIdPresent: Boolean(chatId),
-      senderIdPresent: Boolean(senderId),
-      receiverIdPresent: Boolean(receiverId),
-      attachmentType,
-    });
-    Alert.alert('DB Error', error.message || 'Message could not be saved to Appwrite.');
+    if (__DEV__) {
+      console.error('Could not send message:', {
+        collectionId: error.collectionId || COLLECTIONS.messages,
+        code: error.code,
+        type: error.type,
+        message: error.message || String(error),
+        chatIdPresent: Boolean(chatId),
+        senderIdPresent: Boolean(senderId),
+        receiverIdPresent: Boolean(receiverId),
+        attachmentType,
+      });
+    }
+    Alert.alert('Message not sent', getMessagingErrorMessage(error, 'Message could not be sent. Please try again.'));
     throw error;
   }
 }
@@ -185,10 +268,6 @@ export async function sendMessageToParticipants(
       throw new Error('Message text or an attachment is required.');
     }
 
-    const authenticatedUser = await account.get();
-    if (authenticatedUser.$id !== senderId) {
-      throw new Error('Your signed-in account does not match the message sender.');
-    }
     const result = await callMessagingFunction({
       action: 'send',
       chatId,
@@ -198,19 +277,21 @@ export async function sendMessageToParticipants(
       attachmentType,
       stickerUrl,
       replyToId,
-    });
+    }, senderId);
     return { chat: result.chat, message: result.message };
   } catch (error) {
-    console.error('Could not send message to participants:', {
-      collectionId: error.collectionId || COLLECTIONS.messages,
-      code: error.code,
-      type: error.type,
-      message: error.message || String(error),
-      chatIdPresent: Boolean(chatId),
-      senderIdPresent: Boolean(senderId),
-      receiverIdPresent: Boolean(receiverId),
-      attachmentType,
-    });
+    if (__DEV__) {
+      console.error('Could not send message to participants:', {
+        collectionId: error.collectionId || COLLECTIONS.messages,
+        code: error.code,
+        type: error.type,
+        message: error.message || String(error),
+        chatIdPresent: Boolean(chatId),
+        senderIdPresent: Boolean(senderId),
+        receiverIdPresent: Boolean(receiverId),
+        attachmentType,
+      });
+    }
     throw error;
   }
 }
@@ -220,10 +301,6 @@ export async function sendStickerMessage(chatId, senderId, receiverId, stickerUr
     throw new Error('A chat, sender, recipient, and sticker are required.');
   }
   try {
-    const authenticatedUser = await account.get();
-    if (authenticatedUser.$id !== senderId) {
-      throw new Error('Your signed-in account does not match the message sender.');
-    }
     const result = await callMessagingFunction({
       action: 'send',
       chatId,
@@ -231,20 +308,22 @@ export async function sendStickerMessage(chatId, senderId, receiverId, stickerUr
       text: '',
       attachmentType: 'sticker',
       stickerUrl,
-    });
+    }, senderId);
     return result.message;
   } catch (error) {
-    console.error('Could not send sticker message:', {
-      collectionId: error.collectionId || COLLECTIONS.messages,
-      code: error.code,
-      type: error.type,
-      message: error.message || String(error),
-      chatIdPresent: Boolean(chatId),
-      senderIdPresent: Boolean(senderId),
-      receiverIdPresent: Boolean(receiverId),
-      attachmentType: 'sticker',
-    });
-    Alert.alert('DB Error', error.message || 'Sticker could not be saved to Appwrite.');
+    if (__DEV__) {
+      console.error('Could not send sticker message:', {
+        collectionId: error.collectionId || COLLECTIONS.messages,
+        code: error.code,
+        type: error.type,
+        message: error.message || String(error),
+        chatIdPresent: Boolean(chatId),
+        senderIdPresent: Boolean(senderId),
+        receiverIdPresent: Boolean(receiverId),
+        attachmentType: 'sticker',
+      });
+    }
+    Alert.alert('Sticker not sent', getMessagingErrorMessage(error, 'Sticker could not be sent. Please try again.'));
     throw error;
   }
 }
@@ -289,7 +368,7 @@ export async function fetchMessages(chatId, offset = 0) {
       hasMore: pageOffset > 0,
     };
   } catch (error) {
-    console.error('Could not fetch messages:', error);
+    if (__DEV__) console.error('Could not fetch messages:', error);
     throw error;
   }
 }
@@ -298,10 +377,7 @@ export async function markMessagesAsRead(messages, currentUserId) {
   if (!currentUserId || !Array.isArray(messages)) {
     throw new Error('The signed-in user and messages are required to update read receipts.');
   }
-  const authenticatedUser = await account.get();
-  if (authenticatedUser.$id !== currentUserId) {
-    throw new Error('Your signed-in account does not match the read receipt recipient.');
-  }
+  const authenticatedUser = await verifyMessagingUser(currentUserId);
 
   const unreadMessages = messages.filter((message) => (
     message.receiverId === authenticatedUser.$id && message.isRead === false
@@ -310,6 +386,6 @@ export async function markMessagesAsRead(messages, currentUserId) {
   const result = await callMessagingFunction({
     action: 'mark_read',
     messageIds: unreadMessages.map((message) => message.$id),
-  });
+  }, currentUserId);
   return result.messageIds;
 }

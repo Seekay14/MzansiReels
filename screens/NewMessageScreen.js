@@ -7,6 +7,7 @@ import { DATABASE_ID, COLLECTIONS, COLORS } from '../config/constants';
 import Avatar from '../components/Avatar';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { getMessagingErrorMessage } from '../config/chatService';
 
 export default function NewMessageScreen({ navigation }) {
   const { user } = useAuth();
@@ -45,15 +46,15 @@ export default function NewMessageScreen({ navigation }) {
         if (active) {
           const uniqueUsers = new Map();
           results.documents.forEach((profile) => {
-            if (profile.userId && profile.userId !== user.$id) {
+            if (profile.userId && profile.userId !== user.$id && profile.isDeactivated !== true) {
               uniqueUsers.set(profile.userId, profile);
             }
           });
           setUsers([...uniqueUsers.values()]);
         }
       } catch (error) {
-        console.error('Could not search users for new messages:', error);
-        if (active) setSearchError(error.message || 'Could not search users. Please try again.');
+        if (__DEV__) console.error('Could not search users for new messages:', error);
+        if (active) setSearchError(getMessagingErrorMessage(error, 'Could not search users. Please try again.'));
       } finally {
         if (active) setLoading(false);
       }

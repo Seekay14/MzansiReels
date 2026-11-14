@@ -20,8 +20,10 @@ import { blockUser, getFileViewUrl, getUserDoc, notify } from '../config/helpers
 import { uploadMediaFile } from '../config/mediaUpload';
 import {
   fetchMessages as loadChatMessages,
-  findChat,
+  getOrCreateChat,
+  getMessagingErrorMessage,
   getChatForParticipants,
+  logMessagingError,
   markMessagesAsRead,
   setTypingStatus,
   sendMessageToParticipants,
@@ -207,7 +209,7 @@ export default function ChatScreen({ route, navigation }) {
   } = route?.params || {};
   const otherId = routeOtherId || route?.params?.userId || null;
   const otherName = routeOtherName || route?.params?.userName || 'User';
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { colors: appColors, mode: appThemeMode } = useTheme();
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState([]);
@@ -220,6 +222,7 @@ export default function ChatScreen({ route, navigation }) {
   const [systemKeyboardVisible, setSystemKeyboardVisible] = useState(false);
   const [stickerPickerVisible, setStickerPickerVisible] = useState(false);
   const [chatId, setChatId] = useState(initialChatId || null);
+  const [chatReady, setChatReady] = useState(false);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(true);
   const [loadingOlderMessages, setLoadingOlderMessages] = useState(false);
@@ -261,6 +264,7 @@ export default function ChatScreen({ route, navigation }) {
   const listRef = useRef(null);
   const loadedChatId = useRef('');
   const typingTimer = useRef(null);
+  const sendingMessageRef = useRef(false);
   const typingWriteQueue = useRef(Promise.resolve());
   const publishedTypingState = useRef(false);
   const recordingRef = useRef(null);
@@ -397,8 +401,8 @@ export default function ChatScreen({ route, navigation }) {
           if (!page.documents.length || offset >= page.total) break;
         }
       } catch (error) {
-        console.error('Could not search this conversation:', error);
-        if (active) setMessageSearchError(error.message || 'Could not search messages.');
+        if (__DEV__) console.error('Could not search this conversation:', error);
+        if (active) setMessageSearchError(getMessagingErrorMessage(error, 'Could not search messages.'));
       } finally {
         if (active) setMessageSearchLoading(false);
       }
@@ -408,21 +412,6 @@ export default function ChatScreen({ route, navigation }) {
       clearTimeout(timer);
     };
   }, [chatId, messageSearchText, messageSearchVisible, otherId, user?.$id]);
-
-  useEffect(() => {
-    if (chatId || !otherId || !user?.$id) return undefined;
-    let active = true;
-    findChat(user.$id, otherId)
-      .then((chat) => {
-        if (active && chat) setChatId(chat.$id);
-      })
-      .catch((error) => {
-        console.error('Could not load chat:', error);
-        if (active) setMessageError('Failed to load messages. Please try again.');
-        if (active) Alert.alert('Chat unavailable', error.message || 'Could not open this chat.');
-      });
-    return () => { active = false; };
-  }, [chatId, otherId, user?.$id]);
 
   const persistTypingStatus = useCallback((isTyping) => {
     if (!chatId || !user?.$id || !otherId) return Promise.resolve();
@@ -450,6 +439,30 @@ export default function ChatScreen({ route, navigation }) {
       persistTypingStatus(false);
     }, 2000);
   }, [persistTypingStatus]);
+
+  const openChat = useCallback(async () => {
+    if (!user?.$id || !otherId) return;
+    setChatReady(false);
+    setMessagesLoading(true);
+    setMessageError('');
+    try {
+      const chat = await getOrCreateChat(user.$id, otherId);
+      setChatId(chat.$id);
+      setChatReady(true);
+    } catch (error) {
+      logMessagingError('Could not open chat:', error);
+      if (error?.kind === 'authentication') await logout();
+      const message = getMessagingErrorMessage(error, 'Unable to open this conversation.');
+      setMessageError(message);
+      Alert.alert('Chat unavailable', message);
+    } finally {
+      setMessagesLoading(false);
+    }
+  }, [logout, otherId, user?.$id]);
+
+  useEffect(() => {
+    openChat();
+  }, [openChat]);
 
   useEffect(() => {
     if (!chatId || !user?.$id || !otherId) return undefined;
@@ -484,6 +497,7 @@ export default function ChatScreen({ route, navigation }) {
       setMessageError('This conversation could not be opened.');
       return;
     }
+    if (!chatReady) return;
     if (!chatId) {
       setMessages([]);
       setMessagesLoading(false);
@@ -535,15 +549,16 @@ export default function ChatScreen({ route, navigation }) {
         }
       }
     } catch (error) {
-      console.error(error);
-      setMessageError('Failed to load messages. Please try again.');
+      logMessagingError('Could not load messages:', error);
+      if (error?.kind === 'authentication') await logout();
+      setMessageError(getMessagingErrorMessage(error, 'Failed to load messages. Please try again.'));
     } finally {
       setMessagesLoading(false);
     }
-  }, [user?.$id, otherId, chatId, localClearAt]);
+  }, [logout, user?.$id, otherId, chatId, chatReady, localClearAt]);
 
   const loadOlderMessages = useCallback(async () => {
-    if (!chatId || !user?.$id || !otherId || loadingOlderMessages || !hasMoreMessages) return;
+    if (!chatReady || !chatId || !user?.$id || !otherId || loadingOlderMessages || !hasMoreMessages) return;
     setLoadingOlderMessages(true);
     try {
       await getChatForParticipants(chatId, user.$id, otherId);
@@ -579,14 +594,17 @@ export default function ChatScreen({ route, navigation }) {
         }
       }
     } catch (error) {
-      console.error('Could not load older messages:', error);
-      Alert.alert('Could not load older messages', error.message || 'Please try again.');
+      logMessagingError('Could not load older messages:', error);
+      if (error?.kind === 'authentication') await logout();
+      Alert.alert('Could not load older messages', getMessagingErrorMessage(error, 'Please try again.'));
     } finally {
       setLoadingOlderMessages(false);
     }
   }, [
     chatId,
+    chatReady,
     hasMoreMessages,
+    logout,
     loadingOlderMessages,
     localClearAt,
     messageOffset,
@@ -596,7 +614,7 @@ export default function ChatScreen({ route, navigation }) {
 
   useFocusEffect(useCallback(() => {
     fetchMessages();
-    if (!chatId || !otherId || !user?.$id) return undefined;
+    if (!chatReady || !chatId || !otherId || !user?.$id) return undefined;
     const unsubscribe = client.subscribe(
       `databases.${DATABASE_ID}.collections.${COLLECTIONS.messages}.documents`,
       (event) => {
@@ -608,7 +626,7 @@ export default function ChatScreen({ route, navigation }) {
       unsubscribe();
       clearInterval(timer);
     };
-  }, [chatId, fetchMessages, otherId, user?.$id]));
+  }, [chatId, chatReady, fetchMessages, otherId, user?.$id]));
 
   const showCallUnavailable = (kind) => {
     Alert.alert(
@@ -619,11 +637,12 @@ export default function ChatScreen({ route, navigation }) {
 
   const sendMessage = async (messageText = newMessage, attachmentUrl = '', attachmentType = 'text') => {
     const text = messageText.trim();
-    if ((!text && !attachmentUrl) || !user?.$id || !otherId || sendingMessage) return false;
+    if ((!text && !attachmentUrl) || !user?.$id || !otherId || sendingMessage || sendingMessageRef.current) return false;
     if (blockDocumentId) {
       Alert.alert('User blocked', 'Unblock this user before sending messages from this account.');
       return false;
     }
+    sendingMessageRef.current = true;
     if (typingTimer.current) clearTimeout(typingTimer.current);
     typingTimer.current = null;
     publishedTypingState.current = false;
@@ -650,10 +669,12 @@ export default function ChatScreen({ route, navigation }) {
       }
       return true;
     } catch (error) {
-      console.error('Could not send message:', error);
-      setSendError(error.message || 'Message could not be sent. Please try again.');
+      logMessagingError('Could not send message:', error);
+      if (error?.kind === 'authentication') await logout();
+      setSendError(getMessagingErrorMessage(error, 'Message could not be sent. Please try again.'));
       return false;
     } finally {
+      sendingMessageRef.current = false;
       setSendingMessage(false);
     }
   };
@@ -717,8 +738,11 @@ export default function ChatScreen({ route, navigation }) {
       Alert.alert('Chat unavailable', 'Sign in and select a user before sending a sticker.');
       return;
     }
+    if (sendingMessageRef.current) return;
 
     setSendError('');
+    sendingMessageRef.current = true;
+    setSendingMessage(true);
     try {
       await createChatMessage({
         text: '',
@@ -732,8 +756,12 @@ export default function ChatScreen({ route, navigation }) {
         console.error('Sticker sent, but its notification could not be created:', notificationError);
       }
     } catch (error) {
-      console.error('Could not send sticker:', error);
-      setSendError(error.message || 'Sticker could not be sent. Please try again.');
+      logMessagingError('Could not send sticker:', error);
+      if (error?.kind === 'authentication') await logout();
+      setSendError(getMessagingErrorMessage(error, 'Sticker could not be sent. Please try again.'));
+    } finally {
+      sendingMessageRef.current = false;
+      setSendingMessage(false);
     }
   };
 
@@ -777,7 +805,7 @@ export default function ChatScreen({ route, navigation }) {
       }
       uploadedFileId = null;
     } catch (error) {
-      console.error(`Could not send ${mediaType} attachment:`, error);
+      if (__DEV__) console.error(`Could not send ${mediaType} attachment:`, error);
       if (uploadedFileId) {
         try {
           await storage.deleteFile(BUCKET_ID, uploadedFileId);
@@ -785,7 +813,7 @@ export default function ChatScreen({ route, navigation }) {
           console.error(`Could not clean up failed chat attachment ${uploadedFileId}:`, cleanupError);
         }
       }
-      Alert.alert('Attachment failed', error.message || 'Could not send this attachment.');
+      Alert.alert('Attachment failed', getMessagingErrorMessage(error, 'Could not send this attachment. Please try again.'));
     } finally {
       setUploadingAttachment(false);
       setAttachmentProgress(0);
@@ -872,7 +900,7 @@ export default function ChatScreen({ route, navigation }) {
       if (!discard && uri && (status.durationMillis || 0) > 0) await sendVoiceNote(uri);
     } catch (error) {
       console.error('Could not finish or send voice note:', error);
-      Alert.alert('Voice note failed', error.message || 'Could not send this recording.');
+      Alert.alert('Voice note failed', getMessagingErrorMessage(error, 'Could not send this recording. Please try again.'));
     } finally {
       setRecordingSeconds(0);
     }
@@ -928,7 +956,7 @@ export default function ChatScreen({ route, navigation }) {
           : item
       )));
       console.error(`Could not save reaction for message ${message.$id}:`, error);
-      Alert.alert('Reaction failed', error.message || 'Could not save this reaction.');
+      Alert.alert('Reaction failed', getMessagingErrorMessage(error, 'Could not save this reaction.'));
     }
   };
 
@@ -997,7 +1025,7 @@ export default function ChatScreen({ route, navigation }) {
       setMessages((current) => current.filter((item) => item.$id !== message.$id));
     } catch (error) {
       console.error(`Could not delete message ${message.$id} for everyone:`, error);
-      Alert.alert('Delete failed', error.message || 'Could not delete this message for everyone.');
+      Alert.alert('Delete failed', getMessagingErrorMessage(error, 'Could not delete this message for everyone.'));
     }
   };
 
@@ -1062,7 +1090,7 @@ export default function ChatScreen({ route, navigation }) {
       setEditingMessage(null);
     } catch (error) {
       console.error('Could not edit message:', error);
-      Alert.alert('Edit failed', error.message || 'Could not edit this message.');
+      Alert.alert('Edit failed', getMessagingErrorMessage(error, 'Could not edit this message.'));
     }
   };
 
@@ -1120,7 +1148,7 @@ export default function ChatScreen({ route, navigation }) {
       setDetailHasMore(result.documents.length === 40);
     } catch (error) {
       console.error('Could not load conversation media:', error);
-      Alert.alert('Could not load conversation details', error.message || 'Please try again.');
+      Alert.alert('Could not load conversation details', getMessagingErrorMessage(error, 'Please try again.'));
     } finally {
       setDetailsLoading(false);
     }
@@ -1309,8 +1337,8 @@ export default function ChatScreen({ route, navigation }) {
               setBlockDocumentId(block.$id);
             }
           } catch (error) {
-            console.error('Could not update block preference:', error);
-            Alert.alert('Block update failed', error.message || 'Please try again.');
+            if (__DEV__) console.error('Could not update block preference:', error);
+            Alert.alert('Block update failed', getMessagingErrorMessage(error, 'Please try again.'));
           }
         }},
       ],
@@ -1421,7 +1449,7 @@ export default function ChatScreen({ route, navigation }) {
         <View style={[styles.messageError, styles.flexArea]}>
           <Ionicons name="cloud-offline-outline" size={40} color={COLORS.muted} />
           <Text style={styles.messageErrorText}>{messageError}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={fetchMessages}>
+          <TouchableOpacity style={styles.retryButton} onPress={chatReady ? fetchMessages : openChat}>
             <Text style={styles.retryButtonText}>Try again</Text>
           </TouchableOpacity>
         </View>

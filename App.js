@@ -1,12 +1,17 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer, DarkTheme } from '@react-navigation/native';
+import {
+  NavigationContainer,
+  DarkTheme,
+  getPathFromState as getDefaultPathFromState,
+  getStateFromPath as getDefaultStateFromPath,
+} from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { View, ActivityIndicator, Text, StyleSheet, SafeAreaView, TouchableOpacity } from 'react-native';
+import { View, ActivityIndicator, Text, StyleSheet, SafeAreaView, TouchableOpacity, Platform } from 'react-native';
 import { client, databases, Query } from './config/appwrite';
 
 // 1. SAFELY import config
@@ -51,6 +56,32 @@ const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 const linking = {
   prefixes: [Linking.createURL('/'), 'mzansireels://'],
+  getPathFromState: (state, options) => {
+    const path = getDefaultPathFromState(state, options);
+    return Platform.OS === 'web' ? `#${path}` : path;
+  },
+  getStateFromPath: (path, options) => {
+    let routePath = path;
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      if (path === `${window.location.pathname}${window.location.search}` && window.location.hash.startsWith('#/')) {
+        routePath = window.location.hash.slice(1);
+      } else if (path.startsWith('#/')) {
+        routePath = path.slice(1);
+      }
+    }
+    const state = getDefaultStateFromPath(routePath, options);
+    if (Platform.OS !== 'web' || !state) return state;
+
+    const addHashToRoutePaths = (navigationState) => ({
+      ...navigationState,
+      routes: navigationState.routes.map((route) => ({
+        ...route,
+        ...(route.path ? { path: route.path.startsWith('#') ? route.path : `#${route.path}` } : {}),
+        ...(route.state ? { state: addHashToRoutePaths(route.state) } : {}),
+      })),
+    });
+    return addHashToRoutePaths(state);
+  },
   config: {
     screens: {
       App: {
@@ -58,10 +89,23 @@ const linking = {
         screens: {
           Home: {
             screens: {
+              Feed: '',
               UserProfile: {
                 path: 'profile/:userId',
                 parse: { userId: String },
               },
+            },
+          },
+          Reels: {
+            path: 'reels',
+            screens: { Feed: '' },
+          },
+          Messages: {
+            path: 'messages',
+            screens: {
+              Inbox: '',
+              Chat: 'chat',
+              NewMessage: 'new',
             },
           },
         },
@@ -395,7 +439,18 @@ export default function App() {
         const session = await account.get();
         if (mounted) await setUser(session);
       } catch (error) {
-        if (mounted) setAuthUser(null);
+        if (__DEV__) {
+          console.error('Could not verify the Appwrite session:', {
+            code: error?.code,
+            type: error?.type,
+            message: error?.message || String(error),
+          });
+        }
+        if (mounted && Number(error?.code) === 401) {
+          setAuthUser(null);
+        } else if (mounted) {
+          setProfileError('Could not verify your session. Check your connection and retry.');
+        }
       } finally {
         if (mounted) setLoading(false);
       }
@@ -404,7 +459,8 @@ export default function App() {
     // Add a 5 second timeout just in case Appwrite hangs
     const timeout = setTimeout(() => {
       if (mounted) {
-        console.log("Session check timed out");
+        if (__DEV__) console.warn('Appwrite session verification timed out.');
+        setProfileError('Could not verify your session. Check your connection and retry.');
         setLoading(false);
       }
     }, 5000);

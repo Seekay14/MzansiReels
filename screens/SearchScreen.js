@@ -12,10 +12,15 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { databases, ID, Query } from '../config/appwrite';
+import { databases, Query } from '../config/appwrite';
 import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
 import { formatCompactCount } from '../config/formatNumbers';
 import { ensureUserDoc, getUserDoc, getUserDocs, getVideoThumbnail, requireAuth } from '../config/helpers';
+import {
+  createFollowRelationship,
+  deleteFollowRelationships,
+  fetchProfileFollowCounts,
+} from '../config/profileContentService';
 import {
   listActiveStories,
   listCreatorPage,
@@ -642,26 +647,38 @@ export default function SearchScreen({ navigation, route }) {
     userId: creator.userId,
     userName: creator.username || creator.name || 'creator',
   });
-  const adjustFollowCounts = async (targetUserId, delta) => {
+  const refreshFollowCounts = async (targetUserId) => {
     let updatedFollowerCount = null;
-    try {
-      const [targetProfile, currentProfile] = await Promise.all([
-        getUserDoc(targetUserId).catch(() => null),
-        ensureUserDoc(user),
-      ]);
-      if (targetProfile) {
-        const updatedProfile = await databases.updateDocument(DATABASE_ID, COLLECTIONS.users, targetProfile.$id, {
-          followers: Math.max(0, (Number(targetProfile.followers) || 0) + delta),
+    const [targetProfile, currentProfile] = await Promise.all([
+      getUserDoc(targetUserId).catch(() => null),
+      ensureUserDoc(user).catch((error) => {
+        console.warn('Could not load your profile for follow-count refresh:', error);
+        return null;
+      }),
+    ]);
+
+    if (targetProfile) {
+      try {
+        const counts = await fetchProfileFollowCounts(targetUserId, targetProfile);
+        updatedFollowerCount = counts.followers;
+        await databases.updateDocument(DATABASE_ID, COLLECTIONS.users, targetProfile.$id, {
+          followers: counts.followers,
         });
-        const count = Number(updatedProfile.followers);
-        updatedFollowerCount = Number.isFinite(count) ? count : null;
+      } catch (countError) {
+        console.warn('Could not refresh the creator follower count:', countError);
       }
+    }
+
+    try {
+      if (!currentProfile) return updatedFollowerCount;
+      const counts = await fetchProfileFollowCounts(user.$id, currentProfile);
       await databases.updateDocument(DATABASE_ID, COLLECTIONS.users, currentProfile.$id, {
-        following: Math.max(0, (Number(currentProfile.following) || 0) + delta),
+        following: counts.following,
       });
     } catch (countError) {
-      console.warn('Follow relationship saved, but profile counts could not be updated:', countError);
+      console.warn('Could not refresh your following count:', countError);
     }
+
     return updatedFollowerCount;
   };
 
@@ -683,32 +700,18 @@ export default function SearchScreen({ navigation, route }) {
     try {
       const existingId = followRecords[creatorId];
       if (existingId) {
-        await databases.deleteDocument(DATABASE_ID, COLLECTIONS.follows, existingId);
+        await deleteFollowRelationships(user.$id, creatorId);
         setFollowRecords((current) => {
           const next = { ...current };
           delete next[creatorId];
           return next;
         });
-        const followerCount = await adjustFollowCounts(creatorId, -1);
-        if (followerCount !== null) setCreatorFollowerCount(creatorId, followerCount);
       } else {
-        const existing = await databases.listDocuments(DATABASE_ID, COLLECTIONS.follows, [
-          Query.equal('followerId', user.$id),
-          Query.equal('followingId', creatorId),
-          Query.limit(1),
-        ]);
-        if (existing.documents[0]) {
-          setFollowRecords((current) => ({ ...current, [creatorId]: existing.documents[0].$id }));
-          return;
-        }
-        const record = await databases.createDocument(DATABASE_ID, COLLECTIONS.follows, ID.unique(), {
-          followerId: user.$id,
-          followingId: creatorId,
-        });
-        setFollowRecords((current) => ({ ...current, [creatorId]: record.$id }));
-        const followerCount = await adjustFollowCounts(creatorId, 1);
-        if (followerCount !== null) setCreatorFollowerCount(creatorId, followerCount);
+        const result = await createFollowRelationship(user.$id, creatorId);
+        setFollowRecords((current) => ({ ...current, [creatorId]: result.relationship.$id }));
       }
+      const followerCount = await refreshFollowCounts(creatorId);
+      if (followerCount !== null) setCreatorFollowerCount(creatorId, followerCount);
     } catch (followError) {
       console.error('Could not update creator follow status:', followError);
       setNotice('Could not update follow status. Check your connection and permissions, then try again.');

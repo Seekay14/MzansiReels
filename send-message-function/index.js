@@ -14,6 +14,25 @@ const PAGE_SIZE = 100;
 const MESSAGE_TYPES = new Set(['text', 'image', 'video', 'audio', 'sticker']);
 const FILE_ID_PATTERN = /^\/storage\/buckets\/([^/]+)\/files\/([^/]+)\/view$/;
 
+function getParticipantIds(value) {
+  let participants = value;
+  if (typeof value === 'string') {
+    const serialized = value.trim();
+    if (!serialized) return [];
+    try {
+      participants = JSON.parse(serialized);
+    } catch {
+      participants = serialized.split(',');
+    }
+  }
+  if (typeof participants === 'string') participants = participants.split(',');
+  if (!Array.isArray(participants)) return [];
+  return [...new Set(participants
+    .filter((participantId) => typeof participantId === 'string')
+    .map((participantId) => participantId.trim())
+    .filter(Boolean))];
+}
+
 function parseBody(body) {
   if (typeof body !== 'string') return body || {};
   try {
@@ -47,10 +66,44 @@ function getConversationId(firstUserId, secondUserId) {
 }
 
 function isParticipantPair(chat, firstUserId, secondUserId) {
-  return Array.isArray(chat?.participants)
-    && chat.participants.length === 2
-    && chat.participants.includes(firstUserId)
-    && chat.participants.includes(secondUserId);
+  const participants = getParticipantIds(chat?.participants);
+  return participants.length === 2
+    && participants.includes(firstUserId)
+    && participants.includes(secondUserId);
+}
+
+function getChatPermissions(firstUserId, secondUserId) {
+  return [
+    Permission.read(Role.user(firstUserId)),
+    Permission.read(Role.user(secondUserId)),
+    Permission.delete(Role.user(firstUserId)),
+    Permission.delete(Role.user(secondUserId)),
+  ];
+}
+
+async function ensureChatPermissions(
+  databases,
+  databaseId,
+  chatsCollectionId,
+  chat,
+  firstUserId,
+  secondUserId,
+) {
+  const permissions = getChatPermissions(firstUserId, secondUserId);
+  const currentPermissions = chat.$permissions || [];
+  if (
+    currentPermissions.length === permissions.length
+    && permissions.every((permission) => currentPermissions.includes(permission))
+  ) {
+    return chat;
+  }
+  return databases.updateDocument(
+    databaseId,
+    chatsCollectionId,
+    chat.$id,
+    {},
+    permissions,
+  );
 }
 
 async function assertNoBlock(databases, databaseId, blocksCollectionId, firstUserId, secondUserId) {
@@ -123,28 +176,31 @@ async function getOrCreateChat(
     firstUserId,
     secondUserId,
   );
-  if (existing) return { chat: existing, created: false };
+  if (existing) {
+    const chat = await ensureChatPermissions(
+      databases,
+      databaseId,
+      chatsCollectionId,
+      existing,
+      firstUserId,
+      secondUserId,
+    );
+    return { chat, created: false };
+  }
 
   await assertActiveRecipient(databases, databaseId, usersCollectionId, secondUserId);
   const chatId = getConversationId(firstUserId, secondUserId);
-  const permissions = [
-    Permission.read(Role.user(firstUserId)),
-    Permission.read(Role.user(secondUserId)),
-    Permission.delete(Role.user(firstUserId)),
-    Permission.delete(Role.user(secondUserId)),
-  ];
-
   try {
     const chat = await databases.createDocument(
       databaseId,
       chatsCollectionId,
       chatId,
       {
-        participants: [firstUserId, secondUserId],
+        participants: JSON.stringify([firstUserId, secondUserId].sort()),
         lastMessage: '',
         updatedAt: new Date().toISOString(),
       },
-      permissions,
+      getChatPermissions(firstUserId, secondUserId),
     );
     return { chat, created: true };
   } catch (error) {
@@ -153,7 +209,17 @@ async function getOrCreateChat(
     if (!isParticipantPair(chat, firstUserId, secondUserId)) {
       throw new Error('The existing conversation does not match these participants.');
     }
-    return { chat, created: false };
+    return {
+      chat: await ensureChatPermissions(
+        databases,
+        databaseId,
+        chatsCollectionId,
+        chat,
+        firstUserId,
+        secondUserId,
+      ),
+      created: false,
+    };
   }
 }
 
@@ -164,7 +230,14 @@ async function getVerifiedChat(databases, databaseId, chatsCollectionId, chatId,
     error.statusCode = 403;
     throw error;
   }
-  return chat;
+  return ensureChatPermissions(
+    databases,
+    databaseId,
+    chatsCollectionId,
+    chat,
+    senderId,
+    receiverId,
+  );
 }
 
 async function grantMessageAttachment(
@@ -225,7 +298,9 @@ async function updateTypingStatus(
   userId,
   isTyping,
 ) {
-  const otherUserId = chat.participants.find((participantId) => participantId !== userId);
+  const otherUserId = getParticipantIds(chat.participants)
+    .find((participantId) => participantId !== userId);
+  if (!otherUserId) throw new Error('The conversation participants are invalid.');
   const permissions = [
     Permission.read(Role.user(otherUserId)),
     Permission.update(Role.user(userId)),
@@ -275,6 +350,10 @@ async function updateTypingStatus(
 }
 
 module.exports = async function (req, res) {
+  if (res === undefined && req && req.req && req.res) {
+    ({ req, res } = req);
+  }
+
   const environment = {
     endpoint: process.env.APPWRITE_ENDPOINT,
     projectId: process.env.APPWRITE_PROJECT_ID,
@@ -295,7 +374,7 @@ module.exports = async function (req, res) {
   }
 
   const userJwt = getUserJwt(req);
-  const body = parseBody(req.body);
+  const body = parseBody(req.bodyJson ?? req.body ?? req.payload);
   if (!userJwt || !body || typeof body.action !== 'string') {
     return res.json({ success: false, error: 'A signed-in user and valid action are required.' }, 400);
   }
@@ -325,9 +404,18 @@ module.exports = async function (req, res) {
         environment.chatsCollectionId,
         body.chatId,
       );
-      if (!Array.isArray(chat.participants) || !chat.participants.includes(senderId)) {
+      const participants = getParticipantIds(chat.participants);
+      if (participants.length !== 2 || !participants.includes(senderId)) {
         return res.json({ success: false, error: 'You are not a participant in this conversation.' }, 403);
       }
+      const otherUserId = participants.find((participantId) => participantId !== senderId);
+      await assertNoBlock(
+        databases,
+        environment.databaseId,
+        environment.blocksCollectionId,
+        senderId,
+        otherUserId,
+      );
       const document = await updateTypingStatus(
         databases,
         environment.databaseId,
@@ -402,13 +490,22 @@ module.exports = async function (req, res) {
       || !receiverId
       || receiverId === senderId
     ) {
-      return res.json({ success: false, error: 'A valid recipient account is required.' }, 400);
+      return res.json({ success: false, error: 'This user is unavailable.' }, 404);
+    }
+    if (body.chatId !== undefined && body.chatId !== '' && typeof body.chatId !== 'string') {
+      return res.json({ success: false, error: 'A valid conversation is required.' }, 400);
     }
     await assertNoBlock(
       databases,
       environment.databaseId,
       environment.blocksCollectionId,
       senderId,
+      receiverId,
+    );
+    await assertActiveRecipient(
+      databases,
+      environment.databaseId,
+      environment.usersCollectionId,
       receiverId,
     );
 
@@ -512,7 +609,7 @@ module.exports = async function (req, res) {
         environment.chatsCollectionId,
         chat.$id,
         {
-          lastMessage: text || (attachmentType === 'sticker' ? 'Sticker' : 'Media'),
+          lastMessage: (text || (attachmentType === 'sticker' ? 'Sticker' : 'Media')).slice(0, 100),
           updatedAt: new Date().toISOString(),
         },
       );

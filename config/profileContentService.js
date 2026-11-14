@@ -1,8 +1,74 @@
-import { databases, Query } from './appwrite';
+import { account, databases, Query } from './appwrite';
 import { COLLECTIONS, DATABASE_ID } from './constants';
 import { getUserDocs } from './helpers';
 
 const PAGE_SIZE = 100;
+const FOLLOW_HASH_SEEDS = [0x811c9dc5, 0x9e3779b9, 0x85ebca6b, 0xc2b2ae35];
+
+function getFollowDocumentId(followerId, followingId) {
+  // A deterministic row ID prevents concurrent follow attempts from creating duplicates.
+  const pair = `${followerId.length}:${followerId}|${followingId.length}:${followingId}`;
+  const hash = FOLLOW_HASH_SEEDS.map((seed) => {
+    let value = seed;
+    for (let index = 0; index < pair.length; index += 1) {
+      value = Math.imul(value ^ pair.charCodeAt(index), 0x01000193);
+    }
+    return (value >>> 0).toString(16).padStart(8, '0');
+  }).join('');
+  return `f_${hash}`;
+}
+
+async function getFollowRelationships(followerId, followingId) {
+  return fetchAllProfileDocuments(COLLECTIONS.follows, [
+    Query.equal('followerId', followerId),
+    Query.equal('followingId', followingId),
+    Query.orderDesc('$createdAt'),
+  ]);
+}
+
+async function assertAuthenticatedFollower(followerId, followingId) {
+  if (!followerId || !followingId || followerId === followingId) {
+    throw new Error('A valid follower and following user are required.');
+  }
+  const authenticatedUser = await account.get();
+  if (authenticatedUser.$id !== followerId) {
+    throw new Error('Your signed-in account does not match the follower.');
+  }
+}
+
+export async function createFollowRelationship(followerId, followingId) {
+  await assertAuthenticatedFollower(followerId, followingId);
+  const existing = await getFollowRelationships(followerId, followingId);
+  if (existing.length) return { relationship: existing[0], created: false };
+
+  try {
+    const relationship = await databases.createDocument(
+      DATABASE_ID,
+      COLLECTIONS.follows,
+      getFollowDocumentId(followerId, followingId),
+      { followerId, followingId },
+    );
+    return { relationship, created: true };
+  } catch (error) {
+    if (error.code !== 409 && error.type !== 'document_already_exists') throw error;
+    const racedRelationship = await getFollowRelationships(followerId, followingId);
+    if (!racedRelationship.length) throw error;
+    return { relationship: racedRelationship[0], created: false };
+  }
+}
+
+export async function deleteFollowRelationships(followerId, followingId) {
+  await assertAuthenticatedFollower(followerId, followingId);
+  const relationships = await getFollowRelationships(followerId, followingId);
+  const results = await Promise.allSettled(relationships.map((relationship) => (
+    databases.deleteDocument(DATABASE_ID, COLLECTIONS.follows, relationship.$id)
+  )));
+  const failure = results.find((result) => (
+    result.status === 'rejected' && result.reason?.code !== 404
+  ));
+  if (failure) throw failure.reason;
+  return relationships.length;
+}
 
 export async function filterVisibleProfileContent(items, viewerId) {
   const authorIds = [...new Set(items

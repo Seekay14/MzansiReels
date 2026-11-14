@@ -1,9 +1,10 @@
-import React, { useRef, useState, useEffect, useLayoutEffect } from 'react';
+import React, { useRef, useState, useEffect, useLayoutEffect, useMemo } from 'react';
 import {
   AppState, StyleSheet, Text, View, TouchableOpacity, Pressable, Modal, TextInput, Switch,
   KeyboardAvoidingView, Platform, Alert, ActivityIndicator, Image, Animated, Share,
-  TouchableWithoutFeedback,
+  TouchableWithoutFeedback, Dimensions, Easing,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEvent } from 'expo';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +19,19 @@ import { BUCKET_ID, DATABASE_ID, COLLECTIONS, COLORS, fileIdFromUrl } from '../c
 import { useAuth } from '../context/AuthContext';
 import { getUserDoc, notify, reportVideo, requireAuth, toggleVideoLike } from '../config/helpers';
 import Avatar from './Avatar';
+import { createFollowRelationship, deleteFollowRelationships } from '../config/profileContentService';
+
+// Horizontal-swipe tuning. The vertical fail offset is what keeps the
+// up/down paging scroll of the parent FlatList untouched: before the pan
+// activates, any vertical drift past this distance makes the handler fail so
+// the scroll view keeps ownership of the gesture.
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const SWIPE_ACTIVATE_DISTANCE = 20;
+const SWIPE_FAIL_VERTICAL_DRIFT = 24;
+const SWIPE_COMMIT_DISTANCE = 84;
+const SWIPE_COMMIT_VELOCITY = 700;
+const SWIPE_MAX_DRAG = Math.min(140, Math.round(SCREEN_WIDTH * 0.34));
+const SWIPE_HINT_VISIBLE_MS = 3600;
 
 export default function VideoCard({
   item,
@@ -66,8 +80,30 @@ export default function VideoCard({
   const heartScale = useRef(new Animated.Value(1)).current;
   const pausedOverlayOpacity = useRef(new Animated.Value(0)).current;
   const busy = useRef(false);
+  const followBusy = useRef(false);
   const fetchedMeta = useRef(false);
   const viewCounted = useRef(false);
+
+    // Swipe-left-to-profile state
+    const swipeX = useRef(new Animated.Value(0)).current;
+    const profileHintOpacity = useRef(new Animated.Value(0)).current;
+    const profileHintDismissed = useRef(false);
+    const swipeCommitted = useRef(false);
+
+    // Keep the navigation callback fresh without rebuilding the gesture.
+    const openProfileRef = useRef(onOpenProfile);
+    useEffect(() => {
+      openProfileRef.current = onOpenProfile;
+    }, [onOpenProfile]);
+    const navigationRef = useRef(navigation);
+    useEffect(() => {
+      navigationRef.current = navigation;
+    }, [navigation]);
+    const itemRef = useRef(item);
+    useEffect(() => {
+      itemRef.current = item;
+    }, [item]);
+
   useEffect(() => {
     fetchedMeta.current = false;
     setIsLiked(false);
@@ -145,6 +181,123 @@ export default function VideoCard({
   const togglePlayback = () => {
     setPaused((wasPaused) => !wasPaused);
   };
+
+    // Swipe left on a Reel to open the creator's profile.
+    const isSheetOpen = isCommentsVisible || creatorMenuVisible || editDetailsVisible;
+
+    const resetSwipe = (animated = true) => {
+      swipeCommitted.current = false;
+      if (!animated) {
+        swipeX.setValue(0);
+        return;
+      }
+      Animated.spring(swipeX, {
+        toValue: 0,
+        damping: 18,
+        stiffness: 210,
+        mass: 0.7,
+        useNativeDriver: true,
+      }).start();
+    };
+
+    const commitSwipe = (direction) => {
+      if (swipeCommitted.current) return;
+      swipeCommitted.current = true;
+      profileHintDismissed.current = true;
+      Animated.timing(swipeX, {
+        toValue: direction * SWIPE_MAX_DRAG,
+        duration: 120,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) {
+          if (direction < 0) {
+            openProfileRef.current?.(itemRef.current);
+          } else {
+            const currentNavigation = navigationRef.current;
+            if (currentNavigation?.canGoBack?.()) {
+              currentNavigation.goBack();
+            } else {
+              currentNavigation?.navigate?.('Reels', { screen: 'Feed' });
+            }
+          }
+        }
+        resetSwipe();
+      });
+    };
+
+    const swipeGesture = useMemo(
+      () => Gesture.Pan()
+        .activeOffsetX([-SWIPE_ACTIVATE_DISTANCE, SWIPE_ACTIVATE_DISTANCE])
+        // Vertical drift fails the pan before it activates, so the Reels
+        // FlatList keeps full ownership of up/down paging.
+        .failOffsetY([-SWIPE_FAIL_VERTICAL_DRIFT, SWIPE_FAIL_VERTICAL_DRIFT])
+        .shouldCancelWhenOutside(false)
+        // Driving an Animated.Value and navigating: keep it on the JS thread.
+        .runOnJS(true)
+        .enabled(!isSheetOpen)
+        .onUpdate((event) => {
+          if (swipeCommitted.current) return;
+          swipeX.setValue(Math.max(
+            -SWIPE_MAX_DRAG,
+            Math.min(SWIPE_MAX_DRAG, event.translationX),
+          ));
+        })
+        .onEnd((event) => {
+          if (swipeCommitted.current) return;
+          const draggedLeft = event.translationX <= -SWIPE_COMMIT_DISTANCE;
+          const flickedLeft = event.velocityX <= -SWIPE_COMMIT_VELOCITY
+            && event.translationX < -SWIPE_ACTIVATE_DISTANCE;
+          const draggedRight = event.translationX >= SWIPE_COMMIT_DISTANCE;
+          const flickedRight = event.velocityX >= SWIPE_COMMIT_VELOCITY
+            && event.translationX > SWIPE_ACTIVATE_DISTANCE;
+          if (draggedLeft || flickedLeft) commitSwipe(-1);
+          else if (draggedRight || flickedRight) commitSwipe(1);
+          else resetSwipe();
+        })
+        .onFinalize(() => {
+          // Interrupted by the parent scroll view or a cancelled touch.
+          if (!swipeCommitted.current) resetSwipe();
+        }),
+      [isSheetOpen],
+    );
+
+    // Fade the swipe hint in while the Reel plays, then fade it back out.
+    useEffect(() => {
+      if (!isActive || paused || isSheetOpen || !isPlaying || profileHintDismissed.current) {
+        Animated.timing(profileHintOpacity, {
+          toValue: 0,
+          duration: 180,
+          useNativeDriver: true,
+        }).start();
+        return undefined;
+      }
+
+      Animated.timing(profileHintOpacity, {
+        toValue: 1,
+        duration: 320,
+        delay: 350,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start();
+
+      const hideTimer = setTimeout(() => {
+        profileHintDismissed.current = true;
+        Animated.timing(profileHintOpacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
+      }, SWIPE_HINT_VISIBLE_MS);
+      return () => clearTimeout(hideTimer);
+    }, [isActive, isPlaying, isSheetOpen, paused, profileHintOpacity]);
+
+    useEffect(() => {
+      // Every Reel starts un-swiped with its own hint.
+      swipeCommitted.current = false;
+      profileHintDismissed.current = false;
+      swipeX.setValue(0);
+    }, [item.$id, swipeX]);
 
   const handleToggleMute = () => {
     const nextMuted = !muted;
@@ -300,25 +453,28 @@ export default function VideoCard({
   };
 
   const handleFollow = async () => {
-    if (!requireAuth('follow this creator', navigation, user)) return;
+    if (
+      !requireAuth('follow this creator', navigation, user)
+      || followBusy.current
+      || !item.userId
+      || item.userId === user?.$id
+    ) return;
+    followBusy.current = true;
     try {
       if (isFollowing) {
-        const res = await databases.listDocuments(DATABASE_ID, COLLECTIONS.follows, [
-          Query.equal('followerId', user.$id), Query.equal('followingId', item.userId), Query.limit(1)
-        ]);
-        if (res.documents[0]) {
-          await databases.deleteDocument(DATABASE_ID, COLLECTIONS.follows, res.documents[0].$id);
-          setIsFollowing(false);
-        }
+        await deleteFollowRelationships(user.$id, item.userId);
+        setIsFollowing(false);
       } else {
-        await databases.createDocument(DATABASE_ID, COLLECTIONS.follows, ID.unique(), {
-          followerId: user.$id, followingId: item.userId
-        });
+        const result = await createFollowRelationship(user.$id, item.userId);
         setIsFollowing(true);
-        await notify(item.userId, user.name || 'Someone', 'follow', user.avatarUrl);
+        if (result.created) {
+          await notify(item.userId, user.name || 'Someone', 'follow', user.avatarUrl);
+        }
       }
     } catch (error) {
       Alert.alert('Error', 'Could not update follow status.');
+    } finally {
+      followBusy.current = false;
     }
   };
 
@@ -486,6 +642,7 @@ export default function VideoCard({
   };
 
   const promptVideoReport = () => {
+    setCreatorMenuVisible(false);
     if (!user?.$id) {
       Alert.alert('Sign in required', 'Please sign in to report a video.');
       return;
@@ -561,6 +718,7 @@ export default function VideoCard({
         });
         setIsBookmarked(true);
       }
+      setCreatorMenuVisible(false);
     } catch (error) { Alert.alert('Error', 'Could not update bookmark.'); }
   };
 
@@ -583,38 +741,53 @@ export default function VideoCard({
         <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#111' }]} />
       )}
 
-      {/* 2. VIDEO PLAYER */}
-      <TouchableWithoutFeedback onPress={togglePlayback}>
-        <View style={styles.videoTouchArea}>
-          <VideoView
-            player={player}
-            style={styles.video}
-            contentFit="contain"
-            nativeControls={false}
-            allowsFullscreen={false}
-          />
-          {status === 'loading' ? (
-            <ActivityIndicator style={styles.playerIndicator} color="#fff" size="large" />
-          ) : status === 'error' ? (
-            <View style={styles.playerError} pointerEvents="none">
-              <Text style={styles.playerErrorText}>
-                {error?.message || 'This Reel could not be played.'}
-              </Text>
+      {/* 2. VIDEO PLAYER (wrapped in the swipe-left-to-profile gesture) */}
+            <GestureDetector gesture={swipeGesture} touchAction="pan-y">
+              <Animated.View style={[styles.swipeSurface, { transform: [{ translateX: swipeX }] }]}>
+                <TouchableWithoutFeedback onPress={togglePlayback}>
+                  <View style={styles.videoTouchArea}>
+                    <VideoView
+                      player={player}
+                      style={styles.video}
+                      contentFit="contain"
+                      nativeControls={false}
+                      allowsFullscreen={false}
+                    />
+                    {status === 'loading' ? (
+                      <ActivityIndicator style={styles.playerIndicator} color="#fff" size="large" />
+                    ) : status === 'error' ? (
+                      <View style={styles.playerError} pointerEvents="none">
+                        <Text style={styles.playerErrorText}>
+                          {error?.message || 'This Reel could not be played.'}
+                        </Text>
+                      </View>
+                    ) : !item.videoUrl ? (
+                      <View style={styles.playerError} pointerEvents="none">
+                        <Text style={styles.playerErrorText}>This Reel has no playable video URL.</Text>
+                      </View>
+                    ) : null}
             </View>
-          ) : !item.videoUrl ? (
-            <View style={styles.playerError} pointerEvents="none">
-              <Text style={styles.playerErrorText}>This Reel has no playable video URL.</Text>
-            </View>
-          ) : null}
-        </View>
-      </TouchableWithoutFeedback>
+                </TouchableWithoutFeedback>
 
+                <Animated.View
+                  pointerEvents="none"
+                  style={[styles.centerScreen, { opacity: pausedOverlayOpacity }]}
+                >
+                  <Ionicons name="play" size={80} color="rgba(255,255,255,0.78)" />
+                </Animated.View>
+              </Animated.View>
+            </GestureDetector>
+
+            {/* 3. SWIPE-LEFT HINT */}
       <Animated.View
         pointerEvents="none"
-        style={[styles.centerScreen, { opacity: pausedOverlayOpacity }]}
+              style={[styles.swipeHint, { opacity: profileHintOpacity, top: insets.top + 58 }]}
       >
-        <Ionicons name="play" size={80} color="rgba(255,255,255,0.78)" />
+              <Ionicons name="chevron-back" size={13} color="#fff" />
+              <View style={styles.swipeHintDivider} />
+              <Ionicons name="person-circle-outline" size={16} color="#fff" />
       </Animated.View>
+
       {Platform.OS === 'web' && isActive && needsPlaybackGesture && (
         <TouchableOpacity
           style={styles.playWithSoundButton}
@@ -717,15 +890,16 @@ export default function VideoCard({
           <Text style={styles.actionText}>Share</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => setCreatorMenuVisible(true)}
-          accessibilityRole="button"
-          accessibilityLabel="More video options"
-        >
-          <Ionicons name="ellipsis-vertical" size={30} color="#fff" />
-        </TouchableOpacity>
       </View>
+
+      <TouchableOpacity
+        style={[styles.moreOptionsButton, { top: insets.top + 10 }]}
+        onPress={() => setCreatorMenuVisible(true)}
+        accessibilityRole="button"
+        accessibilityLabel="More video options"
+      >
+        <Ionicons name="ellipsis-vertical" size={24} color="#fff" />
+      </TouchableOpacity>
 
       <PostCommentModal
         visible={isCommentsVisible}
@@ -768,6 +942,36 @@ export default function VideoCard({
                 <Ionicons name="close" size={25} color="#fff" />
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              style={styles.creatorMenuRow}
+              onPress={handleToggleMute}
+              accessibilityRole="button"
+              accessibilityLabel={muted ? 'Unmute video' : 'Mute video'}
+            >
+              <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={22} color={COLORS.cyan} />
+              <Text style={styles.creatorMenuText}>{muted ? 'Unmute video' : 'Mute video'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.creatorMenuRow}
+              onPress={handleBookmark}
+              accessibilityRole="button"
+              accessibilityLabel={isBookmarked ? 'Remove video from saved' : 'Save video'}
+            >
+              <Ionicons name={isBookmarked ? 'bookmark' : 'bookmark-outline'} size={22} color={COLORS.cyan} />
+              <Text style={styles.creatorMenuText}>{isBookmarked ? 'Remove from saved' : 'Save'}</Text>
+            </TouchableOpacity>
+            {!isOwnVideo && (
+              <TouchableOpacity
+                style={styles.creatorMenuRow}
+                onPress={promptVideoReport}
+                accessibilityRole="button"
+                accessibilityLabel="Report video"
+              >
+                <Ionicons name="flag-outline" size={22} color="#FF5B67" />
+                <Text style={styles.creatorMenuText}>Report video</Text>
+              </TouchableOpacity>
+            )}
 
             {isOwnVideo ? (
               <>
@@ -849,10 +1053,6 @@ export default function VideoCard({
                     ? <ActivityIndicator size="small" color={COLORS.cyan} />
                     : <Ionicons name="share-outline" size={22} color={COLORS.cyan} />}
                   <Text style={styles.creatorMenuText}>Share video</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.creatorMenuRow} onPress={promptVideoReport}>
-                  <Ionicons name="flag-outline" size={22} color="#FF5B67" />
-                  <Text style={styles.creatorMenuText}>Report Video</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.creatorMenuRow, styles.deleteMenuRow]}
@@ -942,6 +1142,7 @@ const shadow = { textShadowColor: 'rgba(0, 0, 0, 0.7)', textShadowOffset: { widt
 const styles = StyleSheet.create({
   card: { width: '100%', justifyContent: 'flex-end', backgroundColor: '#000' },
   centerScreen: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', zIndex: 5 },
+    swipeSurface: { ...StyleSheet.absoluteFillObject },
   videoTouchArea: { ...StyleSheet.absoluteFillObject },
   
   video: {
@@ -976,6 +1177,43 @@ const styles = StyleSheet.create({
   // Gradient overlay at bottom
   bottomGradient: {
     position: 'absolute', left: 0, right: 0, bottom: 0, height: 180, zIndex: 2,
+  },
+
+    // Small "swipe left for profile" affordance pinned to the right edge.
+    swipeHint: {
+      position: 'absolute',
+      right: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingLeft: 6,
+      paddingRight: 6,
+      paddingVertical: 7,
+      borderTopLeftRadius: 16,
+      borderBottomLeftRadius: 16,
+      backgroundColor: 'rgba(0,0,0,0.42)',
+      borderWidth: 1,
+      borderRightWidth: 0,
+      borderColor: 'rgba(255,255,255,0.22)',
+      zIndex: 11,
+    },
+    swipeHintDivider: {
+      width: 1,
+      height: 11,
+      marginHorizontal: 4,
+      backgroundColor: 'rgba(255,255,255,0.35)',
+    },
+  moreOptionsButton: {
+    position: 'absolute',
+    right: 16,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.48)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+    zIndex: 12,
   },
 
   bottomOverlay: { position: 'absolute', left: 15, right: 80, zIndex: 10 },

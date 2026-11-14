@@ -35,14 +35,18 @@ both participants to read, and only the sender to edit or delete. The recipient 
 messages read through the function. Chat documents allow participant reads/deletes; the
 function updates the preview.
 
+Do not disable document security or grant `All Users` collection access on chats/messages:
+that makes every authenticated account able to read or alter other users' conversations.
+
 Deploy `send-message-function` as an Appwrite Function with ID **`send-message`**, enable
-execution by authenticated users, set `index.js` as its entrypoint, and install the
+execution by authenticated users, use `send-message-function/index.js` as its entrypoint,
+and install the
 dependencies from its `package.json`.
 Configure these function variables:
 
 | Variable | Value |
 |---|---|
-| `APPWRITE_ENDPOINT` | `https://cloud.appwrite.io/v1` (or your Appwrite endpoint) |
+| `APPWRITE_ENDPOINT` | `https://fra.cloud.appwrite.io/v1` (use the region shown in `appwrite.config.json`) |
 | `APPWRITE_PROJECT_ID` | `6af0b93b00320e635f66` |
 | `APPWRITE_API_KEY` | Server-only API key with database read/write and file read/write scopes |
 | `DATABASE_ID` | `6af0bc84001abbbcb856` |
@@ -58,12 +62,15 @@ Enable file security on the existing storage bucket and remove broad bucket-leve
 access. Public feed/profile uploads can retain per-file public read permissions, while
 message attachments are shared only with the chat participants by the Function.
 
-Add indexes to the existing collections used by messaging queries: `users.userId`,
-`users.name`, `users.username`; `messages.chatId` and a composite `messages.receiverId` +
-`messages.isRead`; `chats.participants` (array index) and `chats.updatedAt`; and a
-composite `blocks.blockerId` + `blocks.blockedId`. Keep the existing collection IDs; do
-not create replacement collections. Check any other collection permissions separately
-before deployment.
+Store the two chat participant IDs as a JSON-encoded string in the existing
+`chats.participants` string attribute. The client and Function also read legacy JSON
+strings, comma-separated strings, and array values so existing conversations remain
+accessible. Add indexes to the existing collections used by messaging queries:
+`users.userId`, `users.name`, `users.username`; `messages.chatId` and a composite
+`messages.receiverId` + `messages.isRead`; `chats.participants` (string index) and
+`chats.updatedAt`; and a composite `blocks.blockerId` + `blocks.blockedId`. Keep the
+existing collection IDs; do not create replacement collections. Check any other
+collection permissions separately before deployment.
 
 The likes and follows collections need no attributes beyond those listed above.
 
@@ -85,9 +92,12 @@ Add a **unique index** on `username` to enforce handle uniqueness across simulta
 sign-ups. The app also checks availability while the user types.
 
 ## 3. Appwrite platform
-`config/appwrite.js` still uses `setPlatform('127.0.0.1')`. In the Appwrite console, add a
-platform whose ID matches what you set. For devices that is your bundle id / package name
-(`com.yourname.mzansireels`, change it in app.json too) and `host.exp.exponent` for Expo Go.
+The Expo client reads `EXPO_PUBLIC_APPWRITE_ENDPOINT`, `EXPO_PUBLIC_APPWRITE_PROJECT_ID`,
+and `EXPO_PUBLIC_APPWRITE_PLATFORM` when set. Defaults use the regional endpoint and
+project ID in `appwrite.config.json`. In the Appwrite console, add a platform whose ID
+matches `EXPO_PUBLIC_APPWRITE_PLATFORM`; for Android this is the package name in
+`app.json` (`com.yourname.mzansireels` by default), and Expo Go also requires the
+`host.exp.exponent` platform.
 
 ## Project layout
 Drop these files into your project (they replace the old ones). `App.js`, `index.js`,

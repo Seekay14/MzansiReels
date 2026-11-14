@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,6 +19,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { client, databases, Query } from '../config/appwrite';
 import { DATABASE_ID, COLLECTIONS, COLORS } from '../config/constants';
+import { getUserDocs } from '../config/helpers';
 import Avatar from '../components/Avatar';
 import BrandTitle from '../components/BrandTitle';
 import StatusList from '../components/StatusList';
@@ -28,6 +29,12 @@ import StoryUploadModal from '../components/StoryUploadModal';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { fetchActiveStories } from '../config/storyService';
+import {
+  getChatParticipantIds,
+  getMessagingErrorMessage,
+  logMessagingError,
+  verifyMessagingUser,
+} from '../config/chatService';
 
 const mutedChatsKey = (userId) => `muted_chats_${userId}`;
 const pinnedChatsKey = (userId) => `pinned_chats_${userId}`;
@@ -173,7 +180,7 @@ function ConversationRow({ item, muted, pinned, onPin, onMute, onArchive, onDele
 
 export default function MessagesScreen({ navigation }) {
   const { colors } = useTheme();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const insets = useSafeAreaInsets();
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -196,6 +203,7 @@ export default function MessagesScreen({ navigation }) {
   const [storyViewerVisible, setStoryViewerVisible] = useState(false);
   const [storyUploadVisible, setStoryUploadVisible] = useState(false);
   const [activeStoryGroup, setActiveStoryGroup] = useState(0);
+  const loadInFlightRef = useRef(false);
   const storyGroups = useMemo(() => groupStories(stories, user?.$id), [stories, user?.$id]);
 
   const updateStoryAfterView = useCallback((updatedStory, viewedStoryId) => {
@@ -222,8 +230,11 @@ export default function MessagesScreen({ navigation }) {
       setRefreshing(false);
       return;
     }
+    if (loadInFlightRef.current) return;
+    loadInFlightRef.current = true;
     setLoadError('');
     try {
+      await verifyMessagingUser(user.$id);
       const chats = [];
       let chatOffset = 0;
       while (true) {
@@ -252,11 +263,12 @@ export default function MessagesScreen({ navigation }) {
           ]);
           page.documents.forEach((message) => {
             const chat = chatsById.get(message.chatId);
+            const participants = getChatParticipantIds(chat?.participants);
             if (
               chat
               && message.receiverId === user.$id
               && message.senderId !== user.$id
-              && chat.participants?.includes(message.senderId)
+              && participants.includes(message.senderId)
             ) {
               unreadCounts.set(message.chatId, (unreadCounts.get(message.chatId) || 0) + 1);
             }
@@ -266,12 +278,14 @@ export default function MessagesScreen({ navigation }) {
           if (page.documents.length === 0 || messageOffset >= unreadTotal) break;
         }
       } catch (error) {
-        console.error('Could not load inbox unread counts:', {
-          collectionId: COLLECTIONS.messages,
-          code: error.code,
-          type: error.type,
-          message: error.message || String(error),
-        });
+        if (__DEV__) {
+          console.error('Could not load inbox unread counts:', {
+            collectionId: COLLECTIONS.messages,
+            code: error.code,
+            type: error.type,
+            message: error.message || String(error),
+          });
+        }
         unreadCounts.clear();
       }
 
@@ -284,7 +298,7 @@ export default function MessagesScreen({ navigation }) {
         ]);
         typingChatIds = new Set(typing.documents.map((status) => status.chatId));
       } catch (error) {
-        console.error('Could not load active chat typing indicators:', error);
+        if (__DEV__) console.error('Could not load active chat typing indicators:', error);
       }
 
       const uniqueChatsByPair = new Map();
@@ -292,7 +306,7 @@ export default function MessagesScreen({ navigation }) {
       chats.forEach((chat) => {
         if (!chat.$id || uniqueChatsById.has(chat.$id)) return;
         uniqueChatsById.add(chat.$id);
-        const participants = Array.isArray(chat.participants) ? chat.participants : [];
+        const participants = getChatParticipantIds(chat.participants);
         const otherId = participants.find((participantId) => participantId !== user.$id);
         if (!otherId) return;
         const pairKey = [user.$id, otherId].sort().join(':');
@@ -301,7 +315,8 @@ export default function MessagesScreen({ navigation }) {
       const uniqueChats = [...uniqueChatsByPair.values()];
       const recentMessages = await Promise.all(uniqueChats.map(async (chat) => {
         try {
-          const otherId = chat.participants?.find((participantId) => participantId !== user.$id);
+          const otherId = getChatParticipantIds(chat.participants)
+            .find((participantId) => participantId !== user.$id);
           const [result, clearAtValue] = await Promise.all([
             databases.listDocuments(DATABASE_ID, COLLECTIONS.messages, [
               Query.equal('chatId', chat.$id),
@@ -323,33 +338,24 @@ export default function MessagesScreen({ navigation }) {
             cleared: Boolean(clearAt && latest && !latestVisible),
           }];
         } catch (error) {
-          console.error(`Could not load the latest message for chat ${chat.$id}:`, error);
+          if (__DEV__) console.error(`Could not load the latest message for chat ${chat.$id}:`, error);
           return [chat.$id, { message: null, cleared: false }];
         }
       }));
       const recentMessagesByChat = new Map(recentMessages);
 
       const ids = [...new Set(uniqueChats.flatMap((chat) => (
-        Array.isArray(chat.participants)
-          ? chat.participants.filter((participantId) => participantId !== user.$id)
-          : []
+        getChatParticipantIds(chat.participants)
+          .filter((participantId) => participantId !== user.$id)
       )))];
       let people = [];
       if (ids.length) {
-        const found = await databases.listDocuments(DATABASE_ID, COLLECTIONS.users, [
-          Query.equal('userId', ids),
-          Query.limit(100),
-        ]);
-        people = found.documents;
+        people = await getUserDocs(ids);
       }
 
-      const conversationsWithUnread = uniqueChats
-        .filter((chat) => {
-          const latest = recentMessagesByChat.get(chat.$id);
-          return latest?.message || latest?.cleared;
-        })
-        .map((chat) => {
-        const otherId = chat.participants?.find((participantId) => participantId !== user.$id);
+      const conversationsWithUnread = uniqueChats.map((chat) => {
+        const otherId = getChatParticipantIds(chat.participants)
+          .find((participantId) => participantId !== user.$id);
         const person = people.find((profile) => profile.userId === otherId);
         const latestMessageState = recentMessagesByChat.get(chat.$id);
         const latestMessage = latestMessageState?.message;
@@ -385,17 +391,22 @@ export default function MessagesScreen({ navigation }) {
           unreadCount: unreadCounts.get(chat.$id) || 0,
           isTyping: typingChatIds.has(chat.$id),
         };
-        });
+      });
 
       setConversations(conversationsWithUnread);
     } catch (error) {
-      console.error('Error loading inbox:', error);
-      setLoadError('Your inbox could not be loaded. Check your connection and try again.');
+      logMessagingError('Could not load the inbox:', error);
+      if (error?.kind === 'authentication') await logout();
+      setLoadError(getMessagingErrorMessage(
+        error,
+        'Your inbox could not be loaded. Check your connection and try again.',
+      ));
     } finally {
+      loadInFlightRef.current = false;
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user?.$id]);
+  }, [logout, user?.$id]);
 
   const loadStories = useCallback(async () => {
     try {
@@ -473,8 +484,10 @@ export default function MessagesScreen({ navigation }) {
         }
       },
     );
+    const refreshTimer = setInterval(refreshInbox, 30000);
     return () => {
       active = false;
+      clearInterval(refreshTimer);
       unsubscribeMessages();
       unsubscribeTyping();
       unsubscribeStories();
@@ -509,15 +522,15 @@ export default function MessagesScreen({ navigation }) {
         if (active) {
           const uniqueUsers = new Map();
           searchResults.documents.forEach((profile) => {
-            if (profile.userId && profile.userId !== user.$id) {
+            if (profile.userId && profile.userId !== user.$id && profile.isDeactivated !== true) {
               uniqueUsers.set(profile.userId, profile);
             }
           });
           setUsers([...uniqueUsers.values()]);
         }
       } catch (error) {
-        console.error('Could not search users for new messages:', error);
-        if (active) setUserSearchError(error.message || 'Could not search users. Please try again.');
+        if (__DEV__) console.error('Could not search users for new messages:', error);
+        if (active) setUserSearchError(getMessagingErrorMessage(error, 'Could not search users. Please try again.'));
       } finally {
         if (active) setUsersLoading(false);
       }
@@ -608,8 +621,8 @@ export default function MessagesScreen({ navigation }) {
             setMutedChatIds(nextMutedChatIds);
             await AsyncStorage.setItem(mutedChatsKey(user.$id), JSON.stringify(nextMutedChatIds));
           } catch (error) {
-            console.error('Could not delete conversation:', error);
-            Alert.alert('Delete failed', error.message || 'Could not delete this conversation.');
+            if (__DEV__) console.error('Could not delete conversation:', error);
+            Alert.alert('Delete failed', getMessagingErrorMessage(error, 'Could not delete this conversation.'));
           }
         },
       },
