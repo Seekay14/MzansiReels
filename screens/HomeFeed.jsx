@@ -396,6 +396,7 @@ export default function HomeFeed({ navigation }) {
         <TextPostCard
           post={item}
           user={user}
+          currentUser={user}
           navigation={navigation}
           onHide={hidePost}
           onDelete={removePost}
@@ -482,17 +483,9 @@ export default function HomeFeed({ navigation }) {
           </TouchableOpacity>
         </View>
       </View>
-      {!user ? (
-        <View style={[styles.guestBanner, { backgroundColor: colors.card }]}>
-          <Text style={[styles.guestBannerText, { color: colors.text }]}>You are browsing as a guest. Log in to interact.</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Login')} accessibilityRole="button">
-            <Text style={styles.guestLoginText}>Log In</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
       {hasNewPosts ? (
         <TouchableOpacity
-          style={[styles.newPostsBanner, !user && styles.newPostsBannerGuest]}
+          style={styles.newPostsBanner}
           onPress={showNewPosts}
           accessibilityRole="button"
           accessibilityLabel="Show new posts"
@@ -629,12 +622,8 @@ const styles = StyleSheet.create({
   creatorName: { color: '#E4E6EB', fontSize: 13, fontWeight: '700' },
   creatorSubtitle: { color: '#B0B3B8', fontSize: 11, marginTop: 3 },
   sidebarEmpty: { color: '#B0B3B8', fontSize: 12, lineHeight: 18, paddingHorizontal: 10 },
-  guestBanner: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, backgroundColor: '#111820' },
-  guestBannerText: { color: '#D5DCE2', fontSize: 11 },
-  guestLoginText: { color: COLORS.cyan, fontSize: 12, fontWeight: '800', marginLeft: 8 },
   topIconButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, backgroundColor: '#171A21' },
   newPostsBanner: { position: 'absolute', zIndex: 2, top: 62, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 9, borderRadius: 20, backgroundColor: COLORS.cyan, elevation: 5, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
-  newPostsBannerGuest: { top: 102 },
   newPostsText: { color: '#061116', fontSize: 12, fontWeight: '800', marginLeft: 6 },
   listContent: { paddingTop: 12, paddingBottom: 18 },
   emptyList: { flexGrow: 1 },

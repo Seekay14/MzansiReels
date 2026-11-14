@@ -1,28 +1,67 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, KeyboardAvoidingView, ScrollView, Platform, Animated } from 'react-native';
+import {
+  Alert,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
+  Animated,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
-import { account, ID } from '../config/appwrite';
-import { COLORS } from '../config/constants';
-import { ensureUserDoc } from '../config/helpers';
+import { account, client, databases, ID } from '../config/appwrite';
+import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
+import { ensureUserDoc, getUserDoc } from '../config/helpers';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../context/AuthContext';
+import { useResponsiveLayout } from '../config/responsive';
 import Avatar from '../components/Avatar';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const REMEMBERED_EMAIL_KEY = '@mzansireels/remembered-login-email';
 
+function showLoginError(error) {
+  const message = error?.message || 'An unexpected error occurred.';
+  if (Platform.OS === 'web' && typeof globalThis.alert === 'function') {
+    globalThis.alert(`Login Error\n\n${message}`);
+    return;
+  }
+  Alert.alert('Login Error', message);
+}
+
 const AUTH_MESSAGES = {
   emptyEmail: 'Please enter your email address.',
+  emptyName: 'Please enter your name.',
   emptyPassword: 'Please enter your password.',
   emptyConfirmation: 'Please confirm your password.',
   invalidEmail: 'Please enter a valid email address.',
   duplicateEmail: 'An account with this email already exists.',
   invalidCredentials: 'Incorrect email or password.',
+  authenticationFailure: 'Appwrite rejected the sign-in. Verify email/password authentication and the account status.',
+  configurationFailure: 'Appwrite project or platform settings rejected the request. Verify the endpoint, project ID, and registered platform.',
   network: 'Unable to connect. Please check your internet connection.',
   loginFailure: 'Could not log in. Please try again.',
   signupFailure: 'Could not create your account. Please try again.',
+};
+
+const getAuthErrorCategory = (error) => {
+  const errorText = `${error?.message || ''} ${error?.type || ''}`.toLowerCase();
+  if (/network request failed|network error|networkerror|fetch failed|failed to fetch|load failed|no internet|offline|connection (?:refused|timed out|reset)|timed out|socket hang up/.test(errorText)) {
+    return 'network';
+  }
+  if (/project|platform|origin|endpoint/.test(errorText) || [403, 404].includes(Number(error?.code))) {
+    return 'configuration_or_permission';
+  }
+  if (Number(error?.code) === 401 || error?.type === 'user_invalid_credentials') {
+    return 'authentication';
+  }
+  return 'unknown';
 };
 
 const getAuthErrorMessage = (error, action) => {
@@ -36,17 +75,51 @@ const getAuthErrorMessage = (error, action) => {
     return AUTH_MESSAGES.invalidEmail;
   }
 
-  const errorText = `${error?.message || ''} ${error?.type || ''}`.toLowerCase();
-  if (/network request failed|network error|networkerror|fetch failed|failed to fetch|load failed|no internet|offline|connection (?:refused|timed out|reset)|timed out|socket hang up/.test(errorText)) {
-    return AUTH_MESSAGES.network;
+  const category = getAuthErrorCategory(error);
+  if (category === 'network') return AUTH_MESSAGES.network;
+  if (category === 'configuration_or_permission') return AUTH_MESSAGES.configurationFailure;
+  if (category === 'authentication' && action === 'login') {
+    return AUTH_MESSAGES.authenticationFailure;
   }
 
   return action === 'signup' ? AUTH_MESSAGES.signupFailure : AUTH_MESSAGES.loginFailure;
 };
 
-export default function AuthScreen({ navigation }) {
+const getSafeAuthErrorResponse = (response) => {
+  let details = response;
+  if (typeof details === 'string') {
+    try {
+      details = JSON.parse(details);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!details || typeof details !== 'object') return undefined;
+
+  return {
+    message: typeof details.message === 'string' ? details.message : undefined,
+    code: typeof details.code === 'number' ? details.code : undefined,
+    type: typeof details.type === 'string' ? details.type : undefined,
+  };
+};
+
+const logAuthError = (error, stage) => {
+  if (!__DEV__) return;
+  console.error('Appwrite login failed:', {
+    stage,
+    category: getAuthErrorCategory(error),
+    message: error?.message || String(error),
+    code: error?.code ?? null,
+    type: error?.type || null,
+    response: getSafeAuthErrorResponse(error?.response),
+    stack: error?.stack || null,
+  });
+};
+
+export default function AuthScreen({ navigation, initialTab = 'login' }) {
   const { setUser } = useAuth();
-  const [activeTab, setActiveTab] = useState('login'); 
+  const { scale, horizontalGutter } = useResponsiveLayout();
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [focusedInput, setFocusedInput] = useState(null);
   const [subtitleIndex, setSubtitleIndex] = useState(0);
   const logoScale = useRef(new Animated.Value(0.82)).current;
@@ -55,6 +128,7 @@ export default function AuthScreen({ navigation }) {
   const subtitles = ['Discover Mzansi talent', 'Scroll. Laugh. Repeat.'];
   
   const [email, setEmail] = useState('');
+  const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -158,15 +232,37 @@ export default function AuthScreen({ navigation }) {
     focusedInput === inputName && styles.inputFocused,
   ];
 
-  const handleLogin = async () => {
-    const normalizedEmail = email.trim();
+  const loginUser = async (loginEmail, loginPassword) => {
+    const normalizedEmail = loginEmail.trim();
     if (!normalizedEmail) return setMessage(AUTH_MESSAGES.emptyEmail);
     if (!EMAIL_PATTERN.test(normalizedEmail)) return setMessage(AUTH_MESSAGES.invalidEmail);
-    if (!password) return setMessage(AUTH_MESSAGES.emptyPassword);
+    if (!loginPassword) return setMessage(AUTH_MESSAGES.emptyPassword);
     setLoading(true);
     setMessage('');
+    let stage = 'session creation';
     try {
-      await account.createEmailPasswordSession(normalizedEmail, password);
+      console.log('LOGIN STEP 1: Creating email/password session');
+      const session = await account.createEmailPasswordSession(normalizedEmail, loginPassword);
+      stage = 'JWT creation';
+      console.log('LOGIN STEP 2: Creating session JWT');
+      const jwt = await account.createJWT();
+      if (!jwt?.jwt) throw new Error('Appwrite did not return a JWT.');
+      client.setJWT(jwt.jwt);
+
+      stage = 'session verification';
+      console.log('LOGIN STEP 3: Verifying authenticated user');
+      const user = await account.get();
+      if (!session?.$id || !session?.userId) {
+        throw new Error('Appwrite returned a session without its session ID or user ID.');
+      }
+      if (user.$id !== session.userId) {
+        throw new Error('The verified Appwrite user does not match the created session.');
+      }
+      console.log('SESSION CREATED:', {
+        sessionId: session.$id,
+        userId: session.userId,
+      });
+      console.log('LOGIN STEP 1 COMPLETE: Email/password session created');
       try {
         if (rememberMe) {
           await AsyncStorage.setItem(REMEMBERED_EMAIL_KEY, normalizedEmail);
@@ -176,30 +272,48 @@ export default function AuthScreen({ navigation }) {
       } catch (storageError) {
         console.error('Could not save the remember-me preference:', storageError);
       }
-      const user = await account.get();
-      const profile = await ensureUserDoc(user);
+      console.log('LOGIN STEP 3 COMPLETE: Authenticated user verified');
+      stage = 'profile loading';
+      console.log('LOGIN STEP 4: Loading user profile');
+      const profile = await getUserDoc(session.userId) || await ensureUserDoc(user);
+      console.log('LOGIN STEP 4 COMPLETE: User profile loaded');
       setPendingAccount({ user, profile });
     } catch (error) {
-      setMessage(getAuthErrorMessage(error, 'login'));
+      logAuthError(error, stage);
+      console.error('LOGIN ERROR:', error);
+      console.error('LOGIN ERROR MESSAGE:', error?.message);
+      console.error('LOGIN ERROR CODE:', error?.code);
+      console.error('LOGIN ERROR TYPE:', error?.type);
+      console.error('LOGIN ERROR RESPONSE:', error?.response);
+      const sessionVerificationFailed = stage === 'session verification'
+        && error?.code === 401
+        && error?.type === 'general_unauthorized_scope';
+      const errorMessage = sessionVerificationFailed
+        ? 'Appwrite rejected the authenticated account verification request. Check the JWT and project configuration.'
+        : error?.message || 'An unexpected error occurred.';
+      showLoginError({ message: errorMessage });
+      setMessage(`Login Failed: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSignup = async () => {
-    const normalizedEmail = email.trim().toLowerCase();
+  const registerUser = async (signupEmail, signupPassword, signupName) => {
+    const normalizedEmail = signupEmail.trim().toLowerCase();
+    const normalizedName = signupName.trim();
     if (!normalizedEmail) return setMessage(AUTH_MESSAGES.emptyEmail);
     if (!EMAIL_PATTERN.test(normalizedEmail)) {
       setMessage(AUTH_MESSAGES.invalidEmail);
       return;
     }
-    if (!password) return setMessage(AUTH_MESSAGES.emptyPassword);
+    if (!normalizedName) return setMessage(AUTH_MESSAGES.emptyName);
+    if (!signupPassword) return setMessage(AUTH_MESSAGES.emptyPassword);
     if (!confirmPassword) return setMessage(AUTH_MESSAGES.emptyConfirmation);
-    if (password.length < 8) {
+    if (signupPassword.length < 8) {
       setMessage('Password must be at least 8 characters.');
       return;
     }
-    if (password !== confirmPassword) {
+    if (signupPassword !== confirmPassword) {
       setMessage('Passwords do not match.');
       return;
     }
@@ -207,21 +321,27 @@ export default function AuthScreen({ navigation }) {
     setLoading(true);
     setMessage('');
     try {
-      try {
-        await account.create(ID.unique(), normalizedEmail, password);
-      } catch (error) {
-        if (error?.code === 409 || error?.type === 'user_already_exists') {
-          setMessage(AUTH_MESSAGES.duplicateEmail);
-          return;
-        }
-        throw error;
-      }
-
-      await account.createEmailPasswordSession(normalizedEmail, password);
-      const signupUser = await account.get();
-      await setUser({ ...signupUser, profileSetupComplete: false, interests: [] });
+      await account.create(ID.unique(), normalizedEmail, signupPassword, normalizedName);
+      await account.createEmailPasswordSession(normalizedEmail, signupPassword);
+      const currentUser = await account.get();
+      await databases.createDocument(DATABASE_ID, COLLECTIONS.users, ID.unique(), {
+        userId: currentUser.$id,
+        name: normalizedName,
+        username: '',
+        avatarUrl: '',
+        profileSetupComplete: false,
+        onboardingComplete: false,
+        followers: 0,
+        following: 0,
+        interests: [],
+        pushNotifications: true,
+        isPrivate: false,
+        isVerified: false,
+      });
+      await setUser(currentUser, { skipOnboarding: false });
     } catch (error) {
       console.error('Could not complete account registration:', error);
+      showLoginError(error);
       setMessage(getAuthErrorMessage(error, 'signup'));
     } finally {
       setLoading(false);
@@ -330,13 +450,16 @@ export default function AuthScreen({ navigation }) {
       <View style={styles.backgroundGlowTop} pointerEvents="none" />
       <View style={styles.backgroundGlowBottom} pointerEvents="none" />
       <ScrollView
-        contentContainerStyle={styles.container}
+        contentContainerStyle={[
+          styles.container,
+          { paddingHorizontal: horizontalGutter, paddingVertical: 28 * scale },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Animated.View style={[styles.logoContainer, { transform: [{ scale: logoScale }] }]}>
-          <Ionicons name="videocam" size={60} color={COLORS.cyan} />
-          <Text style={styles.logoText}>MzansiReels</Text>
+        <Animated.View style={[styles.logoContainer, { marginBottom: 22 * scale, transform: [{ scale: logoScale }] }]}>
+          <Ionicons name="videocam" size={60 * scale} color={COLORS.cyan} />
+          <Text style={[styles.logoText, { fontSize: 32 * scale }]}>MzansiReels</Text>
           <Animated.Text style={[styles.brandSubtitle, { opacity: subtitleOpacity }]}>
             {subtitles[subtitleIndex]}
           </Animated.Text>
@@ -344,7 +467,7 @@ export default function AuthScreen({ navigation }) {
 
         <View style={styles.authCard}>
           <BlurView intensity={18} tint="dark" style={StyleSheet.absoluteFill} />
-          <View style={styles.authCardContent}>
+          <View style={[styles.authCardContent, { padding: 25 * scale }]}>
             <View
               style={styles.tabContainer}
               onLayout={(event) => setTabWidth(event.nativeEvent.layout.width / 3)}
@@ -440,7 +563,7 @@ export default function AuthScreen({ navigation }) {
             </View>
             <TouchableOpacity
               style={[styles.button, loading && styles.buttonLoading]}
-              onPress={handleLogin}
+              onPress={() => loginUser(email, password)}
               disabled={loading}
             >
               {loading ? <ActivityIndicator color={COLORS.cyan} /> : <Text style={styles.buttonText}>Login</Text>}
@@ -454,6 +577,20 @@ export default function AuthScreen({ navigation }) {
               <Text style={styles.signupStepLabel}>CREATE YOUR ACCOUNT</Text>
               <Text style={styles.signupStepTitle}>Start scrolling with Mzansi.</Text>
               <Text style={styles.signupStepSubtitle}>A few details now. Your profile comes next.</Text>
+            </View>
+            <View style={[styles.iconInputRow, focusedInput === 'signupName' && styles.inputFocused]}>
+              <Ionicons name="person-outline" size={19} color="#8C969E" style={styles.inputLeadingIcon} />
+              <TextInput
+                style={styles.iconInput}
+                placeholder="Full name"
+                placeholderTextColor="#888"
+                value={fullName}
+                onChangeText={setFullName}
+                onFocus={() => setFocusedInput('signupName')}
+                onBlur={() => setFocusedInput(null)}
+                autoCapitalize="words"
+                autoComplete="name"
+              />
             </View>
             <View style={[styles.iconInputRow, focusedInput === 'signupEmail' && styles.inputFocused]}>
               <Ionicons name="mail-outline" size={19} color="#8C969E" style={styles.inputLeadingIcon} />
@@ -508,7 +645,7 @@ export default function AuthScreen({ navigation }) {
             </View>
             <TouchableOpacity
               style={[styles.button, loading && styles.buttonLoading]}
-              onPress={handleSignup}
+              onPress={() => registerUser(email, password, fullName)}
               disabled={loading}
               accessibilityRole="button"
             >

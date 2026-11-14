@@ -32,6 +32,7 @@ import VideoGrid from '../components/VideoGrid';
 import Avatar from '../components/Avatar';
 import TextPostCard from '../components/TextPostCard';
 import { formatCompactCount } from '../config/formatNumbers';
+import { getResponsiveScale } from '../config/responsive';
 import {
   createFollowRelationship,
   deleteFollowRelationships,
@@ -56,6 +57,7 @@ export default function UserProfileScreen({ route, navigation }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const scale = getResponsiveScale(width);
   const isDesktop = Platform.OS === 'web' && width > 768;
   const isSelf = user?.$id === userId;
   const [userDoc, setUserDoc] = useState(null);
@@ -278,7 +280,11 @@ export default function UserProfileScreen({ route, navigation }) {
   };
 
   const toggleFollow = async () => {
-    if (!requireAuth('follow this user', navigation, user) || busy || isSelf || !userId) return;
+    if (!user?.$id) {
+      Alert.alert('Login Required', 'Please log in to follow.');
+      return;
+    }
+    if (busy || isSelf || !userId) return;
     const wasFollowing = isFollowing;
     const previousFollowDocId = followDocId;
     const previousCounts = followCounts;
@@ -423,6 +429,7 @@ export default function UserProfileScreen({ route, navigation }) {
     <TextPostCard
       post={item}
       user={user}
+      currentUser={user}
       navigation={navigation}
       desktop={isDesktop}
       onDelete={(postId) => setPosts((current) => current.filter((post) => post.$id !== postId))}
@@ -445,13 +452,19 @@ export default function UserProfileScreen({ route, navigation }) {
           uri={userDoc?.avatarUrl}
           userId={userId}
           name={displayName}
-          size={90}
+          size={90 * scale}
           bordered
           style={{ marginBottom: 10 }}
         />
         
         <View style={styles.usernameVerificationRow}>
-          <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.username, { color: colors.text }]}>@{username}</Text>
+          <Text
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            style={[styles.username, { color: colors.text, fontSize: 20 * scale }]}
+          >
+            @{username}
+          </Text>
           {userDoc?.isVerified === true && (
             <Ionicons name="checkmark-circle" size={20} color={COLORS.cyan} />
           )}

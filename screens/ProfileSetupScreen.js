@@ -23,6 +23,7 @@ import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
 import { ensureUserDoc, getUserDoc } from '../config/helpers';
 import { uploadProfilePicture } from '../config/profilePictureService';
 import { useAuth } from '../context/AuthContext';
+import { useResponsiveLayout } from '../config/responsive';
 
 const PROVINCES = [
   'Eastern Cape',
@@ -49,6 +50,7 @@ export default function ProfileSetupScreen() {
   const { user, setUser, logout } = useAuth();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { scale, horizontalGutter } = useResponsiveLayout();
   const [username, setUsername] = useState(user?.username || '');
   const [bio, setBio] = useState(user?.bio || '');
   const [province, setProvince] = useState(user?.province || '');
@@ -253,7 +255,11 @@ export default function ProfileSetupScreen() {
         <ScrollView
           contentContainerStyle={[
             styles.content,
-            { paddingTop: insets.top + 26, paddingBottom: 24 },
+            {
+              paddingHorizontal: horizontalGutter,
+              paddingTop: insets.top + 22 * scale,
+              paddingBottom: 20 * scale,
+            },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -286,11 +292,11 @@ export default function ProfileSetupScreen() {
             >
               <Text style={styles.photoLink}>Add a profile photo</Text>
             </TouchableOpacity>
-            <Text style={styles.title}>Create your identity</Text>
+            <Text style={[styles.title, { fontSize: 29 * scale }]}>Create your identity</Text>
             <Text style={styles.subtitle}>Let the MzansiReels community know who you are.</Text>
           </View>
 
-          <View style={styles.fields}>
+          <View style={[styles.fields, { gap: 22 * scale }]}>
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>Username</Text>
               <View style={[styles.inputShell, focusField === 'username' && styles.inputFocused]}>

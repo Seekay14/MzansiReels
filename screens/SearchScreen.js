@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   ScrollView,
   StyleSheet,
@@ -15,7 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { databases, Query } from '../config/appwrite';
 import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
 import { formatCompactCount } from '../config/formatNumbers';
-import { ensureUserDoc, getUserDoc, getUserDocs, getVideoThumbnail, requireAuth } from '../config/helpers';
+import { ensureUserDoc, getUserDoc, getUserDocs, getVideoThumbnail } from '../config/helpers';
 import {
   createFollowRelationship,
   deleteFollowRelationships,
@@ -38,6 +39,7 @@ import TextPostCard from '../components/TextPostCard';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSearchMenu } from '../context/SearchMenuContext';
+import { useResponsiveLayout } from '../config/responsive';
 
 const TABS = ['Search', 'Creators', 'Explore'];
 const SEARCH_HISTORY_KEY = '@mzansireels/search-history';
@@ -251,6 +253,7 @@ function SectionTitle({ title, colors, action, onAction }) {
 
 export default function SearchScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
+  const { scale, horizontalGutter } = useResponsiveLayout();
   const { colors } = useTheme();
   const { user } = useAuth();
   const { searchTab, setSearchTab } = useSearchMenu();
@@ -692,8 +695,11 @@ export default function SearchScreen({ navigation, route }) {
 
   const toggleFollow = async (creator) => {
     const creatorId = creator.userId;
-    if (!creatorId || creatorId === user?.$id || followBusyRef.current.has(creatorId)) return;
-    if (!requireAuth('follow this creator', navigation, user)) return;
+    if (!user?.$id) {
+      Alert.alert('Login Required', 'Please log in to follow.');
+      return;
+    }
+    if (!creatorId || creatorId === user.$id || followBusyRef.current.has(creatorId)) return;
 
     followBusyRef.current.add(creatorId);
     setFollowBusy((current) => ({ ...current, [creatorId]: true }));
@@ -880,7 +886,7 @@ export default function SearchScreen({ navigation, route }) {
         <View style={styles.section}>
           <SectionTitle title="Posts" colors={colors} />
           {posts.map((post) => (
-            <TextPostCard key={post.$id} post={post} user={user} navigation={navigation} />
+            <TextPostCard key={post.$id} post={post} user={user} currentUser={user} navigation={navigation} />
           ))}
         </View>
       ) : null}
@@ -1005,7 +1011,7 @@ export default function SearchScreen({ navigation, route }) {
         <View style={styles.section}>
           <SectionTitle title="Community posts" colors={colors} />
           {posts.map((post) => (
-            <TextPostCard key={post.$id} post={post} user={user} navigation={navigation} />
+            <TextPostCard key={post.$id} post={post} user={user} currentUser={user} navigation={navigation} />
           ))}
         </View>
       ) : null}
@@ -1018,10 +1024,15 @@ export default function SearchScreen({ navigation, route }) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+      <View
+        style={[
+          styles.header,
+          { paddingTop: insets.top + 10 * scale, paddingHorizontal: horizontalGutter },
+        ]}
+      >
         <View style={styles.titleRow}>
           <View>
-            <Text style={[styles.title, { color: colors.text }]}>Discover</Text>
+            <Text style={[styles.title, { color: colors.text, fontSize: 28 * scale }]}>Discover</Text>
             <Text style={[styles.subtitle, { color: colors.muted }]}>Find creators and videos from Mzansi</Text>
           </View>
           <Ionicons name="sparkles-outline" size={25} color={COLORS.cyan} />

@@ -16,6 +16,7 @@ import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import { databases, storage, ID, Permission, Query, Role } from '../config/appwrite';
 import { BUCKET_ID, DATABASE_ID, COLLECTIONS, COLORS, fileIdFromUrl } from '../config/constants';
+import { useResponsiveLayout } from '../config/responsive';
 import { useAuth } from '../context/AuthContext';
 import { getUserDoc, notify, reportVideo, requireAuth, toggleVideoLike } from '../config/helpers';
 import Avatar from './Avatar';
@@ -35,6 +36,7 @@ const SWIPE_HINT_VISIBLE_MS = 3600;
 
 export default function VideoCard({
   item,
+  currentUser,
   videoCollectionId = COLLECTIONS.videos,
   isActive,
   height,
@@ -46,7 +48,9 @@ export default function VideoCard({
   onNotInterested,
   onBlockUser,
 }) {
-  const { user } = useAuth();
+  const { user: authUser } = useAuth();
+  const user = currentUser === undefined ? authUser : currentUser;
+  const { scale } = useResponsiveLayout();
   const insets = useSafeAreaInsets();
   const isOwnVideo = user?.$id === item.userId;
   const usesPostsCollection = videoCollectionId === COLLECTIONS.posts;
@@ -425,7 +429,11 @@ export default function VideoCard({
 
   // ── Actions ──
   const handleLike = async () => {
-    if (!requireAuth('like this Reel', navigation, user) || busy.current) return;
+    if (!user?.$id) {
+      Alert.alert('Login Required', 'Please log in to like this video.');
+      return;
+    }
+    if (busy.current) return;
     busy.current = true;
 
     Animated.sequence([
@@ -453,12 +461,11 @@ export default function VideoCard({
   };
 
   const handleFollow = async () => {
-    if (
-      !requireAuth('follow this creator', navigation, user)
-      || followBusy.current
-      || !item.userId
-      || item.userId === user?.$id
-    ) return;
+    if (!user?.$id) {
+      Alert.alert('Login Required', 'Please log in to follow.');
+      return;
+    }
+    if (followBusy.current || !item.userId || item.userId === user.$id) return;
     followBusy.current = true;
     try {
       if (isFollowing) {
@@ -476,6 +483,14 @@ export default function VideoCard({
     } finally {
       followBusy.current = false;
     }
+  };
+
+  const handleComment = () => {
+    if (!user?.$id) {
+      Alert.alert('Login Required', 'Please log in to comment.');
+      return;
+    }
+    setIsCommentsVisible(true);
   };
 
   const updateVideoDetails = async (videoId, newCaption, newCategory) => {
@@ -835,23 +850,31 @@ export default function VideoCard({
       </View>
 
       {/* 5. RIGHT FLOATING ACTION COLUMN */}
-      <View style={[styles.rightOverlay, { bottom: insets.bottom + 20 }]}>
+      <View
+        style={[
+          styles.rightOverlay,
+          { bottom: insets.bottom + 20 * scale, width: 64 * scale, maxWidth: 64 * scale },
+        ]}
+      >
         <TouchableOpacity
-          style={styles.muteButton}
+          style={[
+            styles.muteButton,
+            { width: 42 * scale, height: 42 * scale, marginBottom: 15 * scale },
+          ]}
           onPress={handleToggleMute}
           accessibilityRole="button"
           accessibilityLabel={muted ? 'Unmute Reel audio' : 'Mute Reel audio'}
         >
-          <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={22} color="#fff" />
+          <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={22 * scale} color="#fff" />
         </TouchableOpacity>
-        <View style={styles.avatarSection}>
+        <View style={[styles.avatarSection, { width: 56 * scale, marginBottom: 22 * scale }]}>
           <TouchableOpacity onPress={() => onOpenProfile?.(item)}>
             <View style={styles.avatarWrapper}>
               <Avatar
                 userId={item.userId}
                 fallbackUrl={item.avatarUrl}
                 name={creatorDisplayName}
-                size={48}
+                size={48 * scale}
               />
             </View>
           </TouchableOpacity>
@@ -863,43 +886,50 @@ export default function VideoCard({
           )}
         </View>
 
-        <TouchableOpacity style={styles.actionButton} onPress={handleLike}>
+        <TouchableOpacity
+          style={[styles.actionButton, { width: 64 * scale, minHeight: 54 * scale, marginBottom: 18 * scale }]}
+          onPress={handleLike}
+        >
           <Animated.View style={{ transform: [{ scale: heartScale }] }}>
-            <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={36} color={isLiked ? COLORS.cyan : '#fff'} />
+            <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={36 * scale} color={isLiked ? COLORS.cyan : '#fff'} />
           </Animated.View>
-          <Text style={styles.actionText}>{likes}</Text>
+          <Text style={[styles.actionText, { fontSize: Math.max(10, 12 * scale) }]}>{likes}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => {
-            if (requireAuth('comment on this Reel', navigation, user)) setIsCommentsVisible(true);
-          }}
+          style={[styles.actionButton, { width: 64 * scale, minHeight: 54 * scale, marginBottom: 18 * scale }]}
+          onPress={handleComment}
         >
-          <Ionicons name="chatbubble" size={34} color="#fff" />
-          <Text style={styles.actionText}>{commentCount}</Text>
+          <Ionicons name="chatbubble" size={34 * scale} color="#fff" />
+          <Text style={[styles.actionText, { fontSize: Math.max(10, 12 * scale) }]}>{commentCount}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionButton} onPress={handleBookmark}>
-          <Ionicons name={isBookmarked ? 'bookmark' : 'bookmark-outline'} size={30} color={isBookmarked ? COLORS.cyan : '#fff'} />
-          <Text style={styles.actionText}>Save</Text>
+        <TouchableOpacity
+          style={[styles.actionButton, { width: 64 * scale, minHeight: 54 * scale, marginBottom: 18 * scale }]}
+          onPress={handleBookmark}
+        >
+          <Ionicons name={isBookmarked ? 'bookmark' : 'bookmark-outline'} size={30 * scale} color={isBookmarked ? COLORS.cyan : '#fff'} />
+          <Text style={[styles.actionText, { fontSize: Math.max(10, 12 * scale) }]}>Save</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionButton} onPress={shareVideo} disabled={isSharingVideo}>
-          <Ionicons name="arrow-redo" size={32} color="#fff" />
-          <Text style={styles.actionText}>Share</Text>
+        <TouchableOpacity
+          style={[styles.actionButton, { width: 64 * scale, minHeight: 54 * scale, marginBottom: 18 * scale }]}
+          onPress={shareVideo}
+          disabled={isSharingVideo}
+        >
+          <Ionicons name="arrow-redo" size={32 * scale} color="#fff" />
+          <Text style={[styles.actionText, { fontSize: Math.max(10, 12 * scale) }]}>Share</Text>
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={[styles.moreOptionsButton, { width: 44 * scale, height: 44 * scale }]}
+          onPress={() => setCreatorMenuVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="More video options"
+        >
+          <Ionicons name="ellipsis-vertical" size={24 * scale} color="#fff" />
+        </TouchableOpacity>
       </View>
-
-      <TouchableOpacity
-        style={[styles.moreOptionsButton, { top: insets.top + 10 }]}
-        onPress={() => setCreatorMenuVisible(true)}
-        accessibilityRole="button"
-        accessibilityLabel="More video options"
-      >
-        <Ionicons name="ellipsis-vertical" size={24} color="#fff" />
-      </TouchableOpacity>
 
       <PostCommentModal
         visible={isCommentsVisible}
@@ -1203,8 +1233,6 @@ const styles = StyleSheet.create({
       backgroundColor: 'rgba(255,255,255,0.35)',
     },
   moreOptionsButton: {
-    position: 'absolute',
-    right: 16,
     width: 44,
     height: 44,
     alignItems: 'center',
@@ -1229,6 +1257,7 @@ const styles = StyleSheet.create({
     right: 15,
     width: 64,
     maxWidth: 64,
+    flexDirection: 'column',
     alignItems: 'center',
     zIndex: 10,
   },

@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../config/constants';
 import { uploadStory } from '../config/storyService';
 import { useAuth } from '../context/AuthContext';
+import { useResponsiveLayout } from '../config/responsive';
 
 const MAX_STORY_VIDEO_MS = 45 * 1000;
 const STORY_TYPES = [
@@ -57,6 +58,7 @@ function VideoDurationProbe({ uri, onDuration, onError }) {
 export default function StoryUploadScreen({ navigation }) {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
+  const { height, scale, horizontalGutter } = useResponsiveLayout();
   const [storyType, setStoryType] = useState('text');
   const [content, setContent] = useState('');
   const [asset, setAsset] = useState(null);
@@ -233,10 +235,20 @@ export default function StoryUploadScreen({ navigation }) {
         ))}
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingHorizontal: horizontalGutter }]}
+        keyboardShouldPersistTaps="handled"
+      >
         {storyType === 'text' ? (
           <TextInput
-            style={styles.textEditor}
+            style={[
+              styles.textEditor,
+              {
+                minHeight: Math.min(300, Math.max(210, height * 0.36)),
+                fontSize: 25 * scale,
+                padding: 22 * scale,
+              },
+            ]}
             placeholder="Write a story..."
             placeholderTextColor="#7D8793"
             value={content}
@@ -247,7 +259,7 @@ export default function StoryUploadScreen({ navigation }) {
             accessibilityLabel="Story text"
           />
         ) : asset ? (
-          <View style={styles.preview}>
+          <View style={[styles.preview, { height: Math.min(430, Math.max(250, height * 0.46)) }]}>
             {storyType === 'image' ? (
               <Image source={{ uri: asset.uri }} style={styles.previewMedia} resizeMode="contain" />
             ) : (

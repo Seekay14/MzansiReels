@@ -45,6 +45,7 @@ export default function WatchScreen({ route, navigation }) {
         renderItem={({ item, index }) => (
           <VideoCard
             item={item}
+            currentUser={user}
             navigation={navigation}
             height={SCREEN_HEIGHT}
             isActive={focused && index === visibleActiveIndex}

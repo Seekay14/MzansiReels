@@ -25,9 +25,15 @@ jobs:
 
       - name: Build Expo Web App
         run: npx expo export --platform web
+        env:
+          EXPO_PUBLIC_APPWRITE_ENDPOINT: ${{ vars.EXPO_PUBLIC_APPWRITE_ENDPOINT }}
+          EXPO_PUBLIC_APPWRITE_PROJECT_ID: ${{ vars.EXPO_PUBLIC_APPWRITE_PROJECT_ID }}
 
       - name: Add .nojekyll
         run: touch dist/.nojekyll
+
+      - name: Add SPA route fallback
+        run: cp dist/index.html dist/404.html
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3

@@ -21,8 +21,10 @@ import PostCommentModal from './PostCommentModal';
 import ShareModal from './ShareModal';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useTheme } from '../context/ThemeContext';
+import { useResponsiveLayout } from '../config/responsive';
 
 function InlinePostVideo({ uri }) {
+  const { width } = useResponsiveLayout();
   const player = useVideoPlayer(uri, (instance) => {
     instance.loop = false;
     instance.muted = true;
@@ -31,7 +33,7 @@ function InlinePostVideo({ uri }) {
   return (
     <VideoView
       player={player}
-      style={styles.postVideo}
+      style={[styles.postVideo, { height: Math.min(300, Math.max(210, width * 0.72)) }]}
       contentFit="contain"
       nativeControls
     />
@@ -64,7 +66,17 @@ function formatNumber(value) {
   return `${Number((count / unit.value).toFixed(1))}${unit.suffix}`;
 }
 
-export default function TextPostCard({ post, user, navigation, onHide, onDelete, onShared, desktop = false }) {
+export default function TextPostCard({
+  post,
+  user,
+  currentUser: currentUserProp,
+  navigation,
+  onHide,
+  onDelete,
+  onShared,
+  desktop = false,
+}) {
+  const currentUser = currentUserProp === undefined ? user : currentUserProp;
   const { colors } = useTheme();
   const [likes, setLikes] = useState(Number(post.likes) || 0);
   const [views, setViews] = useState(Number(post.views) || 0);
@@ -79,7 +91,7 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
   const [commentCount, setCommentCount] = useState(Number(post.commentCount) || 0);
   const [authorVerified, setAuthorVerified] = useState(post.isVerified === true);
   const link = findUrl(post.content || '');
-  const isOwner = user?.$id === post.userId;
+  const isOwner = currentUser?.$id === post.userId;
   const postedAt = post.uploadedAt || post.$createdAt;
 
   useEffect(() => {
@@ -96,13 +108,13 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
 
   useEffect(() => {
     let active = true;
-    if (!user?.$id) {
+    if (!currentUser?.$id) {
       setLiked(false);
       return undefined;
     }
     databases.listDocuments(DATABASE_ID, COLLECTIONS.postLikes, [
       Query.equal('postId', post.$id),
-      Query.equal('userId', user.$id),
+      Query.equal('userId', currentUser.$id),
       Query.limit(1),
     ]).then((result) => {
       if (active) setLiked(Boolean(result.documents[0]));
@@ -112,7 +124,7 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
     return () => {
       active = false;
     };
-  }, [post.$id, user?.$id]);
+  }, [post.$id, currentUser?.$id]);
 
   useEffect(() => {
     let active = true;
@@ -146,7 +158,11 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
   }, [post.userId]);
 
   const handleLike = async () => {
-    if (!requireAuth('like this post', navigation, user) || liking) return;
+    if (!currentUser?.$id) {
+      Alert.alert('Login Required', 'Please log in to like this video.');
+      return;
+    }
+    if (liking) return;
     const previousLiked = liked;
     const previousLikes = likes;
     const nextLiked = !previousLiked;
@@ -154,7 +170,13 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
     setLiked(nextLiked);
     setLikes(Math.max(0, previousLikes + (nextLiked ? 1 : -1)));
     try {
-      const result = await togglePostLike(post.$id, user.$id, previousLikes, user.name, user.avatarUrl);
+      const result = await togglePostLike(
+        post.$id,
+        currentUser.$id,
+        previousLikes,
+        currentUser.name,
+        currentUser.avatarUrl,
+      );
       setLikes(result.likes);
       setLiked(result.isLiked);
     } catch (error) {
@@ -167,8 +189,16 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
     }
   };
 
+  const handleComment = () => {
+    if (!currentUser?.$id) {
+      Alert.alert('Login Required', 'Please log in to comment.');
+      return;
+    }
+    setCommentModalVisible(true);
+  };
+
   const copyLink = async () => {
-    if (!requireAuth('share this post', navigation, user)) return;
+    if (!requireAuth('share this post', navigation, currentUser)) return;
     try {
       const shareUrl = post.imageUrl || post.videoUrl || `mzansireels://post/${post.$id}`;
       await Clipboard.setStringAsync(shareUrl);
@@ -181,18 +211,18 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
   };
 
   const savePost = async () => {
-    if (!requireAuth('bookmark this post', navigation, user) || saving) return;
+    if (!requireAuth('bookmark this post', navigation, currentUser) || saving) return;
     setSaving(true);
     try {
       const existing = await databases.listDocuments(DATABASE_ID, COLLECTIONS.bookmarks, [
         Query.equal('postId', post.$id),
-        Query.equal('userId', user.$id),
+        Query.equal('userId', currentUser.$id),
         Query.limit(1),
       ]);
       if (!existing.documents[0]) {
         await databases.createDocument(DATABASE_ID, COLLECTIONS.bookmarks, ID.unique(), {
           postId: post.$id,
-          userId: user.$id,
+          userId: currentUser.$id,
         });
       }
       setOptionsVisible(false);
@@ -360,7 +390,7 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
             <TouchableOpacity
               style={styles.commentButton}
               onPress={() => {
-                if (requireAuth('comment on this post', navigation, user)) setCommentModalVisible(true);
+                handleComment();
               }}
               accessibilityRole="button"
               accessibilityLabel={`View ${commentCount} comments`}
@@ -371,7 +401,7 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
             <TouchableOpacity
               style={styles.actionButton}
               onPress={() => {
-                if (requireAuth('share this post', navigation, user)) setShareModalVisible(true);
+                if (requireAuth('share this post', navigation, currentUser)) setShareModalVisible(true);
               }}
               accessibilityRole="button"
               accessibilityLabel={`Share post, ${shares} shares`}
@@ -385,7 +415,7 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
           <TouchableOpacity
             style={styles.viewCommentsButton}
             onPress={() => {
-              if (requireAuth('comment on this post', navigation, user)) setCommentModalVisible(true);
+              handleComment();
             }}
             accessibilityRole="button"
             accessibilityLabel={`View ${commentCount} replies`}
@@ -398,7 +428,7 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
       <PostCommentModal
         visible={commentModalVisible}
         postId={post.$id}
-        user={user}
+        user={currentUser}
         navigation={navigation}
         onOpenProfile={openProfile}
         onClose={() => setCommentModalVisible(false)}
@@ -415,7 +445,7 @@ export default function TextPostCard({ post, user, navigation, onHide, onDelete,
       <ShareModal
         visible={shareModalVisible}
         originalPost={post}
-        currentUser={user}
+        currentUser={currentUser}
         onClose={() => setShareModalVisible(false)}
         onShared={(sharedPost, originalShares, originalPostId) => {
           setShares(originalShares);

@@ -12,8 +12,9 @@ import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
 import { useEvent } from 'expo';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { client, databases, storage, Query } from '../config/appwrite';
-import { DATABASE_ID, COLLECTIONS, BUCKET_ID, COLORS } from '../config/constants';
+import { client, databases, functions, storage, ID, Query } from '../config/appwrite';
+import { DATABASE_ID, COLLECTIONS, BUCKET_ID, COLORS, MESSAGE_FUNCTION_ID } from '../config/constants';
+import { useResponsiveLayout } from '../config/responsive';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { blockUser, getFileViewUrl, getUserDoc, notify } from '../config/helpers';
@@ -26,7 +27,6 @@ import {
   logMessagingError,
   markMessagesAsRead,
   setTypingStatus,
-  sendMessageToParticipants,
   updateMessageReaction,
 } from '../config/chatService';
 import Avatar from '../components/Avatar';
@@ -106,6 +106,7 @@ function belongsToConversation(message, currentUserId, otherUserId) {
 }
 
 function ChatVideoMessage({ uri, fullscreen = false }) {
+  const { width } = useResponsiveLayout();
   const player = useVideoPlayer(uri, (instance) => {
     instance.loop = false;
     instance.muted = false;
@@ -114,7 +115,11 @@ function ChatVideoMessage({ uri, fullscreen = false }) {
 
   return (
     <TouchableOpacity
-      style={[styles.videoMessage, fullscreen && styles.fullVideoMessage]}
+      style={[
+        styles.videoMessage,
+        { width: Math.min(220, width * 0.68), height: Math.min(220, width * 0.68) },
+        fullscreen && styles.fullVideoMessage,
+      ]}
       onPress={() => (player.playing ? player.pause() : player.play())}
       accessibilityRole="button"
       accessibilityLabel={player.playing ? 'Pause video' : 'Play video'}
@@ -137,6 +142,7 @@ function ChatVideoMessage({ uri, fullscreen = false }) {
 }
 
 function ChatAudioMessage({ uri }) {
+  const { width } = useResponsiveLayout();
   const soundRef = useRef(null);
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -180,7 +186,7 @@ function ChatAudioMessage({ uri }) {
   };
 
   return (
-    <View style={styles.audioMessage}>
+    <View style={[styles.audioMessage, { width: Math.min(210, width * 0.7) }]}>
       <TouchableOpacity
         style={styles.audioPlayButton}
         onPress={togglePlayback}
@@ -212,6 +218,7 @@ export default function ChatScreen({ route, navigation }) {
   const { user, logout } = useAuth();
   const { colors: appColors, mode: appThemeMode } = useTheme();
   const insets = useSafeAreaInsets();
+  const { width, height, scale, horizontalGutter } = useResponsiveLayout();
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [replyingTo, setReplyingTo] = useState(null);
@@ -638,6 +645,10 @@ export default function ChatScreen({ route, navigation }) {
   const sendMessage = async (messageText = newMessage, attachmentUrl = '', attachmentType = 'text') => {
     const text = messageText.trim();
     if ((!text && !attachmentUrl) || !user?.$id || !otherId || sendingMessage || sendingMessageRef.current) return false;
+    if (!chatId) {
+      setSendError('This conversation is not ready yet. Please try again.');
+      return false;
+    }
     if (blockDocumentId) {
       Alert.alert('User blocked', 'Unblock this user before sending messages from this account.');
       return false;
@@ -648,15 +659,73 @@ export default function ChatScreen({ route, navigation }) {
     publishedTypingState.current = false;
     void persistTypingStatus(false);
     const replyToId = replyingTo?.$id || '';
+    const createdAt = new Date().toISOString();
+    const data = {
+      senderId: user.$id,
+      receiverId: otherId,
+      chatId,
+      text,
+      isRead: false,
+    };
+    const optimisticId = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const optimisticMessage = { ...data, $id: optimisticId, $createdAt: createdAt };
+    setMessages((current) => mergeMessages(current, [optimisticMessage]));
     setSendError('');
     setSendingMessage(true);
     try {
-      await createChatMessage({
-        text,
-        attachmentUrl,
-        attachmentType,
-        replyToId,
-      });
+      let savedMessage;
+      if (attachmentUrl) {
+        savedMessage = await databases.createDocument(
+          DATABASE_ID,
+          COLLECTIONS.messages,
+          ID.unique(),
+          data,
+        );
+        const updatedChat = await databases.updateDocument(
+          DATABASE_ID,
+          COLLECTIONS.chats,
+          chatId,
+          { lastMessage: text, updatedAt: new Date().toISOString() },
+        );
+        setChatId(updatedChat.$id);
+      } else {
+        const payload = JSON.stringify({
+          senderId: user.$id,
+          receiverId: otherId,
+          chatId,
+          text,
+        });
+        const response = await functions.createExecution(
+          MESSAGE_FUNCTION_ID,
+          payload,
+          false,
+        );
+        let result;
+        try {
+          result = JSON.parse(response.responseBody || '{}');
+        } catch {
+          throw new Error('The send-message function returned an invalid response.');
+        }
+        if (
+          response.responseStatusCode < 200
+          || response.responseStatusCode >= 300
+          || result.success !== true
+        ) {
+          throw new Error(
+            result.error
+            || result.message
+            || `The send-message function failed with HTTP ${response.responseStatusCode}.`,
+          );
+        }
+        if (!result.messageId) {
+          throw new Error('The send-message function did not return a message ID.');
+        }
+        savedMessage = { ...optimisticMessage, $id: result.messageId };
+      }
+      setMessages((current) => mergeMessages(
+        current.filter((message) => message.$id !== optimisticId),
+        [savedMessage],
+      ));
       if (attachmentType === 'text') {
         setNewMessage((current) => current === messageText ? '' : current);
       }
@@ -669,9 +738,13 @@ export default function ChatScreen({ route, navigation }) {
       }
       return true;
     } catch (error) {
+      setMessages((current) => current.filter((message) => message.$id !== optimisticId));
       logMessagingError('Could not send message:', error);
       if (error?.kind === 'authentication') await logout();
-      setSendError(getMessagingErrorMessage(error, 'Message could not be sent. Please try again.'));
+      setSendError(getMessagingErrorMessage(
+        error,
+        error?.message || 'Message could not be sent. Please try again.',
+      ));
       return false;
     } finally {
       sendingMessageRef.current = false;
@@ -689,10 +762,11 @@ export default function ChatScreen({ route, navigation }) {
     const now = new Date();
     const createdAt = now.toISOString();
     const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    if (!chatId) throw new Error('This conversation is not ready yet. Please try again.');
     const data = {
       senderId: user.$id,
       receiverId: otherId,
-      chatId: chatId || '',
+      chatId,
       text,
       attachmentUrl,
       attachmentType,
@@ -710,15 +784,17 @@ export default function ChatScreen({ route, navigation }) {
     };
     setMessages((current) => mergeMessages(current, [optimisticMessage]));
     try {
-      const { chat, message: savedMessage } = await sendMessageToParticipants(
-        user.$id,
-        otherId,
-        text,
-        attachmentUrl,
-        attachmentType,
-        stickerUrl,
-        replyToId,
-        chatId || '',
+      const savedMessage = await databases.createDocument(
+        DATABASE_ID,
+        COLLECTIONS.messages,
+        ID.unique(),
+        data,
+      );
+      const chat = await databases.updateDocument(
+        DATABASE_ID,
+        COLLECTIONS.chats,
+        chatId,
+        { lastMessage: text, updatedAt: new Date().toISOString() },
       );
       setChatId(chat.$id);
       setMessages((current) => mergeMessages(
@@ -1472,7 +1548,11 @@ export default function ChatScreen({ route, navigation }) {
             onScrollToIndexFailed={({ averageItemLength, index }) => {
               listRef.current?.scrollToOffset({ offset: averageItemLength * index, animated: true });
             }}
-            contentContainerStyle={{ padding: 15, paddingBottom: 20 }}
+            contentContainerStyle={{
+              paddingHorizontal: Math.max(12, horizontalGutter - 1),
+              paddingTop: 15 * scale,
+              paddingBottom: 20,
+            }}
             renderItem={({ item }) => {
               if (item.expiresAt && new Date(item.expiresAt).getTime() <= Date.now()) return null;
               const isMe = item.senderId === user?.$id;
@@ -1512,7 +1592,13 @@ export default function ChatScreen({ route, navigation }) {
                     </View>
                   ) : null}
                   {isSticker && item.stickerUrl ? (
-                    <Image source={{ uri: item.stickerUrl }} style={styles.stickerMsg} />
+                    <Image
+                      source={{ uri: item.stickerUrl }}
+                      style={[
+                        styles.stickerMsg,
+                        { width: Math.min(150, width * 0.5), height: Math.min(150, width * 0.5) },
+                      ]}
+                    />
                   ) : null}
                   {item.text ? (
                     <Text style={[styles.text, isMe ? { color: chatTheme.outgoingText } : { color: appColors.text }]}>
@@ -1521,7 +1607,15 @@ export default function ChatScreen({ route, navigation }) {
                         : item.text}
                     </Text>
                   ) : null}
-                  {attachmentUrl && isImage ? <Image source={{ uri: attachmentUrl }} style={styles.imageMsg} /> : null}
+                  {attachmentUrl && isImage ? (
+                    <Image
+                      source={{ uri: attachmentUrl }}
+                      style={[
+                        styles.imageMsg,
+                        { width: Math.min(200, width * 0.64), height: Math.min(200, width * 0.64) },
+                      ]}
+                    />
+                  ) : null}
                   {attachmentUrl && isVideo ? <ChatVideoMessage uri={attachmentUrl} /> : null}
                   {attachmentUrl && isAudio ? <ChatAudioMessage uri={attachmentUrl} /> : null}
                   <View style={styles.messageMeta}>
@@ -1546,7 +1640,7 @@ export default function ChatScreen({ route, navigation }) {
           />
       )}
       {showEmojiPicker && !recordingVoiceNote ? (
-        <View style={styles.emojiPickerContainer}>
+        <View style={[styles.emojiPickerContainer, { height: Math.min(300, Math.max(220, height * 0.38)) }]}>
           <EmojiKeyboard
             onEmojiSelected={handleEmojiSelected}
             allowMultipleSelections

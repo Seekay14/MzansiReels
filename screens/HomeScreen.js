@@ -236,6 +236,7 @@ export default function HomeScreen({ navigation }) {
         renderItem={({ item, index }) => (
           <VideoCard
             item={item}
+            currentUser={user}
             navigation={navigation}
             height={containerHeight}
             isActive={focused && index === activeIndex}
@@ -360,14 +361,6 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
         </View>
       </View>
-      {!user ? (
-        <View style={[styles.guestBanner, { top: insets.top + 52 }]}>
-          <Text style={styles.guestBannerText}>You are browsing as a guest. Log in to interact.</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Login')} accessibilityRole="button">
-            <Text style={styles.guestLoginText}>Log In</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
       <TopLoadingBar isLoading={loading || refreshing || loadingMore} />
     </View>
   );
@@ -405,9 +398,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#000',
   },
-  guestBanner: { position: 'absolute', left: 12, right: 12, minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderRadius: 18, backgroundColor: 'rgba(17,24,32,0.94)', zIndex: 9 },
-  guestBannerText: { color: '#D5DCE2', fontSize: 10 },
-  guestLoginText: { color: COLORS.cyan, fontSize: 11, fontWeight: '800', marginLeft: 7 },
   tabsContainer: { flexDirection: 'row', alignItems: 'center', gap: 20 },
   tabButton: { alignItems: 'center', paddingVertical: 8 },
   tabText: {

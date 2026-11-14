@@ -21,6 +21,15 @@ import { useAuth } from '../context/AuthContext';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const RESEND_SECONDS = 60;
 
+function showLoginError(error) {
+  const message = error?.message || 'An unexpected error occurred.';
+  if (Platform.OS === 'web' && typeof globalThis.alert === 'function') {
+    globalThis.alert(`Login Error\n\n${message}`);
+    return;
+  }
+  Alert.alert('Login Error', message);
+}
+
 export default function EmailOTPScreen({ navigation }) {
   const { setUser } = useAuth();
   const [email, setEmail] = useState('');
@@ -39,8 +48,8 @@ export default function EmailOTPScreen({ navigation }) {
     return () => clearTimeout(timer);
   }, [secondsRemaining]);
 
-  const sendCode = async () => {
-    const normalizedEmail = email.trim().toLowerCase();
+  const sendOTP = async (targetEmail) => {
+    const normalizedEmail = targetEmail.trim().toLowerCase();
     if (!EMAIL_PATTERN.test(normalizedEmail)) {
       setErrorMessage('Enter a valid email address.');
       return;
@@ -58,7 +67,8 @@ export default function EmailOTPScreen({ navigation }) {
       setTimeout(() => otpInput.current?.focus(), 150);
     } catch (error) {
       console.error('Could not send email OTP:', error);
-      setErrorMessage(error.message || 'Could not send a code. Please try again.');
+      showLoginError(error);
+      setErrorMessage(error?.message || 'Could not send a code. Please try again.');
     } finally {
       setSending(false);
     }
@@ -71,21 +81,8 @@ export default function EmailOTPScreen({ navigation }) {
     });
   };
 
-  const showWelcomeAndContinue = (isNewUser) => {
-    const title = isNewUser ? 'Welcome!' : 'Signed in';
-    const message = isNewUser
-      ? "It looks like you're new here. Let's set up your profile."
-      : 'You are now signed in.';
-    if (Platform.OS === 'web' && typeof globalThis.alert === 'function') {
-      globalThis.alert(`${title}\n\n${message}`);
-      resetToApp();
-      return;
-    }
-    Alert.alert(title, message, [{ text: 'Continue', onPress: resetToApp }], { cancelable: false });
-  };
-
-  const verifyCode = async () => {
-    if (!/^\d{6}$/.test(otp) || !tokenUserId) {
+  const verifyOTP = async (userId, secret) => {
+    if (!/^\d{6}$/.test(secret) || !userId) {
       setErrorMessage('Enter the 6-digit code from your email.');
       return;
     }
@@ -94,14 +91,13 @@ export default function EmailOTPScreen({ navigation }) {
     setVerifying(true);
     setErrorMessage('');
     try {
-      await account.createSession(tokenUserId, otp);
+      await account.createSession(userId, secret);
       const authenticatedUser = await account.get();
       const profileResult = await databases.listDocuments(DATABASE_ID, COLLECTIONS.users, [
         Query.equal('userId', authenticatedUser.$id),
         Query.limit(1),
       ]);
       let profile = profileResult.documents[0];
-      const isNewUser = !profile;
       if (!profile) {
         profile = await databases.createDocument(
           DATABASE_ID,
@@ -111,6 +107,7 @@ export default function EmailOTPScreen({ navigation }) {
             userId: authenticatedUser.$id,
             name: '',
             username: '',
+            avatarUrl: '',
             pushNotifications: true,
             isPrivate: false,
             isVerified: false,
@@ -125,13 +122,14 @@ export default function EmailOTPScreen({ navigation }) {
       await setUser(authenticatedUser, {
         skipOnboarding: profile.profileSetupComplete === true,
       });
-      showWelcomeAndContinue(isNewUser || profile.profileSetupComplete === false);
+      resetToApp();
     } catch (error) {
       console.error('Could not verify email OTP:', error);
+      showLoginError(error);
       setErrorMessage(
-        error.code === 401 || error.type?.includes('user_invalid_token')
+        error?.code === 401 || error?.type?.includes('user_invalid_token')
           ? 'Invalid or expired code. Request a new one and try again.'
-          : error.message || 'Could not verify the code. Please try again.',
+          : error?.message || 'Could not verify the code. Please try again.',
       );
     } finally {
       setVerifying(false);
@@ -193,11 +191,11 @@ export default function EmailOTPScreen({ navigation }) {
               textContentType="emailAddress"
               accessibilityLabel="Email address"
               returnKeyType="send"
-              onSubmitEditing={sendCode}
+              onSubmitEditing={() => sendOTP(email)}
             />
             <TouchableOpacity
               style={[styles.primaryButton, sending && styles.buttonDisabled]}
-              onPress={sendCode}
+              onPress={() => sendOTP(email)}
               disabled={sending}
               accessibilityRole="button"
             >
@@ -238,7 +236,7 @@ export default function EmailOTPScreen({ navigation }) {
 
             <TouchableOpacity
               style={[styles.primaryButton, verifying && styles.buttonDisabled]}
-              onPress={verifyCode}
+              onPress={() => verifyOTP(tokenUserId, otp)}
               disabled={verifying}
               accessibilityRole="button"
             >
@@ -250,7 +248,7 @@ export default function EmailOTPScreen({ navigation }) {
             <View style={styles.resendRow}>
               <Text style={styles.resendText}>Didn’t get a code?</Text>
               <TouchableOpacity
-                onPress={sendCode}
+                onPress={() => sendOTP(email)}
                 disabled={sending || secondsRemaining > 0}
                 accessibilityRole="button"
                 accessibilityLabel="Resend verification code"

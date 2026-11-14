@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, MAX_UPLOAD_MB } from '../config/constants';
 import { useAuth } from '../context/AuthContext';
 import { createPost } from '../config/posts';
+import { useResponsiveLayout } from '../config/responsive';
 
 const POST_TYPES = [
   { type: 'text', label: 'Text', icon: 'text-outline' },
@@ -39,6 +40,7 @@ function VideoPreview({ uri }) {
 export default function UploadScreen({ navigation }) {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
+  const { height, scale, horizontalGutter } = useResponsiveLayout();
   const inputRef = useRef(null);
   const [asset, setAsset] = useState(null);
   const [content, setContent] = useState('');
@@ -264,14 +266,17 @@ export default function UploadScreen({ navigation }) {
 
       <ScrollView
         style={styles.contentArea}
-        contentContainerStyle={styles.contentAreaInner}
+        contentContainerStyle={[styles.contentAreaInner, { paddingHorizontal: horizontalGutter }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         {postType === 'text' ? (
           <TextInput
             ref={inputRef}
-            style={styles.textEditor}
+            style={[
+              styles.textEditor,
+              { minHeight: 220 * scale, fontSize: 20 * scale, lineHeight: 29 * scale },
+            ]}
             placeholder="What's on your mind, Mzansi?"
             placeholderTextColor="#707985"
             value={content}
@@ -287,7 +292,10 @@ export default function UploadScreen({ navigation }) {
           <>
             <TextInput
               ref={inputRef}
-              style={styles.captionEditor}
+              style={[
+                styles.captionEditor,
+                { fontSize: 17 * scale, lineHeight: 25 * scale },
+              ]}
               placeholder="Add a caption..."
               placeholderTextColor="#707985"
               value={content}
@@ -299,7 +307,7 @@ export default function UploadScreen({ navigation }) {
               accessibilityLabel="Post caption"
             />
             {asset ? (
-              <View style={styles.previewFrame}>
+              <View style={[styles.previewFrame, { height: Math.min(390, Math.max(240, height * 0.46)) }]}>
                 {postType === 'image'
                   ? <Image source={{ uri: asset.uri }} style={styles.mediaPreview} resizeMode="cover" />
                   : <VideoPreview uri={asset.uri} />}

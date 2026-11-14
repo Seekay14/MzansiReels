@@ -31,6 +31,7 @@ import {
   filterVisibleProfileContent,
 } from '../config/profileContentService';
 import { uploadProfilePicture } from '../config/profilePictureService';
+import { getResponsiveScale } from '../config/responsive';
 import Avatar from '../components/Avatar';
 import LaunchCountdownCard from '../components/LaunchCountdownCard';
 import MzansiLoader from '../components/MzansiLoader';
@@ -51,6 +52,7 @@ function MyProfileScreen({ navigation }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const scale = getResponsiveScale(width);
   const isDesktop = Platform.OS === 'web' && width > 768;
   const [userDoc, setUserDoc] = useState(null);
   const [videos, setVideos] = useState([]);
@@ -288,6 +290,7 @@ function MyProfileScreen({ navigation }) {
     <TextPostCard
       post={item}
       user={user}
+      currentUser={user}
       navigation={navigation}
       desktop={isDesktop}
       onDelete={(postId) => setUploadedPosts((current) => current.filter((post) => post.$id !== postId))}
@@ -346,11 +349,11 @@ function MyProfileScreen({ navigation }) {
         <TouchableOpacity
           onPress={pickAvatar}
           disabled={uploadingAvatar}
-          style={styles.avatarWrapper}
+          style={[styles.avatarWrapper, { width: 112 * scale, height: 112 * scale }]}
           accessibilityRole="button"
           accessibilityLabel="Edit profile picture"
         >
-          <Avatar uri={userDoc?.avatarUrl} userId={user?.$id} name={displayName} size={104} bordered />
+          <Avatar uri={userDoc?.avatarUrl} userId={user?.$id} name={displayName} size={104 * scale} bordered />
           <View style={styles.cameraBadge}>
             {uploadingAvatar
               ? <ActivityIndicator size="small" color="#071014" />

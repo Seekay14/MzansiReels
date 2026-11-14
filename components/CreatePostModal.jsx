@@ -20,6 +20,7 @@ import { EmojiKeyboard } from 'rn-emoji-keyboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../config/constants';
 import { createPost } from '../config/posts';
+import { useResponsiveLayout } from '../config/responsive';
 import Avatar from './Avatar';
 
 const EMOJI_THEME = {
@@ -59,6 +60,7 @@ export default function CreatePostModal({
   onPosted,
 }) {
   const insets = useSafeAreaInsets();
+  const { height, scale, horizontalGutter } = useResponsiveLayout();
   const inputRef = useRef(null);
   const [content, setContent] = useState('');
   const [asset, setAsset] = useState(initialAsset);
@@ -154,7 +156,10 @@ export default function CreatePostModal({
 
         <ScrollView
           style={styles.content}
-          contentContainerStyle={styles.contentInner}
+          contentContainerStyle={[
+            styles.contentInner,
+            { paddingHorizontal: horizontalGutter, paddingVertical: 16 * scale },
+          ]}
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.authorRow}>
@@ -166,7 +171,10 @@ export default function CreatePostModal({
           </View>
           <TextInput
             ref={inputRef}
-            style={styles.textInput}
+            style={[
+              styles.textInput,
+              { minHeight: 145 * scale, fontSize: 20 * scale, lineHeight: 28 * scale },
+            ]}
             placeholder="What's on your mind?"
             placeholderTextColor="#788290"
             value={content}
@@ -178,7 +186,7 @@ export default function CreatePostModal({
             accessibilityLabel="Post text"
           />
           {asset?.uri ? (
-            <View style={styles.previewFrame}>
+            <View style={[styles.previewFrame, { height: Math.min(280, Math.max(220, height * 0.35)) }]}>
               {postType === 'image' ? (
                 <Image source={{ uri: asset.uri }} style={styles.preview} resizeMode="cover" />
               ) : (
@@ -231,7 +239,7 @@ export default function CreatePostModal({
           </View>
         </View>
         {emojiOpen ? (
-          <View style={styles.emojiContainer}>
+          <View style={[styles.emojiContainer, { height: Math.min(300, Math.max(220, height * 0.38)) }]}>
             <EmojiKeyboard
               onEmojiSelected={({ emoji }) => setContent((current) => `${current}${emoji}`)}
               theme={EMOJI_THEME}

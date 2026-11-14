@@ -29,6 +29,7 @@ import StoryUploadModal from '../components/StoryUploadModal';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { fetchActiveStories } from '../config/storyService';
+import { useResponsiveLayout } from '../config/responsive';
 import {
   getChatParticipantIds,
   getMessagingErrorMessage,
@@ -182,6 +183,7 @@ export default function MessagesScreen({ navigation }) {
   const { colors } = useTheme();
   const { user, logout } = useAuth();
   const insets = useSafeAreaInsets();
+  const { horizontalGutter } = useResponsiveLayout();
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -663,7 +665,7 @@ export default function MessagesScreen({ navigation }) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { borderBottomColor: colors.border, paddingHorizontal: horizontalGutter }]}>
         <BrandTitle />
         <View style={styles.headerActions}>
           <TouchableOpacity
@@ -688,7 +690,7 @@ export default function MessagesScreen({ navigation }) {
         </View>
       </View>
 
-      <View style={styles.sectionTabs}>
+      <View style={[styles.sectionTabs, { paddingHorizontal: horizontalGutter }]}>
         {[
           { key: 'chats', label: 'CHATS', icon: 'chatbubbles-outline' },
           { key: 'status', label: 'STATUS', icon: 'radio-button-on-outline' },
@@ -710,7 +712,7 @@ export default function MessagesScreen({ navigation }) {
       </View>
 
       {activeSection === 'chats' && searchVisible ? (
-        <View style={styles.searchContainer}>
+        <View style={[styles.searchContainer, { paddingHorizontal: horizontalGutter }]}>
             <View style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name="search" size={18} color="#888" style={styles.searchIcon} />
             <TextInput
@@ -847,7 +849,7 @@ export default function MessagesScreen({ navigation }) {
         onRequestClose={() => setNewMessageVisible(false)}
       >
         <View style={[styles.modalContainer, { paddingTop: insets.top + 8 }]}>
-          <View style={styles.modalHeader}>
+          <View style={[styles.modalHeader, { paddingHorizontal: horizontalGutter }]}>
             <TouchableOpacity
               style={styles.modalClose}
               onPress={() => setNewMessageVisible(false)}
@@ -859,7 +861,7 @@ export default function MessagesScreen({ navigation }) {
             <Text style={styles.modalTitle}>New Chat</Text>
             <View style={styles.modalClose} />
           </View>
-          <View style={styles.searchContainer}>
+          <View style={[styles.searchContainer, { paddingHorizontal: horizontalGutter }]}>
             <View style={styles.searchBar}>
               <Ionicons name="search" size={18} color="#888" style={styles.searchIcon} />
               <TextInput

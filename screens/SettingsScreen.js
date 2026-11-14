@@ -21,6 +21,7 @@ import { account, databases, functions, Query } from '../config/appwrite';
 import { COLLECTIONS, COLORS, DATABASE_ID, DELETE_USER_FUNCTION_ID } from '../config/constants';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useResponsiveLayout } from '../config/responsive';
 
 const CONTACT_EMAIL = 'sectionfellas@gmail.com';
 const DEFAULT_PREFERENCES = {
@@ -72,6 +73,7 @@ export default function SettingsScreen({ navigation }) {
   const { logout } = useAuth();
   const { colors, mode, setMode } = useTheme();
   const insets = useSafeAreaInsets();
+  const { horizontalGutter } = useResponsiveLayout();
   const [user, setUser] = useState(null);
   const [userDoc, setUserDoc] = useState(null);
   const [isPrivate, setIsPrivate] = useState(false);
@@ -382,7 +384,16 @@ export default function SettingsScreen({ navigation }) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: colors.border }]}>
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: insets.top + 8,
+            paddingHorizontal: horizontalGutter,
+            borderBottomColor: colors.border,
+          },
+        ]}
+      >
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityLabel="Go back">
           <Ionicons name="arrow-back" size={25} color="#fff" />
         </TouchableOpacity>
@@ -390,7 +401,10 @@ export default function SettingsScreen({ navigation }) {
         <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingHorizontal: horizontalGutter }]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.muted }]}>Account & privacy</Text>
           <SettingsRow icon="person-outline" title="Edit Profile" onPress={() => navigation.navigate('MyProfile')} />

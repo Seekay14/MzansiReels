@@ -3,15 +3,13 @@ import { StatusBar } from 'expo-status-bar';
 import {
   NavigationContainer,
   DarkTheme,
-  getPathFromState as getDefaultPathFromState,
-  getStateFromPath as getDefaultStateFromPath,
 } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { View, ActivityIndicator, Text, StyleSheet, SafeAreaView, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { client, databases, Query } from './config/appwrite';
 
 // 1. SAFELY import config
@@ -21,6 +19,7 @@ import { AuthContext, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { SearchMenuProvider } from './context/SearchMenuContext';
 import { ensureUserDoc } from './config/helpers';
+import { useResponsiveLayout } from './config/responsive';
 import LaunchModal from './components/LaunchModal';
 
 // ... keep all your screen imports exactly as they are ...
@@ -55,61 +54,56 @@ import LogoutScreen from './screens/LogoutScreen';
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 const linking = {
-  prefixes: [Linking.createURL('/'), 'mzansireels://'],
-  getPathFromState: (state, options) => {
-    const path = getDefaultPathFromState(state, options);
-    return Platform.OS === 'web' ? `#${path}` : path;
-  },
-  getStateFromPath: (path, options) => {
-    let routePath = path;
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      if (path === `${window.location.pathname}${window.location.search}` && window.location.hash.startsWith('#/')) {
-        routePath = window.location.hash.slice(1);
-      } else if (path.startsWith('#/')) {
-        routePath = path.slice(1);
-      }
-    }
-    const state = getDefaultStateFromPath(routePath, options);
-    if (Platform.OS !== 'web' || !state) return state;
-
-    const addHashToRoutePaths = (navigationState) => ({
-      ...navigationState,
-      routes: navigationState.routes.map((route) => ({
-        ...route,
-        ...(route.path ? { path: route.path.startsWith('#') ? route.path : `#${route.path}` } : {}),
-        ...(route.state ? { state: addHashToRoutePaths(route.state) } : {}),
-      })),
-    });
-    return addHashToRoutePaths(state);
-  },
+  prefixes: [
+    Linking.createURL('/'),
+    'mzansireels://',
+    'http://localhost:8081',
+    'https://seekay14.github.io/MzansiReels',
+  ],
   config: {
     screens: {
       App: {
         path: '',
         screens: {
           Home: {
+            path: 'Home',
             screens: {
               Feed: '',
               UserProfile: {
                 path: 'profile/:userId',
                 parse: { userId: String },
               },
+              Search: { path: 'Search', exact: true },
             },
           },
           Reels: {
-            path: 'reels',
-            screens: { Feed: '' },
+            path: 'Reels',
+            screens: { Feed: '', Search: 'Search' },
+          },
+          Upload: 'Create',
+          Profile: {
+            path: 'Profile',
+            screens: {
+              MyProfile: '',
+              UserProfile: {
+                path: 'user/:userId',
+                parse: { userId: String },
+              },
+              Settings: { path: 'Settings', exact: true },
+            },
           },
           Messages: {
-            path: 'messages',
+            path: 'Inbox',
             screens: {
               Inbox: '',
-              Chat: 'chat',
-              NewMessage: 'new',
+              Chat: 'Chat',
+              NewMessage: 'NewMessage',
             },
           },
         },
       },
+      Login: 'Login',
+      Register: 'Register',
       Auth: 'login',
       ForgotPassword: 'forgot-password',
       ResetPassword: {
@@ -135,6 +129,14 @@ const getNavTheme = (colors) => {
     }
   };
 };
+
+function RedirectToApp({ navigation }) {
+  useEffect(() => {
+    navigation.replace('App');
+  }, [navigation]);
+
+  return null;
+}
 
 function HomeStack() {
   return (
@@ -202,7 +204,9 @@ function MessagesStack() {
 
 function MyTabs() {
   const insets = useSafeAreaInsets();
+  const { scale, isCompact } = useResponsiveLayout();
   const { user } = useAuth();
+  const isAuthenticated = Boolean(user?.$id);
   const { colors: safeColors } = useTheme();
   const [unreadMessages, setUnreadMessages] = useState(0);
 
@@ -240,6 +244,8 @@ function MyTabs() {
     };
   }, [user?.$id]);
 
+  if (!isAuthenticated) return null;
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -248,22 +254,31 @@ function MyTabs() {
         tabBarLabel: route.name === 'Upload' ? 'Create'
             : route.name === 'Messages' ? 'Inbox'
               : route.name,
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '600', marginTop: 2 },
+        tabBarLabelStyle: { fontSize: Math.max(9, Math.round(10 * scale)), fontWeight: '600', marginTop: 2 },
         tabBarStyle: {
           backgroundColor: safeColors.bg,
           borderTopWidth: 1,
           borderTopColor: safeColors.border,
-          height: 64 + insets.bottom,
-          paddingBottom: Math.max(insets.bottom, 6),
-          paddingTop: 6,
+          height: (isCompact ? 60 : 64) + insets.bottom,
+          paddingBottom: Math.max(insets.bottom, isCompact ? 4 : 6),
+          paddingTop: isCompact ? 4 : 6,
         },
         tabBarActiveTintColor: safeColors.cyan,
         tabBarInactiveTintColor: '#666',
         tabBarIcon: ({ focused, color }) => {
           if (route.name === 'Upload') {
             return (
-              <View style={styles.uploadButton}>
-                <Ionicons name="add" size={28} color="#fff" />
+              <View
+                style={[
+                  styles.uploadButton,
+                  {
+                    width: 56 * scale,
+                    height: 56 * scale,
+                    borderRadius: 28 * scale,
+                  },
+                ]}
+              >
+                <Ionicons name="add" size={28 * scale} color="#fff" />
               </View>
             );
           }
@@ -274,7 +289,7 @@ function MyTabs() {
             Profile: ['person', 'person-outline'],
           };
           const [active, inactive] = icons[route.name] || ['home', 'home-outline'];
-          return <Ionicons name={focused ? active : inactive} size={26} color={color} />;
+          return <Ionicons name={focused ? active : inactive} size={Math.max(22, 26 * scale)} color={color} />;
         },
       })}
     >
@@ -286,7 +301,7 @@ function MyTabs() {
         options={{ tabBarAccessibilityLabel: 'Create a video' }}
         listeners={({ navigation }) => ({
           tabPress: (event) => {
-            if (!user) {
+            if (!isAuthenticated) {
               event.preventDefault();
               navigation.navigate('Login');
             }
@@ -303,7 +318,7 @@ function MyTabs() {
         }}
         listeners={({ navigation }) => ({
           tabPress: (event) => {
-            if (!user) {
+            if (!isAuthenticated) {
               event.preventDefault();
               navigation.navigate('Login');
             }
@@ -316,7 +331,7 @@ function MyTabs() {
         options={{ tabBarAccessibilityLabel: 'Your profile' }}
         listeners={({ navigation }) => ({
           tabPress: (event) => {
-            if (!user) {
+            if (!isAuthenticated) {
               event.preventDefault();
               navigation.navigate('Login');
             }
@@ -329,6 +344,7 @@ function MyTabs() {
 
 function AppNavigation() {
   const { user } = useAuth();
+  const isAuthenticated = Boolean(user?.$id);
   const { colors } = useTheme();
 
   return (
@@ -337,19 +353,8 @@ function AppNavigation() {
       <NavigationContainer theme={getNavTheme(colors)} linking={linking}>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen name="App">
-            {() => (
-              user
-                ? user.profileSetupComplete === false
-                  ? <ProfileSetupScreen />
-                  : !user.skipOnboarding && user.onboardingComplete === false
-                    ? <InterestsScreen />
-                    : <MyTabs />
-                : <MyTabs />
-            )}
-          </Stack.Screen>
-          <Stack.Screen name="Login">
             {(navigationProps) => (
-              user
+              isAuthenticated
                 ? user.profileSetupComplete === false
                   ? <ProfileSetupScreen />
                   : !user.skipOnboarding && user.onboardingComplete === false
@@ -358,14 +363,24 @@ function AppNavigation() {
                 : <AuthScreen {...navigationProps} />
             )}
           </Stack.Screen>
+          <Stack.Screen name="Login">
+            {(navigationProps) => (
+              isAuthenticated
+                ? <RedirectToApp navigation={navigationProps.navigation} />
+                : <AuthScreen {...navigationProps} />
+            )}
+          </Stack.Screen>
+          <Stack.Screen name="Register">
+            {(navigationProps) => (
+              isAuthenticated
+                ? <RedirectToApp navigation={navigationProps.navigation} />
+                : <AuthScreen {...navigationProps} initialTab="signup" />
+            )}
+          </Stack.Screen>
           <Stack.Screen name="Auth">
             {(navigationProps) => (
-              user
-                ? user.profileSetupComplete === false
-                  ? <ProfileSetupScreen />
-                  : !user.skipOnboarding && user.onboardingComplete === false
-                    ? <InterestsScreen />
-                    : <MyTabs />
+              isAuthenticated
+                ? <RedirectToApp navigation={navigationProps.navigation} />
                 : <AuthScreen {...navigationProps} />
             )}
           </Stack.Screen>
@@ -375,27 +390,22 @@ function AppNavigation() {
           <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
         </Stack.Navigator>
       </NavigationContainer>
-      <LaunchModal />
+      {isAuthenticated ? <LaunchModal /> : null}
     </>
   );
 }
 
 export default function App() {
   const [user, setAuthUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [profileLoading, setProfileLoading] = useState(false);
-  const [profileError, setProfileError] = useState('');
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [fatalError, setFatalError] = useState(null);
 
   const setUser = useCallback(async (nextUser, options = {}) => {
     if (!nextUser) {
       setAuthUser(null);
-      setProfileError('');
       return;
     }
 
-    setProfileLoading(true);
-    setProfileError('');
     try {
       const profile = await ensureUserDoc(nextUser);
       setAuthUser({
@@ -413,9 +423,6 @@ export default function App() {
     } catch (error) {
       console.error('Could not load the signed-in user profile:', error);
       setAuthUser(null);
-      setProfileError(error.message || 'Could not load your profile. Please try again.');
-    } finally {
-      setProfileLoading(false);
     }
   }, []);
 
@@ -448,26 +455,29 @@ export default function App() {
         }
         if (mounted && Number(error?.code) === 401) {
           setAuthUser(null);
-        } else if (mounted) {
-          setProfileError('Could not verify your session. Check your connection and retry.');
+        } else if (mounted && __DEV__) {
+          console.error('Session verification failed; routing to authentication:', error);
         }
-      } finally {
-        if (mounted) setLoading(false);
       }
     };
 
-    // Add a 5 second timeout just in case Appwrite hangs
-    const timeout = setTimeout(() => {
+    const sessionTimeout = setTimeout(() => {
       if (mounted) {
         if (__DEV__) console.warn('Appwrite session verification timed out.');
-        setProfileError('Could not verify your session. Check your connection and retry.');
-        setLoading(false);
+        setAuthUser(null);
+        setIsCheckingAuth(false);
       }
     }, 5000);
 
-    checkSession().finally(() => clearTimeout(timeout));
+    checkSession().finally(() => {
+      clearTimeout(sessionTimeout);
+      if (mounted) setIsCheckingAuth(false);
+    });
 
-    return () => { mounted = false; clearTimeout(timeout); };
+    return () => {
+      mounted = false;
+      clearTimeout(sessionTimeout);
+    };
   }, [setUser]);
 
   const logout = useCallback(async () => {
@@ -477,44 +487,11 @@ export default function App() {
       console.log('Logout error:', error);
     }
     setAuthUser(null);
-    setProfileError('');
   }, []);
 
   const auth = useMemo(() => ({ user, setUser, logout }), [user, setUser, logout]);
 
-  if (loading || profileLoading) {
-    const safeColors = COLORS || { bg: '#000', cyan: '#00ffff', muted: '#888' };
-    return (
-      <View style={{ flex: 1, backgroundColor: safeColors.bg, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={safeColors.cyan} />
-        <Text style={{ color: safeColors.muted, marginTop: 15, fontSize: 16 }}>Loading MzansiReels...</Text>
-      </View>
-    );
-  }
-
-  if (profileError) {
-    return (
-      <View style={{ flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center', padding: 28 }}>
-        <Text style={{ color: '#fff', fontSize: 17, textAlign: 'center', marginBottom: 18 }}>{profileError}</Text>
-        <TouchableOpacity
-          style={{ backgroundColor: COLORS.cyan, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 13 }}
-          onPress={async () => {
-            setLoading(true);
-            try {
-              const session = await account.get();
-              await setUser(session);
-            } catch (error) {
-              setProfileError(error.message || 'Could not load your profile. Please try again.');
-            } finally {
-              setLoading(false);
-            }
-          }}
-        >
-          <Text style={{ color: '#000', fontWeight: '700' }}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  if (isCheckingAuth) return <LandingScreen />;
 
   return (
     <SafeAreaProvider>
