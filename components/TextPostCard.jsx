@@ -90,8 +90,10 @@ export default function TextPostCard({
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [commentCount, setCommentCount] = useState(Number(post.commentCount) || 0);
   const [authorVerified, setAuthorVerified] = useState(post.isVerified === true);
+  const [authorProfile, setAuthorProfile] = useState(null);
   const link = findUrl(post.content || '');
   const isOwner = currentUser?.$id === post.userId;
+  const canInteract = Boolean(currentUser?.$id);
   const postedAt = post.uploadedAt || post.$createdAt;
 
   useEffect(() => {
@@ -128,6 +130,10 @@ export default function TextPostCard({
 
   useEffect(() => {
     let active = true;
+    if (!canInteract) {
+      setCommentCount(0);
+      return undefined;
+    }
     databases.listDocuments(DATABASE_ID, COLLECTIONS.postComments, [
       Query.equal('postId', post.$id),
       Query.limit(1),
@@ -139,18 +145,31 @@ export default function TextPostCard({
     return () => {
       active = false;
     };
-  }, [post.$id]);
+  }, [post.$id, canInteract]);
 
   useEffect(() => {
     let active = true;
-    if (!post.userId) {
-      setAuthorVerified(false);
+    if (!canInteract || !post.userId) {
+      setAuthorVerified(post.isVerified === true);
       return undefined;
     }
     getUserDoc(post.userId).then((profile) => {
       if (active) setAuthorVerified(profile?.isVerified === true);
     }).catch((error) => {
       console.error('Could not load post author verification status:', error);
+    });
+    return () => {
+      active = false;
+    };
+  }, [canInteract, post.isVerified, post.userId]);
+
+  useEffect(() => {
+    let active = true;
+    if (!post.userId) return undefined;
+    getUserDoc(post.userId).then((profile) => {
+      if (active) setAuthorProfile(profile);
+    }).catch((error) => {
+      console.error('Could not load post author profile:', error);
     });
     return () => {
       active = false;
@@ -290,13 +309,14 @@ export default function TextPostCard({
         <View style={styles.postHeader}>
           <TouchableOpacity
             onPress={() => openProfile(post.userId, post.userName)}
+            disabled={!canInteract || !post.userId}
             accessibilityRole="button"
             accessibilityLabel={`View ${post.userName || 'creator'} profile`}
           >
             <Avatar
               userId={post.userId}
-              fallbackUrl={post.avatarUrl}
-              name={post.userName}
+              fallbackUrl={authorProfile?.avatarUrl || post.avatarUrl}
+              name={authorProfile?.name || authorProfile?.username || post.userName || 'User'}
               size={44}
             />
           </TouchableOpacity>
@@ -304,11 +324,11 @@ export default function TextPostCard({
             <TouchableOpacity
               style={styles.authorNameRow}
               onPress={() => openProfile(post.userId, post.userName)}
-              disabled={!post.userId}
+              disabled={!canInteract || !post.userId}
               accessibilityRole="button"
               accessibilityLabel={`View ${post.userName || 'creator'} profile`}
             >
-              <Text style={[styles.authorName, { color: colors.text }]}>{post.userName || 'Mzansi Creator'}</Text>
+              <Text style={[styles.authorName, { color: colors.text }]}>{authorProfile?.name || authorProfile?.username || post.userName || 'User'}</Text>
               {authorVerified ? (
                 <Ionicons name="checkmark-circle" size={15} color={COLORS.cyan} />
               ) : null}
@@ -330,14 +350,16 @@ export default function TextPostCard({
               ) : null}
             </View>
           </View>
-          <TouchableOpacity
-            style={styles.optionsButton}
-            onPress={() => setOptionsVisible(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Post options"
-          >
-            <Ionicons name="ellipsis-horizontal" size={20} color="#AAB1BA" />
-          </TouchableOpacity>
+          {canInteract ? (
+            <TouchableOpacity
+              style={styles.optionsButton}
+              onPress={() => setOptionsVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Post options"
+            >
+              <Ionicons name="ellipsis-horizontal" size={20} color="#AAB1BA" />
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         {post.sharedFromName ? (
@@ -346,7 +368,7 @@ export default function TextPostCard({
             <Text style={styles.sharedFromPrefix}>Shared from </Text>
             <TouchableOpacity
               onPress={() => openProfile(post.sharedFromUserId || post.userId, post.sharedFromName)}
-              disabled={!post.sharedFromUserId && !post.userId}
+              disabled={!canInteract || (!post.sharedFromUserId && !post.userId)}
               accessibilityRole="button"
               accessibilityLabel={`View ${post.sharedFromName} profile`}
             >
@@ -376,40 +398,46 @@ export default function TextPostCard({
         ) : null}
 
         <View style={styles.actions}>
-          <View style={styles.engagementActions}>
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={handleLike}
-              disabled={liking}
-              accessibilityRole="button"
-              accessibilityLabel={liked ? 'Unlike post' : 'Like post'}
-            >
-              <Ionicons name={liked ? 'heart' : 'heart-outline'} size={20} color={liked ? COLORS.cyan : '#AAB1BA'} />
-              <Text style={[styles.actionCount, liked && styles.likedCount]}>{formatNumber(likes)}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.commentButton}
-              onPress={() => {
-                handleComment();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={`View ${commentCount} comments`}
-            >
-              <Ionicons name="chatbubble-outline" size={19} color="#AAB1BA" />
-              <Text style={styles.actionCount}>{formatNumber(commentCount)}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => {
-                if (requireAuth('share this post', navigation, currentUser)) setShareModalVisible(true);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={`Share post, ${shares} shares`}
-            >
-              <Ionicons name="repeat-outline" size={20} color="#AAB1BA" />
-              <Text style={styles.actionCount}>{formatNumber(shares)}</Text>
-            </TouchableOpacity>
-          </View>
+          {canInteract ? (
+            <View style={styles.engagementActions}>
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={handleLike}
+                disabled={liking}
+                accessibilityRole="button"
+                accessibilityLabel={liked ? 'Unlike post' : 'Like post'}
+              >
+                <Ionicons name={liked ? 'heart' : 'heart-outline'} size={20} color={liked ? COLORS.cyan : '#AAB1BA'} />
+                <Text style={[styles.actionCount, liked && styles.likedCount]}>{formatNumber(likes)}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.commentButton}
+                onPress={() => {
+                  handleComment();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`View ${commentCount} comments`}
+              >
+                <Ionicons name="chatbubble-outline" size={19} color="#AAB1BA" />
+                <Text style={styles.actionCount}>{formatNumber(commentCount)}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => {
+                  if (requireAuth('share this post', navigation, currentUser)) setShareModalVisible(true);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Share post, ${shares} shares`}
+              >
+                <Ionicons name="repeat-outline" size={20} color="#AAB1BA" />
+                <Text style={styles.actionCount}>{formatNumber(shares)}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <Text style={[styles.guestReadOnlyText, { color: colors.muted }]}>
+              Guest view · Sign in to interact
+            </Text>
+          )}
         </View>
         {isOwner && commentCount > 0 ? (
           <TouchableOpacity
@@ -529,6 +557,7 @@ const styles = StyleSheet.create({
   linkUrl: { color: '#89929D', fontSize: 10, marginTop: 4 },
   visitLink: { color: COLORS.cyan, fontSize: 11, fontWeight: '800', marginRight: 10 },
   actions: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.07)', marginTop: 2 },
+  guestReadOnlyText: { fontSize: 12, fontWeight: '600' },
   engagementActions: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   actionButton: { minWidth: 48, flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
   commentButton: { minWidth: 50, flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },

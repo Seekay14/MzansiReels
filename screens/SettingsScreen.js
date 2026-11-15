@@ -70,7 +70,7 @@ function SettingSwitch({ value, onValueChange }) {
 }
 
 export default function SettingsScreen({ navigation }) {
-  const { logout } = useAuth();
+  const { user: authUser, logout } = useAuth();
   const { colors, mode, setMode } = useTheme();
   const insets = useSafeAreaInsets();
   const { horizontalGutter } = useResponsiveLayout();
@@ -87,7 +87,6 @@ export default function SettingsScreen({ navigation }) {
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [sessionsVisible, setSessionsVisible] = useState(false);
-  const [sessions, setSessions] = useState([]);
 
   const preferenceKey = user ? `@mzansireels/settings/${user.$id}` : null;
 
@@ -218,38 +217,8 @@ export default function SettingsScreen({ navigation }) {
     navigation.navigate('BlockedUsers');
   };
 
-  const openSessions = async () => {
+  const openSessions = () => {
     setSessionsVisible(true);
-    setBusy('sessions');
-    try {
-      const result = await account.listSessions();
-      setSessions(result.sessions || []);
-    } catch (error) {
-      console.error('Could not load active sessions:', error);
-      Alert.alert('Could not load sessions', error.message || 'Please try again.');
-    } finally {
-      setBusy('');
-    }
-  };
-
-  const revokeSession = (session) => {
-    Alert.alert('Sign out this device?', 'That device will need to sign in again.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await account.deleteSession(session.$id);
-            setSessions((current) => current.filter((item) => item.$id !== session.$id));
-            if (session.current) await logout();
-          } catch (error) {
-            console.error('Could not revoke session:', error);
-            Alert.alert('Could not revoke session', error.message || 'Please try again.');
-          }
-        },
-      },
-    ]);
   };
 
   const showMfaComingSoon = () => {
@@ -283,7 +252,7 @@ export default function SettingsScreen({ navigation }) {
         isPrivate: true,
         isDeactivated: true,
       });
-      await logout();
+      await logout(authUser?.$id);
       navigateToLogin();
     } catch (error) {
       console.error('Could not deactivate account:', error);
@@ -322,7 +291,7 @@ export default function SettingsScreen({ navigation }) {
         );
       }
 
-      await logout();
+      await logout(authUser?.$id);
       navigateToLogin();
       Alert.alert('Account deleted', 'Your account has been permanently deleted.');
     } catch (error) {
@@ -364,7 +333,7 @@ export default function SettingsScreen({ navigation }) {
 
   const signOut = async () => {
     try {
-      await logout();
+      await logout(authUser?.$id);
       navigateToLogin();
     } catch (error) {
       console.error('Could not log out:', error);
@@ -409,7 +378,11 @@ export default function SettingsScreen({ navigation }) {
           <Text style={[styles.sectionTitle, { color: colors.muted }]}>Account & privacy</Text>
           <SettingsRow icon="person-outline" title="Edit Profile" onPress={() => navigation.navigate('MyProfile')} />
           <SettingsRow icon="key-outline" title="Change Password" onPress={() => setIsPasswordModalVisible(true)} />
-          <SettingsRow icon="lock-closed-outline" title="Private Account" subtitle="Approve followers before they see your posts">
+          <SettingsRow
+            icon="lock-closed-outline"
+            title="Private Account"
+            subtitle="Profile pages honor this setting; posts remain visible in guest feeds"
+          >
             {savingSetting === 'private'
               ? <ActivityIndicator size="small" color={COLORS.cyan} />
               : <SettingSwitch value={isPrivate} onValueChange={togglePrivate} />}
@@ -531,26 +504,7 @@ export default function SettingsScreen({ navigation }) {
               <Text style={styles.modalTitle}>Active Sessions</Text>
               <TouchableOpacity onPress={() => setSessionsVisible(false)}><Ionicons name="close" size={25} color="#fff" /></TouchableOpacity>
             </View>
-            {busy === 'sessions' ? <ActivityIndicator color={COLORS.cyan} style={styles.modalLoader} /> : null}
-            {!busy && sessions.length === 0 ? <Text style={styles.emptyText}>No active sessions found.</Text> : null}
-            <ScrollView>
-              {sessions.map((session) => {
-                const device = [session.deviceName || session.deviceModel, session.osName].filter(Boolean).join(' · ') || session.clientName || 'Unknown device';
-                const location = [session.countryName, session.ip].filter(Boolean).join(' · ');
-                return (
-                  <View style={styles.listRow} key={session.$id}>
-                    <View style={styles.iconBox}><Ionicons name="phone-portrait-outline" size={20} color={COLORS.cyan} /></View>
-                    <View style={styles.rowCopy}>
-                      <Text style={styles.rowText}>{device}{session.current ? ' · This device' : ''}</Text>
-                      <Text style={styles.rowSubtitle}>{location || session.ip || 'Location unavailable'}</Text>
-                    </View>
-                    <TouchableOpacity style={styles.smallButton} onPress={() => revokeSession(session)}>
-                      <Text style={styles.smallButtonText}>Sign out</Text>
-                    </TouchableOpacity>
-                  </View>
-                );
-              })}
-            </ScrollView>
+            <Text style={styles.emptyText}>Session active on this device (Local)</Text>
           </View>
         </View>
       </Modal>

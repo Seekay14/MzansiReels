@@ -104,7 +104,7 @@ export default function HomeFeed({ navigation }) {
   }, [focused]);
 
   const incrementView = useCallback(async (postId) => {
-    if (!postId || viewedPostIds.current.has(postId)) return;
+    if (!postId || !user?.$id || viewedPostIds.current.has(postId)) return;
     viewedPostIds.current.add(postId);
     try {
       const post = await databases.getDocument(DATABASE_ID, COLLECTIONS.posts, postId);
@@ -118,7 +118,7 @@ export default function HomeFeed({ navigation }) {
       viewedPostIds.current.delete(postId);
       console.error(`Could not increment view count for post ${postId}:`, error);
     }
-  }, []);
+  }, [user?.$id]);
 
   const onViewableItemsChanged = useCallback(({ changed }) => {
     changed.forEach(({ item, isViewable }) => {
@@ -190,6 +190,10 @@ export default function HomeFeed({ navigation }) {
   }, []);
 
   const fetchStories = useCallback(async () => {
+    if (!user?.$id) {
+      setStories([]);
+      return;
+    }
     setLoadingStories(true);
     try {
       const activeStories = await fetchActiveStories();
@@ -209,7 +213,7 @@ export default function HomeFeed({ navigation }) {
   }, [focused, fetchPosts, fetchStories]);
 
   useEffect(() => {
-    if (!focused) return undefined;
+    if (!focused || !user?.$id) return undefined;
     const unsubscribe = client.subscribe(
       `databases.${DATABASE_ID}.collections.${COLLECTIONS.stories}.documents`,
       (event) => {
@@ -219,7 +223,7 @@ export default function HomeFeed({ navigation }) {
       },
     );
     return unsubscribe;
-  }, [fetchStories, focused]);
+  }, [fetchStories, focused, user?.$id]);
 
   const refresh = useCallback(() => {
     setRefreshing(true);
@@ -356,14 +360,16 @@ export default function HomeFeed({ navigation }) {
           setStoryViewerVisible(true);
         }}
       />
-      <CreatePostComposer
-        user={user}
-        desktop={isDesktop}
-        onPressComposer={() => openPostModal()}
-        onPickImage={() => pickPostMedia('image')}
-        onPickVideo={() => pickPostMedia('video')}
-        onPressEmoji={() => openPostModal('text', null, true)}
-      />
+      {user?.$id ? (
+        <CreatePostComposer
+          user={user}
+          desktop={isDesktop}
+          onPressComposer={() => openPostModal()}
+          onPickImage={() => pickPostMedia('image')}
+          onPickVideo={() => pickPostMedia('video')}
+          onPressEmoji={() => openPostModal('text', null, true)}
+        />
+      ) : null}
     </View>
   );
 

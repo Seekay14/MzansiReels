@@ -15,13 +15,13 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
-import { account, client, databases, ID } from '../config/appwrite';
+import { account, databases, ID, Query } from '../config/appwrite';
 import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
-import { ensureUserDoc, getUserDoc } from '../config/helpers';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../context/AuthContext';
 import { useResponsiveLayout } from '../config/responsive';
 import Avatar from '../components/Avatar';
+import { SESSION_TYPE_REGISTERED, SESSION_TYPE_ANONYMOUS, SESSION_TYPE_GUEST, SESSION_TYPE_NONE, detectSessionType } from '../App';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const REMEMBERED_EMAIL_KEY = '@mzansireels/remembered-login-email';
@@ -116,7 +116,7 @@ const logAuthError = (error, stage) => {
   });
 };
 
-export default function AuthScreen({ navigation, initialTab = 'login' }) {
+function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
   const { setUser } = useAuth();
   const { scale, horizontalGutter } = useResponsiveLayout();
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -239,30 +239,18 @@ export default function AuthScreen({ navigation, initialTab = 'login' }) {
     if (!loginPassword) return setMessage(AUTH_MESSAGES.emptyPassword);
     setLoading(true);
     setMessage('');
-    let stage = 'session creation';
     try {
       console.log('LOGIN STEP 1: Creating email/password session');
       const session = await account.createEmailPasswordSession(normalizedEmail, loginPassword);
-      stage = 'JWT creation';
-      console.log('LOGIN STEP 2: Creating session JWT');
-      const jwt = await account.createJWT();
-      if (!jwt?.jwt) throw new Error('Appwrite did not return a JWT.');
-      client.setJWT(jwt.jwt);
-
-      stage = 'session verification';
-      console.log('LOGIN STEP 3: Verifying authenticated user');
-      const user = await account.get();
       if (!session?.$id || !session?.userId) {
         throw new Error('Appwrite returned a session without its session ID or user ID.');
-      }
-      if (user.$id !== session.userId) {
-        throw new Error('The verified Appwrite user does not match the created session.');
       }
       console.log('SESSION CREATED:', {
         sessionId: session.$id,
         userId: session.userId,
       });
-      console.log('LOGIN STEP 1 COMPLETE: Email/password session created');
+
+      // Persist the remember-me preference.
       try {
         if (rememberMe) {
           await AsyncStorage.setItem(REMEMBERED_EMAIL_KEY, normalizedEmail);
@@ -272,25 +260,39 @@ export default function AuthScreen({ navigation, initialTab = 'login' }) {
       } catch (storageError) {
         console.error('Could not save the remember-me preference:', storageError);
       }
-      console.log('LOGIN STEP 3 COMPLETE: Authenticated user verified');
-      stage = 'profile loading';
-      console.log('LOGIN STEP 4: Loading user profile');
-      const profile = await getUserDoc(session.userId) || await ensureUserDoc(user);
-      console.log('LOGIN STEP 4 COMPLETE: User profile loaded');
-      setPendingAccount({ user, profile });
+
+      // Load the user profile from the database using session.userId.
+      // Bypass account.get() entirely; session.userId is the authenticated user ID.
+      const response = await databases.listDocuments(DATABASE_ID, COLLECTIONS.users, [
+        Query.equal('userId', session.userId),
+        Query.limit(1),
+      ]);
+      const userProfile = response.documents[0];
+      if (!userProfile) {
+        throw new Error('User profile not found in database.');
+      }
+      if (userProfile.userId !== session.userId) {
+        throw new Error('The loaded profile does not match the authenticated session.');
+      }
+
+      // Build the Appwrite user record from the session (no account.get() call).
+      const currentUser = {
+        $id: session.userId,
+        email: normalizedEmail,
+        name: userProfile.name || '',
+        status: true,
+      };
+
+      // Update the application auth state with the verified user.
+      await setUser(currentUser, {
+        profile: userProfile,
+        skipOnboarding: userProfile.profileSetupComplete === true,
+      });
+
+      console.log('LOGIN STEP 2 COMPLETE: User profile loaded and saved');
     } catch (error) {
-      logAuthError(error, stage);
-      console.error('LOGIN ERROR:', error);
-      console.error('LOGIN ERROR MESSAGE:', error?.message);
-      console.error('LOGIN ERROR CODE:', error?.code);
-      console.error('LOGIN ERROR TYPE:', error?.type);
-      console.error('LOGIN ERROR RESPONSE:', error?.response);
-      const sessionVerificationFailed = stage === 'session verification'
-        && error?.code === 401
-        && error?.type === 'general_unauthorized_scope';
-      const errorMessage = sessionVerificationFailed
-        ? 'Appwrite rejected the authenticated account verification request. Check the JWT and project configuration.'
-        : error?.message || 'An unexpected error occurred.';
+      logAuthError(error, 'session creation');
+      const errorMessage = error?.message || 'An unexpected error occurred.';
       showLoginError({ message: errorMessage });
       setMessage(`Login Failed: ${errorMessage}`);
     } finally {
@@ -321,9 +323,30 @@ export default function AuthScreen({ navigation, initialTab = 'login' }) {
     setLoading(true);
     setMessage('');
     try {
+      // Create the user account in Appwrite (does NOT create a session).
       await account.create(ID.unique(), normalizedEmail, signupPassword, normalizedName);
-      await account.createEmailPasswordSession(normalizedEmail, signupPassword);
+
+      // Create an email/password session for the newly registered user.
+      const session = await account.createEmailPasswordSession(normalizedEmail, signupPassword);
+      if (!session?.$id || !session?.userId) {
+        throw new Error('Appwrite returned a session without its session ID or user ID.');
+      }
+      console.log('SESSION CREATED:', {
+        sessionId: session.$id,
+        userId: session.userId,
+      });
+
+      // Verify the session type is 'registered' before treating the user as
+      // signed in. Anonymous/guest sessions are not treated as authenticated.
+      const sessionType = await detectSessionType();
+      if (sessionType !== SESSION_TYPE_REGISTERED) {
+        throw new Error('Registration failed: expected a registered-user session.');
+      }
+
+      // Fetch the verified Appwrite user record.
       const currentUser = await account.get();
+
+      // Create the user profile document in the database.
       await databases.createDocument(DATABASE_ID, COLLECTIONS.users, ID.unique(), {
         userId: currentUser.$id,
         name: normalizedName,
@@ -338,7 +361,11 @@ export default function AuthScreen({ navigation, initialTab = 'login' }) {
         isPrivate: false,
         isVerified: false,
       });
+
+      // Update the application auth state with the verified user.
       await setUser(currentUser, { skipOnboarding: false });
+
+      console.log('REGISTRATION STEP COMPLETE: User registered and session verified');
     } catch (error) {
       console.error('Could not complete account registration:', error);
       showLoginError(error);
@@ -673,6 +700,10 @@ export default function AuthScreen({ navigation, initialTab = 'login' }) {
       </ScrollView>
     </KeyboardAvoidingView>
   );
+}
+
+export default function AuthScreen(props) {
+  return <AppwriteAuthScreen {...props} />;
 }
 
 const styles = StyleSheet.create({

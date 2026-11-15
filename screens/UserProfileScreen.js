@@ -469,6 +469,18 @@ export default function UserProfileScreen({ route, navigation }) {
             <Ionicons name="checkmark-circle" size={20} color={COLORS.cyan} />
           )}
         </View>
+        {userDoc?.bio ? (
+          <Text
+            numberOfLines={2}
+            ellipsizeMode="tail"
+            style={[
+              styles.bioText,
+              { color: colors.text, textAlign: 'center' },
+            ]}
+          >
+            {userDoc.bio}
+          </Text>
+        ) : null}
         <View style={styles.statsRow}>
           <TouchableOpacity style={styles.statBox} activeOpacity={0.72} onPress={() => setActiveTab('posts')} accessibilityRole="button" accessibilityLabel={`View ${contentCount} posts`}>
             <Text style={[styles.statNumber, { color: colors.text }]}>{contentCount}</Text>
@@ -643,6 +655,7 @@ const styles = StyleSheet.create({
   profileInfo: { alignItems: 'center', paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   usernameVerificationRow: { maxWidth: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 15, paddingHorizontal: 20 },
   username: { flexShrink: 1, color: '#fff', fontSize: 20, fontWeight: 'bold' },
+  bioText: { fontSize: 14, lineHeight: 20, marginTop: 8, paddingHorizontal: 20 },
   statsRow: { flexDirection: 'row', justifyContent: 'space-around', width: '80%', marginBottom: 20 },
   statBox: { alignItems: 'center' },
   statNumber: { color: '#fff', fontSize: 18, fontWeight: 'bold' },

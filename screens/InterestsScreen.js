@@ -12,7 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { account, databases, Query } from '../config/appwrite';
+import { databases, Query } from '../config/appwrite';
 import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
 import { useAuth } from '../context/AuthContext';
 
@@ -22,7 +22,7 @@ const CATEGORIES = [
 ];
 
 export default function InterestsScreen() {
-  const { user, setUser } = useAuth();
+  const { user, setUser, logout } = useAuth();
   const insets = useSafeAreaInsets();
   const [selectedInterests, setSelectedInterests] = useState(
     Array.isArray(user?.interests) ? user.interests : [],
@@ -99,8 +99,7 @@ export default function InterestsScreen() {
     if (saving) return;
     setSaving(true);
     try {
-      await account.deleteSession('current');
-      setUser(null);
+      await logout(user?.$id);
     } catch (error) {
       console.error('Could not log out from onboarding:', error);
       Alert.alert('Could not log out', 'Please try again.');

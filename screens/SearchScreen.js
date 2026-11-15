@@ -194,7 +194,7 @@ function CreatorCard({
         <View style={styles.creatorDetails}>
           <View style={styles.creatorNameRow}>
             <Text style={[styles.creatorName, { color: colors.text }]} numberOfLines={1}>
-              {creator.name || creator.username || 'Creator'}
+              {creator.name || creator.username || creator.userId}
             </Text>
             {creator.isVerified === true && (
               <Ionicons name="checkmark-circle" size={16} color={COLORS.cyan} style={styles.verifiedIcon} />

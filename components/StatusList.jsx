@@ -12,7 +12,7 @@ import { formatStoryAge } from '../config/storyUtils';
 
 function StatusUpdateRow({ group, viewed, onPress }) {
   const latest = group.latest;
-  const name = latest.userName || 'Mzansi User';
+  const name = latest.userName || latest.username || 'User';
   const updateCount = group.stories.length;
 
   return (
@@ -55,7 +55,7 @@ function MyUpdateRow({ group, onPress }) {
         <Avatar
           uri={latest.avatarUrl}
           userId={group.userId}
-          name={latest.userName || 'You'}
+          name={latest.userName || latest.username || 'You'}
           size={52}
         />
       </View>
@@ -206,7 +206,7 @@ const styles = StyleSheet.create({
     borderRadius: 29,
   },
   viewedRing: { borderColor: '#555E6B' },
-  unviewedRing: { borderColor: COLORS.pink },
+  unviewedRing: { borderColor: COLORS.cyan },
   details: { flex: 1, marginLeft: 13 },
   name: { color: '#F3F5F7', fontSize: 14, fontWeight: '700' },
   time: { color: '#8B95A7', fontSize: 11, marginTop: 4 },

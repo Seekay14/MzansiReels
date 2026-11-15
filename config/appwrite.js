@@ -1,5 +1,4 @@
-import 'react-native-url-polyfill/auto';
-import linkedAppwriteConfig from '../appwrite.config.json';
+﻿import 'react-native-url-polyfill/auto';
 import {
   Client,
   Account,
@@ -12,23 +11,22 @@ import {
   Query,
 } from 'react-native-appwrite';
 
-export const APPWRITE_ENDPOINT = (
-  process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT || linkedAppwriteConfig.endpoint
-).trim().replace(/\/+$/, '');
-export const APPWRITE_PROJECT_ID = (
-  process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID || linkedAppwriteConfig.projectId
-).trim();
-export const APPWRITE_PLATFORM = (
-  process.env.EXPO_PUBLIC_APPWRITE_PLATFORM || 'com.yourname.mzansireels'
-).trim();
+// Hardcoded for stability (Remove linkedAppwriteConfig to prevent DB mismatches)
+export const APPWRITE_ENDPOINT = 'https://cloud.appwrite.io/v1';
+export const APPWRITE_PROJECT_ID = '6af0b93b00320e635f66';
+export const APPWRITE_PLATFORM = 'com.yourname.mzansireels';
 
+// Initialize the client ONCE
 const client = new Client()
   .setEndpoint(APPWRITE_ENDPOINT)
   .setProject(APPWRITE_PROJECT_ID)
   .setPlatform(APPWRITE_PLATFORM);
 
+// Initialize all services
 export const account = new Account(client);
 export const databases = new Databases(client);
 export const storage = new Storage(client);
 export const functions = new Functions(client);
+
+// Export client and helpers
 export { client, ID, Permission, Role, Query };

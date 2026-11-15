@@ -5,7 +5,7 @@
                  "scheme":  "mzansireels",
                  "version":  "1.0.0",
                  "orientation":  "portrait",
-                 "icon":  "./assets/icon.png",
+                 "icon":  "./assets/icon.png.png",
                  "userInterfaceStyle":  "dark",
                  "assetBundlePatterns":  [
                                              "**/*"
@@ -16,7 +16,7 @@
                          },
                  "android":  {
                                  "adaptiveIcon":  {
-                                                      "foregroundImage":  "./assets/icon.png",
+                                                      "foregroundImage":  "./assets/icon.png.png",
                                                       "backgroundColor":  "#000000"
                                                   },
                                  "package":  "com.yourname.mzansireels",
@@ -25,8 +25,9 @@
                                                  ]
                              },
                  "web":  {
-                             "favicon":  "./assets/favicon.png",
-                             "bundler":  "metro"
+                             "favicon":  "./assets/icon.png.png",
+                             "bundler":  "metro",
+                             "output":  "single"
                          },
                  "plugins":  [
                                  "expo-web-browser",
@@ -50,7 +51,7 @@
                                      "expo-splash-screen",
                                      {
                                          "backgroundColor":  "#000000",
-                                         "image":  "./assets/splash.png",
+                                         "image":  "./assets/icon.png.png",
                                          "resizeMode":  "contain"
                                      }
                                  ],
@@ -65,8 +66,5 @@
                  "experiments":  {
                                      "baseUrl":  "/MzansiReels"
                                  }
-             },
-    "experiments":  {
-                        "baseUrl":  "/MzansiReels"
-                    }
+             }
 }

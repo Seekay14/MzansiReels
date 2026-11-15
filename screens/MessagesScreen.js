@@ -34,7 +34,6 @@ import {
   getChatParticipantIds,
   getMessagingErrorMessage,
   logMessagingError,
-  verifyMessagingUser,
 } from '../config/chatService';
 
 const mutedChatsKey = (userId) => `muted_chats_${userId}`;
@@ -181,7 +180,7 @@ function ConversationRow({ item, muted, pinned, onPin, onMute, onArchive, onDele
 
 export default function MessagesScreen({ navigation }) {
   const { colors } = useTheme();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const { horizontalGutter } = useResponsiveLayout();
   const [conversations, setConversations] = useState([]);
@@ -236,7 +235,6 @@ export default function MessagesScreen({ navigation }) {
     loadInFlightRef.current = true;
     setLoadError('');
     try {
-      await verifyMessagingUser(user.$id);
       const chats = [];
       let chatOffset = 0;
       while (true) {
@@ -398,7 +396,6 @@ export default function MessagesScreen({ navigation }) {
       setConversations(conversationsWithUnread);
     } catch (error) {
       logMessagingError('Could not load the inbox:', error);
-      if (error?.kind === 'authentication') await logout();
       setLoadError(getMessagingErrorMessage(
         error,
         'Your inbox could not be loaded. Check your connection and try again.',
@@ -408,7 +405,7 @@ export default function MessagesScreen({ navigation }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [logout, user?.$id]);
+  }, [user?.$id]);
 
   const loadStories = useCallback(async () => {
     try {

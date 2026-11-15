@@ -1,29 +1,18 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Platform } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { account } from '../config/appwrite';
 import { COLORS } from '../config/constants';
+import { useAuth } from '../context/AuthContext';
 
 export default function LogoutScreen() {
-  useEffect(() => {
-    const performLogout = async () => {
-      try {
-        await account.deleteSession('current');
-      } catch (error) {
-        console.log('Logout error:', error);
-      }
-      
-      if (typeof localStorage !== 'undefined') {
-        localStorage.clear();
-      }
-      
-      if (Platform.OS === 'web') {
-        window.location.reload();
-      }
-    };
+  const { user, logout } = useAuth();
+  const logoutStarted = useRef(false);
 
-    performLogout();
-  }, []);
+  useEffect(() => {
+    if (logoutStarted.current) return;
+    logoutStarted.current = true;
+    logout(user?.$id);
+  }, [logout, user?.$id]);
 
   return (
     <View style={styles.container}>

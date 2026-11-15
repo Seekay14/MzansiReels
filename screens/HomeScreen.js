@@ -60,6 +60,18 @@ export default function HomeScreen({ navigation }) {
       setFeedError('');
     }
 
+    if (!user?.$id) {
+      setFeedError('');
+      setVideos([]);
+      setHasMore(false);
+      if (request === requestId.current) {
+        setLoading(false);
+        setLoadingMore(false);
+        setRefreshing(false);
+      }
+      return;
+    }
+
     try {
       const queries = [];
       const blockedUserIds = [];
@@ -123,7 +135,14 @@ export default function HomeScreen({ navigation }) {
     } catch (error) {
       console.error('Error fetching video feed:', error);
       if (request === requestId.current) {
-        setFeedError('We couldn’t load videos. Check your connection and try again.');
+        if (__DEV__) {
+          setFeedError(
+            `Failed to load videos: ${error?.message || String(error)}`
+            + ` (code: ${error?.code ?? 'unknown'}, type: ${error?.type ?? 'unknown'})`,
+          );
+        } else {
+          setFeedError('We couldn’t load videos. Check your connection and try again.');
+        }
       }
     } finally {
       if (request === requestId.current) {

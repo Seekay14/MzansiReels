@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { databases, Query } from '../config/appwrite';
 import { DATABASE_ID, COLLECTIONS, COLORS } from '../config/constants';
 import { useAuth } from '../context/AuthContext';
@@ -24,6 +25,7 @@ export default function NotificationsScreen({ navigation }) {
   const [loadError, setLoadError] = useState('');
 
   const fetchNotifications = useCallback(async () => {
+    if (!user?.$id) return;
     setLoadError('');
     try {
       const res = await databases.listDocuments(DATABASE_ID, COLLECTIONS.notifications, [
@@ -54,7 +56,19 @@ export default function NotificationsScreen({ navigation }) {
     }
   }, [user]);
 
-  useEffect(() => { fetchNotifications(); }, [fetchNotifications]);
+  useFocusEffect(useCallback(() => {
+    fetchNotifications();
+    return () => {};
+  }, [fetchNotifications]));
+
+  const openNotification = (notification) => {
+    if (!notification) return;
+    if (notification.targetType === 'post' || notification.targetType === 'reel') {
+      navigation.navigate('Feed', { screen: 'Video', params: { videoId: notification.targetId } });
+    } else if (notification.targetType === 'profile' || notification.targetType === 'follow') {
+      navigation.navigate('UserProfile', { userId: notification.senderId });
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -78,15 +92,16 @@ export default function NotificationsScreen({ navigation }) {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchNotifications(); }} tintColor={COLORS.cyan} />}
           renderItem={({ item }) => {
             const meta = META[item.type] || { icon: 'notifications', color: COLORS.muted, text: 'had activity on your account.' };
+            const message = item.message || meta.text;
             return (
-              <View style={[styles.item, item.isRead === false && styles.unreadItem]}>
+              <TouchableOpacity style={[styles.item, item.isRead === false && styles.unreadItem]} onPress={() => openNotification(item)}>
                 <View style={styles.iconCircle}><Ionicons name={meta.icon} size={20} color={meta.color} /></View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.text}><Text style={styles.bold}>{item.senderName}</Text> {meta.text}</Text>
+                  <Text style={styles.text}><Text style={styles.bold}>{item.senderName}</Text> {message}</Text>
                   <Text style={styles.time}>{timeAgo(item.$createdAt)}</Text>
                 </View>
                 {item.isRead === false && <View style={styles.unreadDot} />}
-              </View>
+              </TouchableOpacity>
             );
           }}
           ListEmptyComponent={<Text style={styles.empty}>No new activity yet.</Text>}

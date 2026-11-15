@@ -8,7 +8,7 @@ const FAQS = [
   { q: "How do I upload a video?", a: "Tap the pink '+' button at the bottom of the screen. Select a video from your library or record a new one. Add a caption, choose a sound name, and tap 'Post to Feed'." },
   { q: "Why is my video not playing?", a: "If you are on the web browser, some video formats (like iPhone .mov files) are not supported by Chrome. Upload .mp4 files for the best web experience. The mobile app supports all formats." },
   { q: "How do I get a blue checkmark?", a: "The blue checkmark is currently reserved for the official MzansiReels account and select verified creators. Keep posting high-quality, original content to get noticed!" },
-  { q: "How do I change my privacy settings?", a: "Go to Profile > Settings > Private Account. When enabled, only your followers can see your videos." },
+  { q: "How do I change my privacy settings?", a: "Go to Profile > Settings > Private Account. This limits profile-page content; posts remain visible in public and guest feeds." },
   { q: "Can I delete a video I uploaded?", a: "Yes. Open your video, tap the three-dot menu, and choose Delete video." },
 ];
 

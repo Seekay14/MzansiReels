@@ -18,7 +18,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 22
 
       - name: Install dependencies
         run: npm ci
@@ -26,6 +26,7 @@ jobs:
       - name: Build Expo Web App
         run: npx expo export --platform web
         env:
+          EXPO_BASE_URL: /MzansiReels
           EXPO_PUBLIC_APPWRITE_ENDPOINT: ${{ vars.EXPO_PUBLIC_APPWRITE_ENDPOINT }}
           EXPO_PUBLIC_APPWRITE_PROJECT_ID: ${{ vars.EXPO_PUBLIC_APPWRITE_PROJECT_ID }}
 
