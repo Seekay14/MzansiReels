@@ -900,7 +900,7 @@ export default function SearchScreen({ navigation, route }) {
       {featuredCreators.length ? (
         <View style={styles.section}>
           <SectionTitle title="Featured verified creators" colors={colors} />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.featuredRow}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
             {featuredCreators.map((creator) => (
               <TouchableOpacity
                 key={creator.userId}
@@ -913,7 +913,7 @@ export default function SearchScreen({ navigation, route }) {
                     <Ionicons name="checkmark-circle" size={19} color={COLORS.cyan} style={styles.featuredVerified} />
                   )}
                 </View>
-                <Text style={[styles.featuredName, { color: COLORS.text }]} numberOfLines={1}>
+                <Text style={[styles.featuredName, { color: COLORS.text }]} numberOfLines={1} ellipsizeMode="tail">
                   @{creator.username || creator.userId}
                 </Text>
                 <Text style={[styles.featuredFollowers, { color: COLORS.muted }]}>
@@ -1155,10 +1155,10 @@ const styles = StyleSheet.create({
   followButtonText: { fontSize: 12, fontWeight: '800' },
   disabledButton: { opacity: 0.5 },
   featuredRow: { paddingRight: 10, gap: 10 },
-  featuredCreator: { width: 136, alignItems: 'center', borderWidth: 1, borderRadius: 15, padding: 11 },
+  featuredCreator: { width: 160, alignItems: 'center', borderWidth: 1, borderRadius: 15, padding: 11 },
   featuredAvatar: { position: 'relative', marginBottom: 7 },
   featuredVerified: { position: 'absolute', right: -2, bottom: 0, backgroundColor: COLORS.bg, borderRadius: 10 },
-  featuredName: { maxWidth: '100%', fontSize: 12, fontWeight: '700' },
+  featuredName: { maxWidth: '100%', fontSize: 12, fontWeight: '700', ellipsizeMode: 'tail' },
   featuredFollowers: { fontSize: 10, marginTop: 3 },
   featuredFollowButton: { minWidth: 88, minHeight: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 16, marginTop: 9, paddingHorizontal: 12 },
   featuredFollowText: { fontSize: 11, fontWeight: '800' },
