@@ -132,7 +132,11 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
   const [showPassword, setShowPassword] = useState(true);
   const [otpPassword, setOtpPassword] = useState('');
   const [otpCode, setOtpCode] = useState('');
+  const [isOtpSent, setIsOtpSent] = useState(false);
+  const [otpUserId, setOtpUserId] = useState('');
+  const [resendCountdown, setResendCountdown] = useState(0);
   const [rememberMe, setRememberMe] = useState(false);
+  const resendTimerRef = useRef(null);
   const [tabWidth, setTabWidth] = useState(0);
 
   const [loading, setLoading] = useState(false);
@@ -167,6 +171,12 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
       .catch((error) => console.error('Could not load the remembered login email:', error));
     return () => {
       active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (resendTimerRef.current) clearInterval(resendTimerRef.current);
     };
   }, []);
 
@@ -288,14 +298,78 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
     }
   };
 
+  const handleSendOtp = async () => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) return setMessage(AUTH_MESSAGES.emptyEmail);
+    if (!EMAIL_PATTERN.test(trimmedEmail)) return setMessage(AUTH_MESSAGES.invalidEmail);
+
+    setLoading(true);
+    setMessage('');
+    try {
+      const userId = ID.unique();
+      setOtpUserId(userId);
+      await account.createEmailToken(userId, trimmedEmail);
+      setIsOtpSent(true);
+      setResendCountdown(60);
+      if (resendTimerRef.current) clearInterval(resendTimerRef.current);
+      resendTimerRef.current = setInterval(() => {
+        setResendCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(resendTimerRef.current);
+            resendTimerRef.current = null;
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (error) {
+      logAuthError(error, 'otp send');
+      setMessage(error.message || 'Could not send OTP code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (resendCountdown > 0) return;
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) return setMessage(AUTH_MESSAGES.emptyEmail);
+
+    setLoading(true);
+    setMessage('');
+    try {
+      const userId = ID.unique();
+      setOtpUserId(userId);
+      await account.createEmailToken(userId, trimmedEmail);
+      setResendCountdown(60);
+      if (resendTimerRef.current) clearInterval(resendTimerRef.current);
+      resendTimerRef.current = setInterval(() => {
+        setResendCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(resendTimerRef.current);
+            resendTimerRef.current = null;
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (error) {
+      logAuthError(error, 'otp resend');
+      setMessage(error.message || 'Could not resend OTP code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleVerifyOtp = async () => {
     if (!otpCode || otpCode.length !== 6) {
       return setMessage('Please enter a valid 6-digit code.');
     }
+    if (!otpUserId) return setMessage('Session expired. Please request a new code.');
     setLoading(true);
     setMessage('');
     try {
-      await account.updateMFA({ otp: otpCode });
+      await account.createSession(otpUserId, otpCode);
 
       const currentUser = await account.get();
       const authUser = {
@@ -384,6 +458,11 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
     setShowPassword(true);
     setOtpPassword('');
     setOtpCode('');
+    setIsOtpSent(false);
+    setOtpUserId('');
+    setResendCountdown(0);
+    if (resendTimerRef.current) clearInterval(resendTimerRef.current);
+    resendTimerRef.current = null;
   };
 
   const handleContinue = () => {
@@ -687,73 +766,77 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
 
         {activeTab === 'otp' && (
           <>
-            <Text style={styles.subtitle}>Enter your email and password to receive a verification code.</Text>
-            <View style={[styles.iconInputRow, { borderColor: COLORS.border, backgroundColor: COLORS.card }, focusedInput === 'loginEmail' && styles.inputFocused]}>
-              <Ionicons name="mail-outline" size={19} color={COLORS.muted} style={styles.inputLeadingIcon} />
-              <TextInput
-                style={[styles.iconInput, { color: COLORS.text }]}
-                placeholder="Email address"
-                placeholderTextColor={COLORS.muted}
-                value={email}
-                onChangeText={setEmail}
-                onFocus={() => setFocusedInput('loginEmail')}
-                onBlur={() => setFocusedInput(null)}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoComplete="email"
-              />
-            </View>
-            <View style={[styles.iconInputRow, { borderColor: COLORS.border, backgroundColor: COLORS.card }, focusedInput === 'loginPassword' && styles.inputFocused]}>
-              <Ionicons name="lock-closed-outline" size={19} color={COLORS.muted} style={styles.inputLeadingIcon} />
-              <TextInput
-                style={[styles.iconInput, { color: COLORS.text }]}
-                placeholder="Password"
-                placeholderTextColor={COLORS.muted}
-                value={otpPassword}
-                onChangeText={setOtpPassword}
-                onFocus={() => setFocusedInput('loginPassword')}
-                onBlur={() => setFocusedInput(null)}
-                secureTextEntry={showPassword}
-                autoComplete="current-password"
-              />
-              <TouchableOpacity
-                style={styles.inlineEye}
-                onPress={() => setShowPassword((visible) => !visible)}
-                accessibilityRole="button"
-                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
-              >
-                <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={21} color={COLORS.muted} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.inputs}>
-              <TextInput
-                style={[styles.hiddenInput]}
-                value={otpCode}
-                onChangeText={setOtpCode}
-                maxLength={6}
-                keyboardType="numeric"
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoFocus
-                returnKeyType="done"
-                underlineColorAndroid="transparent"
-              />
-              {Array.from({ length: 6 }).map((_, i) => (
-                <View key={i} style={[styles.inputCell, i === otpCode.length && styles.inputCellActive]}>
-                  <Text style={[styles.inputDigit, { color: otpCode.length > i ? COLORS.text : 'transparent' }]}>
-                    {otpCode[i] || ''}
-                  </Text>
+            {!isOtpSent ? (
+              <>
+                <Text style={styles.subtitle}>Enter your email to receive a verification code.</Text>
+                <View style={[styles.iconInputRow, { borderColor: COLORS.border, backgroundColor: COLORS.card }, focusedInput === 'loginEmail' && styles.inputFocused]}>
+                  <Ionicons name="mail-outline" size={19} color={COLORS.muted} style={styles.inputLeadingIcon} />
+                  <TextInput
+                    style={[styles.iconInput, { color: COLORS.text }]}
+                    placeholder="Email address"
+                    placeholderTextColor={COLORS.muted}
+                    value={email}
+                    onChangeText={setEmail}
+                    onFocus={() => setFocusedInput('loginEmail')}
+                    onBlur={() => setFocusedInput(null)}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    autoComplete="email"
+                  />
                 </View>
-              ))}
-            </View>
-            <TouchableOpacity
-              style={[styles.button, loading && styles.buttonLoading]}
-              onPress={handleVerifyOtp}
-              disabled={loading || otpCode.length !== 6}
-              accessibilityRole="button"
-            >
-              {loading ? <ActivityIndicator color={COLORS.cyan} /> : <Text style={styles.buttonText}>Verify Code</Text>}
-            </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.button, loading && styles.buttonLoading]}
+                  onPress={handleSendOtp}
+                  disabled={loading}
+                  accessibilityRole="button"
+                >
+                  {loading ? <ActivityIndicator color={COLORS.cyan} /> : <Text style={styles.buttonText}>Send OTP Code</Text>}
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.subtitle}>Enter the 6-digit code sent to your email.</Text>
+                <View style={styles.inputs}>
+                  <TextInput
+                    style={[styles.hiddenInput]}
+                    value={otpCode}
+                    onChangeText={setOtpCode}
+                    maxLength={6}
+                    keyboardType="numeric"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoFocus
+                    returnKeyType="done"
+                    underlineColorAndroid="transparent"
+                  />
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <View key={i} style={[styles.inputCell, i === otpCode.length && styles.inputCellActive]}>
+                      <Text style={[styles.inputDigit, { color: otpCode.length > i ? COLORS.text : 'transparent' }]}>
+                        {otpCode[i] || ''}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+                <TouchableOpacity
+                  style={[styles.button, loading && styles.buttonLoading]}
+                  onPress={handleVerifyOtp}
+                  disabled={loading || otpCode.length !== 6}
+                  accessibilityRole="button"
+                >
+                  {loading ? <ActivityIndicator color={COLORS.cyan} /> : <Text style={styles.buttonText}>Verify &amp; Login</Text>}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.resendButton}
+                  onPress={handleResendOtp}
+                  disabled={resendCountdown > 0}
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.resendText, resendCountdown > 0 && styles.resendTextDisabled]}>
+                    {resendCountdown > 0 ? `Resend in ${resendCountdown}s` : 'Resend Code'}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
           </>
         )}
 
@@ -887,6 +970,9 @@ const styles = StyleSheet.create({
   buttonLoading: { backgroundColor: COLORS.bg },
   buttonText: { color: COLORS.bg, fontSize: 18, fontWeight: 'bold', textAlign: 'center' },
   message: { color: COLORS.pink, textAlign: 'center', marginTop: 20, fontWeight: 'bold', fontSize: 15 },
+  resendButton: { marginTop: 12, alignItems: 'center' },
+  resendText: { color: COLORS.cyan, fontSize: 13, fontWeight: '600' },
+  resendTextDisabled: { color: COLORS.muted },
   signupStepHeader: { marginBottom: 22 },
   signupStepLabel: { color: COLORS.cyan, fontSize: 10, fontWeight: '900', letterSpacing: 2, textTransform: 'uppercase' },
   signupStepTitle: { color: COLORS.text, fontSize: 26, fontWeight: '900', letterSpacing: -0.5 },
