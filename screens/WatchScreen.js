@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import VideoCard from '../components/VideoCard';
 import { blockUser } from '../config/helpers';
 import { useAuth } from '../context/AuthContext';
+import { COLORS } from '../config/constants';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -37,7 +38,7 @@ export default function WatchScreen({ route, navigation }) {
   const visibleActiveIndex = Math.min(activeIndex, Math.max(feed.length - 1, 0));
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: COLORS.bg }]}>
       {/* 👈 Using FlatList to allow scrolling downwards */}
       <FlatList
         data={feed}
@@ -74,7 +75,7 @@ export default function WatchScreen({ route, navigation }) {
         style={[styles.backButton, { top: insets.top + 10 }]} 
         onPress={() => navigation.goBack()}
       >
-        <Ionicons name="arrow-back" size={28} color="#fff" />
+        <Ionicons name="arrow-back" size={28} color={COLORS.text} />
       </TouchableOpacity>
     </View>
   );
@@ -83,7 +84,7 @@ export default function WatchScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
-    backgroundColor: '#000' 
+    backgroundColor: COLORS.bg 
   },
   backButton: { 
     position: 'absolute', 

@@ -190,9 +190,9 @@ export default function StoryUploadScreen({ navigation }) {
           accessibilityRole="button"
           accessibilityLabel="Close story upload"
         >
-          <Ionicons name="close" size={26} color="#F1F4F7" />
+          <Ionicons name="close" size={26} color={COLORS.text} />
         </TouchableOpacity>
-        <Text style={styles.title}>Create Story</Text>
+        <Text style={[styles.title, { color: COLORS.text }]}>Create Story</Text>
         <TouchableOpacity
           style={styles.shareButton}
           onPress={handleShare}
@@ -226,9 +226,9 @@ export default function StoryUploadScreen({ navigation }) {
             <Ionicons
               name={option.icon}
               size={18}
-              color={storyType === option.type ? '#071014' : '#9AA2AD'}
+              color={storyType === option.type ? COLORS.bg : COLORS.muted}
             />
-            <Text style={[styles.typeText, storyType === option.type && styles.typeTextActive]}>
+            <Text style={[styles.typeText, storyType === option.type && styles.typeTextActive, { color: storyType === option.type ? COLORS.bg : COLORS.muted }]}>
               {option.label}
             </Text>
           </TouchableOpacity>
@@ -243,6 +243,7 @@ export default function StoryUploadScreen({ navigation }) {
           <TextInput
             style={[
               styles.textEditor,
+              { color: COLORS.text },
               {
                 minHeight: Math.min(300, Math.max(210, height * 0.36)),
                 fontSize: 25 * scale,
@@ -250,7 +251,7 @@ export default function StoryUploadScreen({ navigation }) {
               },
             ]}
             placeholder="Write a story..."
-            placeholderTextColor="#7D8793"
+            placeholderTextColor={COLORS.muted}
             value={content}
             onChangeText={setContent}
             multiline
@@ -258,7 +259,7 @@ export default function StoryUploadScreen({ navigation }) {
             textAlignVertical="center"
             accessibilityLabel="Story text"
           />
-        ) : asset ? (
+        ) : null}
           <View style={[styles.preview, { height: Math.min(430, Math.max(250, height * 0.46)) }]}>
             {storyType === 'image' ? (
               <Image source={{ uri: asset.uri }} style={styles.previewMedia} resizeMode="contain" />
@@ -268,7 +269,7 @@ export default function StoryUploadScreen({ navigation }) {
                 {!videoDurationVerified ? (
                   <View style={styles.checkingOverlay}>
                     <ActivityIndicator color={COLORS.cyan} />
-                    <Text style={styles.checkingText}>Checking video duration…</Text>
+                    <Text style={[styles.checkingText, { color: COLORS.text }]}>Checking video duration…</Text>
                   </View>
                 ) : null}
                 <VideoDurationProbe
@@ -296,7 +297,7 @@ export default function StoryUploadScreen({ navigation }) {
               accessibilityRole="button"
               accessibilityLabel="Remove selected media"
             >
-              <Ionicons name="close" size={19} color="#fff" />
+              <Ionicons name="close" size={19} color={COLORS.text} />
             </TouchableOpacity>
           </View>
         ) : (
@@ -311,9 +312,9 @@ export default function StoryUploadScreen({ navigation }) {
               size={40}
               color={COLORS.cyan}
             />
-            <Text style={styles.pickerText}>Choose a {storyType}</Text>
+            <Text style={[styles.pickerText, { color: COLORS.text }]}>Choose a {storyType}</Text>
             {storyType === 'video' ? (
-              <Text style={styles.helperText}>Videos can be up to 45 seconds.</Text>
+              <Text style={[styles.helperText, { color: COLORS.muted }]}>Videos can be up to 45 seconds.</Text>
             ) : null}
           </TouchableOpacity>
         )}
@@ -330,7 +331,7 @@ export default function StoryUploadScreen({ navigation }) {
           <TextInput
             style={styles.caption}
             placeholder="Add text (optional)"
-            placeholderTextColor="#7D8793"
+            placeholderTextColor={COLORS.muted}
             value={content}
             onChangeText={setContent}
             maxLength={500}
@@ -515,3 +516,4 @@ const styles = StyleSheet.create({
     color: COLORS.cyan,
   },
 });
+

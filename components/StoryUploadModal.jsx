@@ -159,9 +159,9 @@ export default function StoryUploadModal({ visible, user, onClose, onUploaded, m
       <View style={styles.screen}>
         <View style={styles.header}>
           <TouchableOpacity onPress={close} disabled={uploading} accessibilityLabel="Close story upload">
-            <Ionicons name="close" size={26} color="#fff" />
+            <Ionicons name="close" size={26} color={COLORS.text} />
           </TouchableOpacity>
-          <Text style={styles.title}>{mode === 'status' ? 'Add Status' : 'Add to your story'}</Text>
+          <Text style={[styles.title, { color: COLORS.text }]}>{mode === 'status' ? 'Add Status' : 'Add to your story'}</Text>
           <TouchableOpacity
             onPress={shareStory}
             disabled={!canShare || uploading || (mediaType === 'video' && !durationVerified)}
@@ -181,11 +181,11 @@ export default function StoryUploadModal({ visible, user, onClose, onUploaded, m
         {mediaType === 'text' ? (
           <View style={styles.textEditor}>
             <TextInput
-              style={styles.textInput}
+              style={[styles.textInput, { color: COLORS.text }]}
               value={textContent}
               onChangeText={setTextContent}
               placeholder="Write a status..."
-              placeholderTextColor="#8B95A7"
+              placeholderTextColor={COLORS.muted}
               maxLength={500}
               multiline
               autoFocus
@@ -223,7 +223,7 @@ export default function StoryUploadModal({ visible, user, onClose, onUploaded, m
               disabled={uploading}
               accessibilityLabel="Remove selected media"
             >
-              <Ionicons name="close" size={20} color="#fff" />
+              <Ionicons name="close" size={20} color={COLORS.text} />
             </TouchableOpacity>
           </View>
         ) : (
@@ -270,7 +270,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  title: { color: '#F3F5F7', fontSize: 17, fontWeight: '800' },
+  title: { color: '#fff', fontSize: 17, fontWeight: '800' },
   share: { color: COLORS.cyan, fontWeight: '800', fontSize: 14 },
   disabled: { opacity: 0.4 },
   choices: { flex: 1, justifyContent: 'center', gap: 14, paddingHorizontal: 24 },
@@ -283,22 +283,22 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: COLORS.card,
   },
-  choiceText: { color: '#F3F5F7', fontSize: 15, fontWeight: '700' },
+  choiceText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   preview: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 18 },
   textEditor: { flex: 1, justifyContent: 'center', padding: 24 },
   textInput: {
     minHeight: 220,
     padding: 22,
     borderRadius: 18,
-    backgroundColor: '#171A22',
-    color: '#F3F5F7',
+    backgroundColor: COLORS.card,
+    color: '#fff',
     fontSize: 22,
     textAlign: 'center',
   },
-  characterCount: { color: '#8B95A7', fontSize: 12, marginTop: 10, textAlign: 'right' },
+  characterCount: { color: COLORS.muted, fontSize: 12, marginTop: 10, textAlign: 'right' },
   media: { width: '100%', height: '85%' },
   durationProbe: { position: 'absolute', width: 1, height: 1, opacity: 0 },
-  verification: { marginTop: 16, color: '#B8C0CA', fontSize: 13 },
+  verification: { marginTop: 16, color: COLORS.muted, fontSize: 13 },
   remove: {
     position: 'absolute',
     top: 16,
@@ -312,3 +312,4 @@ const styles = StyleSheet.create({
   },
   uploading: { position: 'absolute', bottom: 32, alignSelf: 'center', alignItems: 'center' },
 });
+

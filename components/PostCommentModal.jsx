@@ -216,6 +216,7 @@ export default function PostCommentModal({
           disabled={!onOpenProfile || !item.userId}
           accessibilityRole="button"
           accessibilityLabel={`View ${item.userName || 'commenter'} profile`}
+          style={styles.avatarWrapper}
         >
           <Avatar
             uri={item.avatarUrl}
@@ -233,15 +234,15 @@ export default function PostCommentModal({
               accessibilityRole="button"
               accessibilityLabel={`View ${item.userName || 'commenter'} profile`}
             >
-              <Text style={styles.userName} numberOfLines={1}>{item.userName || 'User'}</Text>
+              <Text style={[styles.userName, { color: COLORS.text }]} numberOfLines={1}>{item.userName || 'User'}</Text>
               {verifiedUserIds.has(item.userId) ? (
-                <Ionicons name="checkmark-circle" size={14} color={COLORS.cyan} />
+                <Ionicons name="checkmark-circle" size={14} color={COLORS.cyan} style={{ marginLeft: 4 }} />
               ) : null}
             </TouchableOpacity>
             <Text style={styles.time}>· {timestamp ? timeAgo(timestamp) : 'Just now'}</Text>
           </View>
           <View style={[styles.commentBubble, item.replyDepth > 0 && styles.replyBubble]}>
-            <Text style={styles.commentText}>{item.text}</Text>
+            <Text style={[styles.commentText, { color: COLORS.text }]}>{item.text}</Text>
           </View>
           <View style={styles.commentActions}>
             <TouchableOpacity
@@ -293,7 +294,7 @@ export default function PostCommentModal({
         />
         <KeyboardAvoidingView
           style={styles.keyboardAvoider}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           <Animated.View
             style={[
@@ -303,14 +304,14 @@ export default function PostCommentModal({
           >
             <View style={styles.header}>
               <View style={styles.headerSpacer} />
-              <Text style={styles.title}>Comments</Text>
+              <Text style={[styles.title, { color: COLORS.text }]}>Comments</Text>
               <TouchableOpacity
                 style={styles.closeButton}
                 onPress={close}
                 accessibilityRole="button"
                 accessibilityLabel="Close comments"
               >
-                <Ionicons name="close" size={23} color="#E5E9ED" />
+                <Ionicons name="close" size={23} color={COLORS.text} />
               </TouchableOpacity>
             </View>
 
@@ -330,6 +331,7 @@ export default function PostCommentModal({
                 renderItem={renderComment}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
+                style={[styles.list, { flex: 1 }]}
                 contentContainerStyle={comments.length ? styles.list : styles.emptyList}
                 refreshControl={(
                   <RefreshControl
@@ -365,11 +367,11 @@ export default function PostCommentModal({
             <View style={styles.composer}>
               <Avatar uri={user?.avatarUrl} userId={user?.$id} name={user?.name} size={36} />
               <TextInput
-                style={styles.input}
+                style={[styles.input, { color: COLORS.text }]}
                 value={draft}
                 onChangeText={setDraft}
                 placeholder={replyTo ? 'Write a reply...' : 'Add a comment...'}
-                placeholderTextColor="#7E8792"
+                placeholderTextColor={COLORS.muted}
                 multiline
                 maxLength={2000}
                 editable={!sending}
@@ -384,7 +386,7 @@ export default function PostCommentModal({
               >
                 {sending
                   ? <ActivityIndicator size="small" color={COLORS.cyan} />
-                  : <Ionicons name="send" size={20} color={draft.trim() ? COLORS.cyan : '#626C78'} />}
+                  : <Ionicons name="send" size={20} color={draft.trim() ? COLORS.cyan : COLORS.muted} />}
               </TouchableOpacity>
             </View>
           </Animated.View>
@@ -398,36 +400,38 @@ const styles = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.58)' },
   dismissArea: { ...StyleSheet.absoluteFillObject },
   keyboardAvoider: { flex: 1, justifyContent: 'flex-end' },
-  sheet: { height: '78%', backgroundColor: '#11141A', borderTopLeftRadius: 22, borderTopRightRadius: 22, borderTopWidth: 1, borderColor: '#292E37', overflow: 'hidden' },
-  header: { height: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  sheet: { flex: 1, backgroundColor: COLORS.card, borderTopLeftRadius: 22, borderTopRightRadius: 22, borderTopWidth: 1, borderColor: COLORS.border, overflow: 'hidden' },
+  header: { height: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.card },
   headerSpacer: { width: 44 },
-  title: { flex: 1, color: '#F3F5F7', fontSize: 17, fontWeight: '800', textAlign: 'center' },
+  title: { flex: 1, color: COLORS.text, fontSize: 17, fontWeight: '800', textAlign: 'center' },
   closeButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   list: { paddingHorizontal: 16, paddingTop: 24, paddingBottom: 10 },
   emptyList: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 16 },
-  commentRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 20 },
+  commentRow: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: 'rgba(255,255,255,0.02)' },
   replyRow: { marginBottom: 14 },
+  avatarWrapper: { marginRight: 12 },
   commentBody: { flex: 1, marginLeft: 11 },
   replyBody: { marginLeft: 8 },
   commentMeta: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
   commentAuthor: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  userName: { color: '#F3F5F7', fontSize: 13, fontWeight: '800' },
-  time: { color: '#818B96', fontSize: 12, marginLeft: 6 },
-  commentBubble: { paddingVertical: 10, paddingHorizontal: 0, borderRadius: 13, backgroundColor: '#1A1E26' },
-  replyBubble: { backgroundColor: '#202630' },
-  commentText: { color: '#DCE1E6', fontSize: 14, lineHeight: 20 },
-  commentActions: { flexDirection: 'row', alignItems: 'center', gap: 15, marginTop: 7 },
-  commentAction: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, minHeight: 26, paddingHorizontal: 7, borderRadius: 13, backgroundColor: '#1A1E26' },
-  replyActionText: { color: '#AAB3BD', fontSize: 11, fontWeight: '700' },
-  likeCount: { color: '#929AA5', fontSize: 11 },
+  userName: { color: COLORS.text, fontSize: 13, fontWeight: '800' },
+  time: { color: COLORS.muted, fontSize: 12, marginLeft: 6 },
+  commentBubble: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 13, backgroundColor: COLORS.card, justifyContent: 'center', alignItems: 'flex-start' },
+  replyBubble: { backgroundColor: COLORS.card },
+  commentText: { color: COLORS.text, fontSize: 14, lineHeight: 20 },
+  commentActions: { flexDirection: 'row', alignItems: 'center', gap: 15, marginTop: 8 },
+  commentAction: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, minHeight: 26, paddingHorizontal: 7, borderRadius: 13, backgroundColor: COLORS.card },
+  replyActionText: { color: COLORS.muted, fontSize: 11, fontWeight: '700' },
+  likeCount: { color: COLORS.muted, fontSize: 11 },
   state: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
   stateText: { color: COLORS.muted, fontSize: 13, textAlign: 'center', marginTop: 9 },
   retryText: { color: COLORS.cyan, fontSize: 12, fontWeight: '700', marginTop: 7 },
   emptyState: { alignItems: 'center', justifyContent: 'center' },
-  inlineError: { color: '#FF8A8A', fontSize: 12, paddingHorizontal: 16, paddingBottom: 6 },
+  inlineError: { color: COLORS.pink, fontSize: 12, paddingHorizontal: 16, paddingBottom: 6 },
   replyingBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingVertical: 6, borderTopWidth: 1, borderTopColor: COLORS.border },
   replyingText: { color: COLORS.cyan, fontSize: 12 },
-  composer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: COLORS.border },
-  input: { flex: 1, maxHeight: 90, minHeight: 42, color: '#F3F5F7', backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#30343A', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, marginLeft: 10, fontSize: 14 },
+  composer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: COLORS.border, backgroundColor: COLORS.card },
+  input: { flex: 1, maxHeight: 90, minHeight: 42, color: COLORS.text, backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border, borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, marginLeft: 10, fontSize: 14 },
   sendButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', marginLeft: 4 },
 });
+

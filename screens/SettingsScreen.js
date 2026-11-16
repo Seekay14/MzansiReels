@@ -16,6 +16,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
+import * as FileSystem from 'expo-file-system';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { account, databases, functions, Query } from '../config/appwrite';
 import { COLLECTIONS, COLORS, DATABASE_ID, DELETE_USER_FUNCTION_ID } from '../config/constants';
@@ -34,28 +35,27 @@ const DEFAULT_PREFERENCES = {
 };
 
 function SettingsRow({ icon, title, subtitle, onPress, children, danger = false }) {
-  const { colors } = useTheme();
   const content = (
     <>
       <View style={styles.iconBox}>
-        <Ionicons name={icon} size={20} color={danger ? colors.pink : colors.accent} />
+        <Ionicons name={icon} size={20} color={danger ? COLORS.pink : COLORS.cyan} />
       </View>
       <View style={styles.rowCopy}>
-        <Text style={[styles.rowText, { color: danger ? colors.pink : colors.text }]}>{title}</Text>
-        {!!subtitle && <Text style={[styles.rowSubtitle, { color: colors.muted }]}>{subtitle}</Text>}
+        <Text style={[styles.rowText, { color: danger ? COLORS.pink : COLORS.text }]}>{title}</Text>
+        {!!subtitle && <Text style={[styles.rowSubtitle, { color: COLORS.muted }]}>{subtitle}</Text>}
       </View>
-      {children || (onPress ? <Ionicons name="chevron-forward" size={19} color={colors.muted} /> : null)}
+      {children || (onPress ? <Ionicons name="chevron-forward" size={19} color={COLORS.muted} /> : null)}
     </>
   );
 
   if (onPress) {
     return (
-      <TouchableOpacity style={[styles.row, { backgroundColor: colors.card }]} onPress={onPress} accessibilityRole="button">
+      <TouchableOpacity style={[styles.row, { backgroundColor: COLORS.card }]} onPress={onPress} accessibilityRole="button">
         {content}
       </TouchableOpacity>
     );
   }
-  return <View style={[styles.row, { backgroundColor: colors.card }]}>{content}</View>;
+  return <View style={[styles.row, { backgroundColor: COLORS.card }]}>{content}</View>;
 }
 
 function SettingSwitch({ value, onValueChange }) {
@@ -70,8 +70,7 @@ function SettingSwitch({ value, onValueChange }) {
 }
 
 export default function SettingsScreen({ navigation }) {
-  const { user: authUser, logout } = useAuth();
-  const { colors, mode, setMode } = useTheme();
+const { user: authUser, logout } = useAuth();
   const insets = useSafeAreaInsets();
   const { horizontalGutter } = useResponsiveLayout();
   const [user, setUser] = useState(null);
@@ -83,6 +82,7 @@ export default function SettingsScreen({ navigation }) {
   const [busy, setBusy] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [savingSetting, setSavingSetting] = useState('');
+  const [dataSaver, setDataSaver] = useState(false);
   const [isPasswordModalVisible, setIsPasswordModalVisible] = useState(false);
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -123,6 +123,14 @@ export default function SettingsScreen({ navigation }) {
     loadAccount();
   }, [loadAccount]);
 
+  useEffect(() => {
+    AsyncStorage.getItem('@mzansireels/data_saver')
+      .then((value) => {
+        if (value !== null) setDataSaver(JSON.parse(value));
+      })
+      .catch((error) => console.error('Could not load data saver:', error));
+  }, []);
+
   const updatePreference = async (key, value) => {
     const updated = { ...preferences, [key]: value };
     setPreferences(updated);
@@ -131,6 +139,17 @@ export default function SettingsScreen({ navigation }) {
     } catch (error) {
       setPreferences(preferences);
       console.error(`Could not save setting ${key}:`, error);
+      Alert.alert('Could not save setting', error.message || 'Please try again.');
+    }
+  };
+
+  const toggleDataSaver = async (value) => {
+    setDataSaver(value);
+    try {
+      await AsyncStorage.setItem('@mzansireels/data_saver', JSON.stringify(value));
+    } catch (error) {
+      setDataSaver(!value);
+      console.error('Could not save data saver:', error);
       Alert.alert('Could not save setting', error.message || 'Please try again.');
     }
   };
@@ -315,14 +334,22 @@ export default function SettingsScreen({ navigation }) {
   };
 
   const clearCache = async () => {
+    const confirmed = await new Promise((resolve) => {
+      Alert.alert(
+        'Clear Cache',
+        'Are you sure you want to clear cached videos and images?',
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Clear', style: 'destructive', onPress: () => resolve(true) },
+        ],
+      );
+    });
+    if (!confirmed) return;
+
     setBusy('cache');
     try {
-      if (Platform.OS === 'web') {
-        if (typeof globalThis.localStorage !== 'undefined') globalThis.localStorage.removeItem('expo-cache');
-      }
-      Alert.alert('Cache cleared', Platform.OS === 'web'
-        ? 'The app cache entry was cleared. Your account and preferences were not changed.'
-        : 'No app-specific cache directory is configured. Your account and preferences were not changed.');
+      await FileSystem.deleteAsync(FileSystem.cacheDirectory, { idempotent: true });
+      Alert.alert('Cache cleared', 'Cache cleared successfully!');
     } catch (error) {
       console.error('Could not clear cache:', error);
       Alert.alert('Could not clear cache', error.message || 'Please try again.');
@@ -344,7 +371,7 @@ export default function SettingsScreen({ navigation }) {
 
   if (loading) {
     return (
-      <View style={[styles.loadingScreen, { backgroundColor: colors.bg }]}>
+      <View style={[styles.loadingScreen, { backgroundColor: COLORS.bg }]}>
         <ActivityIndicator size="large" color={COLORS.cyan} />
         <Text style={styles.loadingText}>Loading settings…</Text>
       </View>
@@ -352,21 +379,21 @@ export default function SettingsScreen({ navigation }) {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
+    <View style={[styles.container, { backgroundColor: COLORS.bg }]}>
       <View
         style={[
           styles.header,
           {
             paddingTop: insets.top + 8,
             paddingHorizontal: horizontalGutter,
-            borderBottomColor: colors.border,
+            borderBottomColor: COLORS.border,
           },
         ]}
       >
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} accessibilityLabel="Go back">
           <Ionicons name="arrow-back" size={25} color="#fff" />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Settings & Privacy</Text>
+        <Text style={[styles.headerTitle, { color: COLORS.text }]}>Settings & Privacy</Text>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -375,7 +402,7 @@ export default function SettingsScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.muted }]}>Account & privacy</Text>
+          <Text style={[styles.sectionTitle, { color: COLORS.muted }]}>Account & privacy</Text>
           <SettingsRow icon="person-outline" title="Edit Profile" onPress={() => navigation.navigate('MyProfile')} />
           <SettingsRow icon="key-outline" title="Change Password" onPress={() => setIsPasswordModalVisible(true)} />
           <SettingsRow
@@ -399,7 +426,7 @@ export default function SettingsScreen({ navigation }) {
         </View>
 
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.muted }]}>Notifications</Text>
+          <Text style={[styles.sectionTitle, { color: COLORS.muted }]}>Notifications</Text>
           <SettingsRow icon="notifications-outline" title="Push Notifications" subtitle="Master push-notification preference">
             {savingSetting === 'push'
               ? <ActivityIndicator size="small" color={COLORS.cyan} />
@@ -415,34 +442,13 @@ export default function SettingsScreen({ navigation }) {
               <SettingSwitch value={preferences[key]} onValueChange={(value) => updatePreference(key, value)} />
             </SettingsRow>
           ))}
-          <Text style={[styles.note, { color: colors.muted }]}>Granular notification preferences are stored locally until server-side preference fields are configured.</Text>
+          <Text style={[styles.note, { color: COLORS.muted }]}>Granular notification preferences are stored locally until server-side preference fields are configured.</Text>
         </View>
 
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.muted }]}>Appearance</Text>
-          <SettingsRow
-            icon={mode === 'dark' ? 'moon-outline' : 'sunny-outline'}
-            title="Light mode"
-            subtitle={`${mode === 'light' ? 'On' : 'Off'} · saved on this device`}
-          >
-            <SettingSwitch
-              value={mode === 'light'}
-              onValueChange={async (enabled) => {
-                try {
-                  await setMode(enabled ? 'light' : 'dark');
-                } catch (error) {
-                  console.error('Could not save appearance setting:', error);
-                  Alert.alert('Could not save appearance', error.message || 'Please try again.');
-                }
-              }}
-            />
-          </SettingsRow>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.muted }]}>Data & storage</Text>
+          <Text style={[styles.sectionTitle, { color: COLORS.muted }]}>Data & storage</Text>
           <SettingsRow icon="cellular-outline" title="Data Saver" subtitle="Avoid autoplaying video on cellular data">
-            <SettingSwitch value={preferences.dataSaver} onValueChange={(value) => updatePreference('dataSaver', value)} />
+            <SettingSwitch value={dataSaver} onValueChange={toggleDataSaver} />
           </SettingsRow>
           <SettingsRow
             icon="download-outline"
@@ -456,7 +462,7 @@ export default function SettingsScreen({ navigation }) {
         </View>
 
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.muted }]}>Legal & support</Text>
+          <Text style={[styles.sectionTitle, { color: COLORS.muted }]}>Legal & support</Text>
           <SettingsRow icon="document-text-outline" title="Terms of Service" onPress={() => navigation.navigate('Legal', { type: 'terms' })} />
           <SettingsRow icon="shield-checkmark-outline" title="Privacy Policy" onPress={() => navigation.navigate('Legal', { type: 'privacy' })} />
           <SettingsRow icon="people-outline" title="Community Guidelines" onPress={() => navigation.navigate('Legal', { type: 'guidelines' })} />
@@ -465,7 +471,7 @@ export default function SettingsScreen({ navigation }) {
         </View>
 
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.muted }]}>Account management</Text>
+          <Text style={[styles.sectionTitle, { color: COLORS.muted }]}>Account management</Text>
           <SettingsRow icon="pause-circle-outline" title="Deactivate Account" subtitle="Hide your profile and sign out" onPress={requestDeactivation}>
             {busy === 'deactivate' ? <ActivityIndicator size="small" color={COLORS.cyan} /> : null}
           </SettingsRow>
@@ -478,7 +484,7 @@ export default function SettingsScreen({ navigation }) {
           <Ionicons name="log-out-outline" size={21} color={COLORS.pink} />
           <Text style={styles.logoutText}>Log Out</Text>
         </TouchableOpacity>
-        <Text style={[styles.versionText, { color: colors.muted }]}>MzansiReels v1.0.0</Text>
+        <Text style={[styles.versionText, { color: COLORS.muted }]}>MzansiReels v1.0.0</Text>
       </ScrollView>
 
       <Modal visible={isPasswordModalVisible} transparent animationType="slide" onRequestClose={() => setIsPasswordModalVisible(false)}>
@@ -555,3 +561,4 @@ const styles = StyleSheet.create({
   smallButtonText: { color: COLORS.cyan, fontWeight: '700', fontSize: 12 },
   secretText: { color: COLORS.cyan, backgroundColor: COLORS.bg, borderRadius: 8, padding: 12, marginBottom: 12, fontWeight: '700' },
 });
+

@@ -127,6 +127,22 @@ export function getVideoThumbnail(video) {
     return '';
   }
 
+  // 2. Fallback: generate preview from the video file itself via Appwrite Storage
+  if (videoFileId) {
+    try {
+      return storage.getFileViewURL(BUCKET_ID, videoFileId).toString();
+    } catch (error) {
+      if (__DEV__) {
+        console.warn('Could not generate video thumbnail from storage:', {
+          videoDocumentId: video.$id || '',
+          videoFileId,
+          error: error.message,
+        });
+      }
+      return '';
+    }
+  }
+
   if (__DEV__) {
     console.warn('Profile video has no thumbnail URL:', {
       videoDocumentId: video.$id || '',
@@ -536,4 +552,12 @@ export async function generateAndUploadThumbnail(videoUri, videoId, userId) {
   } finally {
     if (webThumbnailUrl) URL.revokeObjectURL(webThumbnailUrl);
   }
+}
+
+export async function updateViralScore(videoId, actionType) {
+  if (!videoId) return;
+  const scoreMap = { like: 10, comment: 20, view: 1 };
+  const increment = scoreMap[actionType];
+  if (!increment) return;
+  await databases.incrementDocumentAttribute(DATABASE_ID, COLLECTIONS.videos, videoId, 'viralScore', increment);
 }

@@ -9,7 +9,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from './Avatar';
 import { COLORS } from '../config/constants';
-import { useTheme } from '../context/ThemeContext';
 import { getStoryCreatedAt, isStoryActive } from '../config/storyUtils';
 import { getUserDocs } from '../config/helpers';
 
@@ -38,7 +37,6 @@ export function groupStories(stories, currentUserId) {
 }
 
 export default function StoriesRow({ stories, user, onOpenStory }) {
-  const { colors } = useTheme();
   const [creatorProfiles, setCreatorProfiles] = useState({});
   const groups = useMemo(
     () => groupStories(
@@ -72,7 +70,7 @@ export default function StoriesRow({ stories, user, onOpenStory }) {
   if (!groups.length) return null;
 
   return (
-    <View style={[styles.container, { borderBottomColor: colors.border }]}>
+    <View style={[styles.container, { borderBottomColor: COLORS.border }]}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -107,16 +105,16 @@ export default function StoriesRow({ stories, user, onOpenStory }) {
                   />
                   {mediaType === 'video' ? (
                     <View style={styles.videoIcon}>
-                      <Ionicons name="play" size={14} color="#fff" />
+                      <Ionicons name="play" size={14} color={COLORS.text} />
                     </View>
                   ) : null}
                 </View>
               </View>
-              <Text numberOfLines={1} style={[styles.name, { color: colors.text }]}>
+              <Text numberOfLines={1} style={[styles.name, { color: COLORS.text }]}>
                 {creatorName}
               </Text>
               {creatorUsername ? (
-                <Text numberOfLines={1} style={[styles.username, { color: colors.muted }]}>
+                <Text numberOfLines={1} style={[styles.username, { color: COLORS.muted }]}>
                   @{creatorUsername}
                 </Text>
               ) : null}
@@ -179,3 +177,4 @@ const styles = StyleSheet.create({
   },
   name: { width: 70, marginTop: 5, color: '#E8EAED', fontSize: 11, textAlign: 'center' },
 });
+

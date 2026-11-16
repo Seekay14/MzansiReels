@@ -105,14 +105,9 @@ export default function StatusList({
             name={user?.name || 'You'}
             size={52}
           />
-          <TouchableOpacity
-            style={styles.addBadge}
-            onPress={onAddStatus}
-            accessibilityRole="button"
-            accessibilityLabel="Add status update"
-          >
+          <View style={styles.addBadge} accessibilityLabel="Add status update">
             <Ionicons name="add" size={17} color="#071014" />
-          </TouchableOpacity>
+          </View>
         </View>
         <View style={styles.details}>
           <Text style={styles.name}>My status</Text>

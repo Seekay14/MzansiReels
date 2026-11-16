@@ -102,14 +102,14 @@ export default function ShareModal({
         <TouchableOpacity activeOpacity={1} style={styles.sheet} onPress={() => {}}>
           <View style={styles.handle} />
           <View style={styles.titleRow}>
-            <Text style={styles.title}>Share to your profile</Text>
+            <Text style={[styles.title, { color: COLORS.text }]}>Share to your profile</Text>
             <TouchableOpacity
               onPress={onClose}
               accessibilityRole="button"
               accessibilityLabel="Close"
               style={styles.closeButton}
             >
-              <Ionicons name="close" size={21} color="#DCE2E8" />
+              <Ionicons name="close" size={21} color={COLORS.text} />
             </TouchableOpacity>
           </View>
           <ScrollView
@@ -122,7 +122,7 @@ export default function ShareModal({
               value={newCaption}
               onChangeText={setNewCaption}
               placeholder="Add your thoughts…"
-              placeholderTextColor="#7F8994"
+              placeholderTextColor={COLORS.muted}
               multiline
               maxLength={500}
               textAlignVertical="top"
@@ -137,13 +137,13 @@ export default function ShareModal({
                 </View>
               )}
               <View style={styles.previewText}>
-                <Text style={styles.previewAuthor} numberOfLines={1}>{postAuthor}</Text>
+                <Text style={[styles.previewAuthor, { color: COLORS.text }]} numberOfLines={1}>{postAuthor}</Text>
                 <Text style={styles.previewContent} numberOfLines={3}>
                   {originalPost?.content || (originalPost?.postType === 'video' ? 'Video post' : 'Shared post')}
                 </Text>
                 {originalPost?.postType === 'video' ? (
                   <View style={styles.mediaLabel}>
-                    <Ionicons name="videocam-outline" size={13} color="#AAB2BD" />
+                    <Ionicons name="videocam-outline" size={13} color={COLORS.muted} />
                     <Text style={styles.mediaLabelText}>Video</Text>
                   </View>
                 ) : null}
@@ -157,10 +157,10 @@ export default function ShareModal({
             accessibilityRole="button"
           >
             {sharing ? (
-              <ActivityIndicator color="#071014" />
+              <ActivityIndicator color={COLORS.bg} />
             ) : (
               <>
-                <Ionicons name="repeat-outline" size={20} color="#071014" />
+                <Ionicons name="repeat-outline" size={20} color={COLORS.bg} />
                 <Text style={styles.shareButtonText}>Share to your Profile</Text>
               </>
             )}
@@ -181,34 +181,34 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderWidth: 1,
-    borderColor: '#2C323B',
-    backgroundColor: '#171A21',
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.card,
   },
-  handle: { width: 40, height: 4, alignSelf: 'center', borderRadius: 2, backgroundColor: '#59616B', marginBottom: 13 },
+  handle: { width: 40, height: 4, alignSelf: 'center', borderRadius: 2, backgroundColor: COLORS.muted, marginBottom: 13 },
   titleRow: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  title: { color: '#F3F5F7', fontSize: 17, fontWeight: '800' },
-  closeButton: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17, backgroundColor: '#242932' },
+  title: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  closeButton: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17, backgroundColor: COLORS.card },
   scrollContent: { paddingBottom: 12 },
   captionInput: {
     minHeight: 94,
     padding: 14,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#333B45',
-    backgroundColor: '#11141A',
-    color: '#F3F5F7',
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.card,
+    color: '#fff',
     fontSize: 14,
     lineHeight: 20,
     marginBottom: 14,
   },
-  preview: { minHeight: 112, flexDirection: 'row', overflow: 'hidden', borderRadius: 14, borderWidth: 1, borderColor: '#303640', backgroundColor: '#11141A' },
-  previewImage: { width: 104, minHeight: 112, backgroundColor: '#20242C' },
-  previewPlaceholder: { width: 104, minHeight: 112, alignItems: 'center', justifyContent: 'center', backgroundColor: '#20242C' },
+  preview: { minHeight: 112, flexDirection: 'row', overflow: 'hidden', borderRadius: 14, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.card },
+  previewImage: { width: 104, minHeight: 112, backgroundColor: COLORS.card },
+  previewPlaceholder: { width: 104, minHeight: 112, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.card },
   previewText: { flex: 1, justifyContent: 'center', paddingHorizontal: 13, paddingVertical: 11 },
-  previewAuthor: { color: '#E8EDF2', fontSize: 13, fontWeight: '800', marginBottom: 5 },
-  previewContent: { color: '#AAB2BD', fontSize: 12, lineHeight: 17 },
+  previewAuthor: { color: '#fff', fontSize: 13, fontWeight: '800', marginBottom: 5 },
+  previewContent: { color: COLORS.muted, fontSize: 12, lineHeight: 17 },
   mediaLabel: { flexDirection: 'row', alignItems: 'center', marginTop: 7 },
-  mediaLabelText: { color: '#AAB2BD', fontSize: 10, marginLeft: 4 },
+  mediaLabelText: { color: COLORS.muted, fontSize: 10, marginLeft: 4 },
   shareButton: {
     minHeight: 52,
     flexDirection: 'row',
@@ -219,5 +219,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.cyan,
   },
   disabledButton: { opacity: 0.65 },
-  shareButtonText: { color: '#071014', fontSize: 14, fontWeight: '900' },
+  shareButtonText: { color: '#000', fontSize: 14, fontWeight: '900' },
 });
+

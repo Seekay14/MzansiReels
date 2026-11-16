@@ -55,27 +55,27 @@ export default function ForgotPasswordScreen({ navigation }) {
         style={StyleSheet.absoluteFill}
       />
       <View style={styles.content}>
-        <TouchableOpacity
-          style={styles.backButton}
+          <TouchableOpacity
+            style={[styles.backButton, { backgroundColor: 'rgba(255,255,255,0.07)' }]}
           onPress={() => navigation.goBack()}
           accessibilityRole="button"
           accessibilityLabel="Back to login"
         >
-          <Ionicons name="arrow-back" size={23} color="#fff" />
+          <Ionicons name="arrow-back" size={23} color={COLORS.text} />
         </TouchableOpacity>
 
-        <View style={styles.iconWrap}>
+        <View style={[styles.iconWrap, { backgroundColor: 'rgba(0,229,255,0.1)' }]}>
           <Ionicons name="lock-closed-outline" size={30} color={COLORS.cyan} />
         </View>
-        <Text style={styles.title}>Reset Password</Text>
-        <Text style={styles.subtitle}>
+        <Text style={[styles.title, { color: COLORS.text }]}>Reset Password</Text>
+        <Text style={[styles.subtitle, { color: COLORS.muted }]}>
           Enter your email address and we&apos;ll send you a link to reset your password.
         </Text>
 
         {sentTo ? (
-          <View style={styles.successCard}>
+          <View style={[styles.successCard, { borderColor: 'rgba(0,229,255,0.25)', backgroundColor: 'rgba(0,229,255,0.07)' }]}>
             <Ionicons name="checkmark-circle" size={28} color={COLORS.cyan} />
-            <Text style={styles.successText}>
+            <Text style={[styles.successText, { color: COLORS.text }]}>
               Check your email! We&apos;ve sent a recovery link to {sentTo}.
             </Text>
             <TouchableOpacity onPress={() => navigation.navigate('Auth')} style={styles.backToLogin}>
@@ -84,10 +84,10 @@ export default function ForgotPasswordScreen({ navigation }) {
           </View>
         ) : (
           <>
-            <View style={styles.inputWrap}>
+            <View style={[styles.inputWrap, { borderColor: '#303640', backgroundColor: '#171A21' }]}>
               <Ionicons name="mail-outline" size={20} color={COLORS.muted} />
               <TextInput
-                style={styles.input}
+                style={[styles.input, { color: COLORS.text }]}
                 placeholder="Email address"
                 placeholderTextColor="#737B86"
                 value={email}
@@ -108,7 +108,7 @@ export default function ForgotPasswordScreen({ navigation }) {
             >
               {loading
                 ? <ActivityIndicator color="#071014" />
-                : <Text style={styles.submitButtonText}>Send Reset Link</Text>}
+                : <Text style={[styles.submitButtonText, { color: COLORS.bg }]}>Send Reset Link</Text>}
             </TouchableOpacity>
           </>
         )}
@@ -176,3 +176,4 @@ const styles = StyleSheet.create({
   backToLogin: { paddingVertical: 12, paddingHorizontal: 16, marginTop: 8 },
   backToLoginText: { color: COLORS.cyan, fontWeight: '700', fontSize: 14 },
 });
+

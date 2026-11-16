@@ -95,12 +95,12 @@ export default function ProfileFollowListScreen({ route, navigation }) {
       >
         <Avatar uri={item.avatarUrl} userId={item.userId} name={displayName} size={48} />
         <View style={styles.profileDetails}>
-          <Text style={styles.displayName} numberOfLines={1}>{displayName}</Text>
+          <Text style={[styles.displayName, { color: COLORS.text }]} numberOfLines={1}>{displayName}</Text>
           {profileUsername ? (
             <Text style={styles.username} numberOfLines={1}>@{profileUsername}</Text>
           ) : null}
         </View>
-        <Ionicons name="chevron-forward" size={18} color="#89919C" />
+        <Ionicons name="chevron-forward" size={18} color={COLORS.muted} />
       </TouchableOpacity>
     );
   };
@@ -114,9 +114,9 @@ export default function ProfileFollowListScreen({ route, navigation }) {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={22} color="#fff" />
+          <Ionicons name="arrow-back" size={22} color={COLORS.text} />
         </TouchableOpacity>
-        <Text style={styles.title} numberOfLines={1}>
+        <Text style={[styles.title, { color: COLORS.text }]} numberOfLines={1}>
           {title}{username ? ` · @${username.replace(/^@/, '')}` : ''}
         </Text>
         <View style={styles.backButton} />
@@ -175,3 +175,4 @@ const styles = StyleSheet.create({
   emptyText: { color: COLORS.muted, textAlign: 'center', fontSize: 14 },
   error: { color: COLORS.muted, textAlign: 'center', marginTop: 30, paddingHorizontal: 24 },
 });
+

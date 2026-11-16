@@ -63,14 +63,14 @@ function VideoGridTile({ item, onPress, onLongPress }) {
           />
         ) : (
           <View style={styles.placeholder}>
-            <Ionicons name="play" size={24} color="#AAB2BD" />
+            <Ionicons name="play" size={24} color={COLORS.muted} />
           </View>
         )}
         {showViews ? (
           <View style={styles.overlay}>
             <View style={styles.meta}>
-              <Ionicons name="play" size={12} color="#fff" />
-              <Text style={styles.metaText}>{formatCompactCount(item.views)}</Text>
+              <Ionicons name="play" size={12} color={COLORS.text} />
+              <Text style={[styles.metaText, { color: COLORS.text }]}>{formatCompactCount(item.views)}</Text>
             </View>
           </View>
         ) : null}
@@ -109,9 +109,9 @@ export default function VideoGrid({
 }
 
 const styles = StyleSheet.create({
-  cellContent: { width: '100%', height: '100%', aspectRatio: 1, backgroundColor: '#1F1F1F', borderRadius: 4, overflow: 'hidden' },
+  cellContent: { width: '100%', height: '100%', aspectRatio: 1, backgroundColor: COLORS.card, borderRadius: 4, overflow: 'hidden' },
   thumbnail: { width: '100%', height: '100%', borderRadius: 4 },
-  placeholder: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center', backgroundColor: '#1F1F1F', borderRadius: 4 },
+  placeholder: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.card, borderRadius: 4 },
   overlay: { position: 'absolute', bottom: 6, left: 6 },
   meta: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.62)', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 10 },
   metaText: { color: '#fff', fontSize: 11, marginLeft: 4, fontWeight: '700' },

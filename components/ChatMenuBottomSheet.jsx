@@ -78,13 +78,14 @@ export default function ChatMenuBottomSheet({
       <Ionicons
         name={icon}
         size={20}
-        color={tone === 'danger' ? COLORS.pink : tone === 'setting' ? COLORS.cyan : '#F3F5F7'}
+        color={tone === 'danger' ? COLORS.pink : tone === 'setting' ? COLORS.cyan : COLORS.text}
         style={styles.itemIcon}
       />
       <Text style={[
         styles.menuItemText,
         tone === 'setting' && styles.settingText,
         tone === 'danger' && styles.dangerText,
+        { color: tone === 'setting' ? COLORS.cyan : tone === 'danger' ? COLORS.pink : COLORS.text },
       ]}>
         {label}
       </Text>
@@ -156,7 +157,7 @@ export default function ChatMenuBottomSheet({
           <View style={styles.profileHeader}>
             <Avatar uri={avatarUrl} userId={userId} name={name} size={60} />
             <View style={styles.profileCopy}>
-              <Text style={styles.profileName} numberOfLines={1}>{name || 'User'}</Text>
+              <Text style={[styles.profileName, { color: COLORS.text }]} numberOfLines={1}>{name || 'User'}</Text>
               <Text style={styles.profileUsername} numberOfLines={1}>
                 @{(username || 'user').replace(/^@/, '')}
               </Text>
@@ -167,7 +168,7 @@ export default function ChatMenuBottomSheet({
               accessibilityRole="button"
               accessibilityLabel="Close chat menu"
             >
-              <Ionicons name="close" size={20} color="#C8CED8" />
+              <Ionicons name="close" size={20} color={COLORS.text} />
             </TouchableOpacity>
           </View>
           <View style={styles.divider} />
@@ -190,7 +191,7 @@ export default function ChatMenuBottomSheet({
                     onPress={() => pressAction(() => onMute?.(null))}
                     disabled={actionBusy}
                   >
-                    <Text style={styles.muteOptionText}>Unmute</Text>
+                    <Text style={[styles.muteOptionText, { color: COLORS.text }]}>Unmute</Text>
                     <Ionicons name="notifications-outline" size={17} color={COLORS.cyan} />
                   </TouchableOpacity>
                 ) : null}
@@ -201,8 +202,8 @@ export default function ChatMenuBottomSheet({
                     onPress={() => pressAction(() => onMute?.(option.duration))}
                     disabled={actionBusy}
                   >
-                    <Text style={styles.muteOptionText}>{option.label}</Text>
-                    <Ionicons name="chevron-forward" size={16} color="#707B8B" />
+                    <Text style={[styles.muteOptionText, { color: COLORS.text }]}>{option.label}</Text>
+                    <Ionicons name="chevron-forward" size={16} color={COLORS.muted} />
                   </TouchableOpacity>
                 ))}
               </View>
@@ -259,30 +260,31 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: 'rgba(15,18,25,0.96)',
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.card,
     overflow: 'hidden',
   },
-  handle: { width: 38, height: 4, alignSelf: 'center', borderRadius: 2, backgroundColor: '#5D6674' },
+  handle: { width: 38, height: 4, alignSelf: 'center', borderRadius: 2, backgroundColor: COLORS.muted },
   profileHeader: { minHeight: 88, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 9 },
   profileCopy: { flex: 1, marginLeft: 14 },
-  profileName: { color: '#FFFFFF', fontSize: 17, fontWeight: '800' },
-  profileUsername: { color: '#8B95A7', fontSize: 13, marginTop: 4 },
-  closeButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: '#252A35' },
-  divider: { height: StyleSheet.hairlineWidth, marginHorizontal: 18, marginBottom: 5, backgroundColor: '#39414E' },
+  profileName: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  profileUsername: { color: COLORS.muted, fontSize: 13, marginTop: 4 },
+  closeButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: COLORS.card },
+  divider: { height: StyleSheet.hairlineWidth, marginHorizontal: 18, marginBottom: 5, backgroundColor: COLORS.border },
   menuScroll: { flexShrink: 1 },
   menuContent: { paddingBottom: 6 },
-  sectionLabel: { color: '#778293', fontSize: 10, fontWeight: '800', letterSpacing: 1.1, paddingHorizontal: 21, paddingTop: 13, paddingBottom: 4 },
+  sectionLabel: { color: COLORS.muted, fontSize: 10, fontWeight: '800', letterSpacing: 1.1, paddingHorizontal: 21, paddingTop: 13, paddingBottom: 4 },
   menuItem: { minHeight: 47, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 21 },
   itemIcon: { width: 31 },
-  menuItemText: { flex: 1, color: '#F3F5F7', fontSize: 14, fontWeight: '600' },
+  menuItemText: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '600' },
   settingText: { color: COLORS.cyan },
   dangerText: { color: COLORS.pink },
   muteOptions: { marginHorizontal: 19, marginVertical: 3, paddingHorizontal: 13, borderRadius: 14, backgroundColor: 'rgba(0,229,255,0.07)' },
   muteOption: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(139,149,167,0.2)' },
-  muteOptionText: { color: '#DDE4EC', fontSize: 13, fontWeight: '600' },
-  quickActions: { flexDirection: 'row', justifyContent: 'space-evenly', paddingTop: 11, paddingBottom: 3, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#343B47' },
+  muteOptionText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  quickActions: { flexDirection: 'row', justifyContent: 'space-evenly', paddingTop: 11, paddingBottom: 3, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border },
   quickAction: { alignItems: 'center', justifyContent: 'center', minWidth: 75, paddingVertical: 5 },
   quickActionCircle: { width: 50, height: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 25, borderWidth: 1, borderColor: 'rgba(0,229,255,0.28)', backgroundColor: 'rgba(0,229,255,0.1)' },
-  quickActionLabel: { color: '#C4CBD5', fontSize: 11, fontWeight: '600', marginTop: 6 },
+  quickActionLabel: { color: COLORS.muted, fontSize: 11, fontWeight: '600', marginTop: 6 },
 });
+

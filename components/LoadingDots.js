@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { COLORS } from '../config/constants';
 import { Animated, StyleSheet, View } from 'react-native';
 
 const DOT_COUNT = 4;
@@ -77,7 +78,7 @@ const styles = StyleSheet.create({
     width: 9,
     height: 9,
     borderRadius: 5,
-    backgroundColor: '#00E5FF',
+    backgroundColor: COLORS.cyan,
   },
   dotSpacing: {
     marginRight: 9,

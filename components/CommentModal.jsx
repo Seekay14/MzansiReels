@@ -108,10 +108,10 @@ export default function CommentModal({
         <Avatar uri={item.avatarUrl} userId={item.userId} name={item.userName} size={38} />
         <View style={styles.commentBody}>
           <View style={styles.commentMeta}>
-            <Text style={styles.commentUser} numberOfLines={1}>{item.userName || 'User'}</Text>
+            <Text style={[styles.commentUser, { color: COLORS.text }]} numberOfLines={1}>{item.userName || 'User'}</Text>
             <Text style={styles.commentTime}>{timestamp ? timeAgo(timestamp) : 'Just now'}</Text>
           </View>
-          <Text style={styles.commentText}>{item.text}</Text>
+          <Text style={[styles.commentText, { color: COLORS.text }]}>{item.text}</Text>
         </View>
       </View>
     );
@@ -139,7 +139,7 @@ export default function CommentModal({
           <View style={styles.handle} />
           <View style={styles.header}>
             <View style={styles.headerCopy}>
-              <Text style={styles.title}>{commentCount} comments</Text>
+              <Text style={[styles.title, { color: COLORS.text }]}>{commentCount} comments</Text>
               <Text style={styles.postPreview} numberOfLines={2}>
                 {post.content?.trim() || 'Comment on this post'}
               </Text>
@@ -150,7 +150,7 @@ export default function CommentModal({
               accessibilityRole="button"
               accessibilityLabel="Close comments"
             >
-              <Ionicons name="close" size={23} color="#E5E9ED" />
+              <Ionicons name="close" size={23} color={COLORS.text} />
             </TouchableOpacity>
           </View>
 
@@ -182,8 +182,8 @@ export default function CommentModal({
 
           <View style={styles.inputRow}>
             <Avatar uri={user?.avatarUrl} userId={user?.$id} name={user?.username || user?.name} size={34} />
-            <TextInput
-              style={styles.input}
+              <TextInput
+                style={[styles.input, { color: COLORS.text }]}
               placeholder="Add a comment..."
               placeholderTextColor="#7F8994"
               value={draft}
@@ -202,8 +202,8 @@ export default function CommentModal({
               accessibilityLabel="Send comment"
             >
               {submitting
-                ? <ActivityIndicator size="small" color="#061116" />
-                : <Ionicons name="arrow-up" size={20} color="#061116" />}
+                ? <ActivityIndicator size="small" color={COLORS.bg} />
+                : <Ionicons name="arrow-up" size={20} color={COLORS.bg} />}
             </TouchableOpacity>
           </View>
         </View>
@@ -215,27 +215,28 @@ export default function CommentModal({
 const styles = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.64)' },
   dismissArea: { flex: 1 },
-  sheet: { height: '78%', paddingTop: 10, paddingHorizontal: 17, paddingBottom: Platform.OS === 'ios' ? 24 : 14, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderColor: '#292F38', backgroundColor: '#12151B' },
-  handle: { width: 40, height: 4, alignSelf: 'center', borderRadius: 3, backgroundColor: '#5D6671', marginBottom: 13 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingBottom: 13, borderBottomWidth: 1, borderBottomColor: '#252B34' },
+  sheet: { height: '78%', paddingTop: 10, paddingHorizontal: 17, paddingBottom: Platform.OS === 'ios' ? 24 : 14, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.card },
+  handle: { width: 40, height: 4, alignSelf: 'center', borderRadius: 3, backgroundColor: COLORS.muted, marginBottom: 13 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingBottom: 13, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   headerCopy: { flex: 1, paddingRight: 12 },
-  title: { color: '#F3F5F7', fontSize: 16, fontWeight: '800' },
-  postPreview: { color: '#929BA6', fontSize: 12, lineHeight: 17, marginTop: 4 },
-  closeButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: '#20252D' },
+  title: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  postPreview: { color: COLORS.muted, fontSize: 12, lineHeight: 17, marginTop: 4 },
+  closeButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: COLORS.card },
   commentList: { paddingVertical: 6 },
   emptyList: { flexGrow: 1, justifyContent: 'center' },
   commentRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 12 },
   commentBody: { flex: 1, marginLeft: 10 },
   commentMeta: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  commentUser: { maxWidth: '75%', color: '#F1F4F7', fontSize: 12, fontWeight: '800' },
-  commentTime: { color: '#7F8994', fontSize: 10, marginLeft: 8 },
-  commentText: { color: '#D5DAE0', fontSize: 13, lineHeight: 19 },
+  commentUser: { maxWidth: '75%', color: '#fff', fontSize: 12, fontWeight: '800' },
+  commentTime: { color: COLORS.muted, fontSize: 10, marginLeft: 8 },
+  commentText: { color: '#fff', fontSize: 13, lineHeight: 19 },
   listState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 25 },
   emptyState: { alignItems: 'center', justifyContent: 'center' },
-  stateText: { color: '#939DA8', fontSize: 13, textAlign: 'center', marginTop: 8 },
+  stateText: { color: COLORS.muted, fontSize: 13, textAlign: 'center', marginTop: 8 },
   retryText: { color: COLORS.cyan, fontSize: 12, fontWeight: '700', marginTop: 9 },
-  inputRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', paddingTop: 10, borderTopWidth: 1, borderTopColor: '#252B34' },
-  input: { flex: 1, maxHeight: 88, color: '#F1F4F7', fontSize: 13, paddingHorizontal: 12, paddingVertical: 9, marginHorizontal: 8, borderRadius: 20, backgroundColor: '#20252D' },
+  inputRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', paddingTop: 10, borderTopWidth: 1, borderTopColor: COLORS.border },
+  input: { flex: 1, maxHeight: 88, color: '#fff', fontSize: 13, paddingHorizontal: 12, paddingVertical: 9, marginHorizontal: 8, borderRadius: 20, backgroundColor: COLORS.card },
   sendButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: COLORS.cyan },
   sendDisabled: { opacity: 0.45 },
 });
+

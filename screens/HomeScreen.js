@@ -114,9 +114,7 @@ export default function HomeScreen({ navigation }) {
 
       if (activeTab === 'foryou') {
         queries.push(
-          Query.orderDesc('likes'),
-          Query.orderDesc('views'),
-          Query.orderDesc('$createdAt'),
+          Query.orderDesc('viralScore'),
         );
       } else {
         queries.push(Query.orderDesc('$createdAt'));
@@ -241,7 +239,7 @@ export default function HomeScreen({ navigation }) {
           <Ionicons name="cloud-offline-outline" size={42} color={COLORS.muted} />
           <Text style={styles.stateText}>{feedError}</Text>
           <TouchableOpacity style={styles.retryButton} onPress={() => fetchFeed()}>
-            <Text style={styles.retryText}>Try again</Text>
+            <Text style={[styles.retryText, { color: COLORS.text }]}>Try again</Text>
           </TouchableOpacity>
         </View>
       );
@@ -312,7 +310,7 @@ export default function HomeScreen({ navigation }) {
             </Text>
             {activeTab === 'following' && (
               <TouchableOpacity style={styles.retryButton} onPress={() => navigation.navigate('Search')}>
-                <Text style={styles.retryText}>Find creators</Text>
+                <Text style={[styles.retryText, { color: COLORS.text }]}>Find creators</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -324,7 +322,7 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <View
-      style={styles.container}
+      style={[styles.container, { backgroundColor: COLORS.bg }]}
       onLayout={(event) => {
         const height = event.nativeEvent.layout.height;
         if (height > 0 && height !== containerHeight) setContainerHeight(height);
@@ -352,7 +350,7 @@ export default function HomeScreen({ navigation }) {
                 accessibilityState={{ selected: activeTab === key }}
                 style={styles.tabButton}
               >
-                <Text style={[styles.tabText, activeTab === key && styles.activeTabText]}>{tabTitle}</Text>
+                <Text style={[styles.tabText, activeTab === key && { color: COLORS.text }]}>{tabTitle}</Text>
                 {activeTab === key && <View style={styles.activeTabIndicator} />}
               </TouchableOpacity>
             );
@@ -366,7 +364,7 @@ export default function HomeScreen({ navigation }) {
               accessibilityRole="button"
               accessibilityLabel={unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'}
             >
-              <Ionicons name="notifications-outline" size={25} color="#fff" />
+              <Ionicons name="notifications-outline" size={25} color={COLORS.text} />
               {unreadCount > 0 && <View style={styles.notificationDot} />}
             </TouchableOpacity>
           ) : null}
@@ -376,7 +374,7 @@ export default function HomeScreen({ navigation }) {
             accessibilityRole="button"
             accessibilityLabel="Search"
           >
-            <Ionicons name="search-outline" size={25} color="#fff" />
+            <Ionicons name="search-outline" size={25} color={COLORS.text} />
           </TouchableOpacity>
         </View>
       </View>
@@ -386,11 +384,11 @@ export default function HomeScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
+  container: { flex: 1, backgroundColor: COLORS.bg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32, backgroundColor: COLORS.bg },
   stateText: { color: COLORS.muted, marginTop: 14, fontSize: 15, lineHeight: 22, textAlign: 'center' },
   retryButton: { backgroundColor: COLORS.cyan, borderRadius: 22, paddingHorizontal: 22, paddingVertical: 10, marginTop: 18 },
-  retryText: { color: '#000', fontWeight: '700' },
+  retryText: { color: COLORS.bg, fontWeight: '700' },
   footerLoader: { padding: 18 },
   topShade: { position: 'absolute', top: 0, left: 0, right: 0 },
   topHeader: {
@@ -415,18 +413,19 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: COLORS.pink,
     borderWidth: 1,
-    borderColor: '#000',
+    borderColor: COLORS.bg,
   },
   tabsContainer: { flexDirection: 'row', alignItems: 'center', gap: 20 },
   tabButton: { alignItems: 'center', paddingVertical: 8 },
   tabText: {
-    color: 'rgba(255,255,255,0.65)',
+    color: COLORS.muted,
     fontSize: 16,
     fontWeight: '700',
     textShadowColor: 'rgba(0,0,0,0.6)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
-  activeTabText: { color: '#fff' },
+  activeTabText: { color: COLORS.text },
   activeTabIndicator: { height: 3, width: 24, backgroundColor: COLORS.cyan, marginTop: 5, borderRadius: 2 },
 });
+

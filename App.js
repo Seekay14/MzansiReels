@@ -11,7 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { client, databases, Query } from './config/appwrite';
+import { databases, Query } from './config/appwrite';
 
 // 1. SAFELY import config
 import { account } from './config/appwrite';
@@ -39,6 +39,7 @@ import StoryUploadScreen from './screens/StoryUploadScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import ProfileFollowListScreen from './screens/ProfileFollowListScreen';
 import AuthScreen from './screens/AuthScreen';
+import OTPScreen from './screens/OTPScreen';
 import LandingScreen from './screens/LandingScreen';
 import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
 import EmailOTPScreen from './screens/EmailOTPScreen';
@@ -343,15 +344,10 @@ function MyTabs() {
     };
 
     refreshUnreadMessages();
-    const unsubscribe = client.subscribe(
-      `databases.${DATABASE_ID}.collections.${COLLECTIONS.messages}.documents`,
-      () => refreshUnreadMessages(),
-    );
     const refreshTimer = setInterval(refreshUnreadMessages, 30000);
 
     return () => {
       active = false;
-      if (typeof unsubscribe === 'function') unsubscribe();
       clearInterval(refreshTimer);
     };
   }, [user?.$id]);
@@ -374,7 +370,7 @@ function MyTabs() {
           paddingTop: isCompact ? 4 : 6,
         },
         tabBarActiveTintColor: safeColors.cyan,
-        tabBarInactiveTintColor: '#666',
+        tabBarInactiveTintColor: safeColors.muted,
         tabBarIcon: ({ focused, color }) => {
           if (route.name === 'Upload') {
             return (
@@ -388,7 +384,7 @@ function MyTabs() {
                   },
                 ]}
               >
-                <Ionicons name="add" size={28 * scale} color="#fff" />
+                <Ionicons name="add" size={28 * scale} color={safeColors.text} />
               </View>
             );
           }
@@ -432,7 +428,7 @@ function AppNavigation() {
   return (
     <>
       <StatusBar style={colors.statusBar} />
-      <NavigationContainer theme={getNavTheme(colors)} linking={linking}>
+      <NavigationContainer theme={getNavTheme(colors)} linking={linking} style={{ flex: 1, backgroundColor: colors.bg }}>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen name="App">
             {(navigationProps) => (
@@ -448,6 +444,7 @@ function AppNavigation() {
                 : <AuthScreen {...navigationProps} />
             )}
           </Stack.Screen>
+          <Stack.Screen name="OTPScreen" component={OTPScreen} />
           <Stack.Screen name="Register">
             {(navigationProps) => (
               isAuthenticated
@@ -673,16 +670,16 @@ export default function App() {
     [user, authState, setUser, logout, handleAuthenticationError],
   );
 
-  if (isCheckingAuth) return <LandingScreen />;
-
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <AuthContext.Provider value={auth}>
-          <SearchMenuProvider>
-            <AppNavigation />
-          </SearchMenuProvider>
-        </AuthContext.Provider>
+        {isCheckingAuth ? <LandingScreen /> : (
+          <AuthContext.Provider value={auth}>
+            <SearchMenuProvider>
+              <AppNavigation />
+            </SearchMenuProvider>
+          </AuthContext.Provider>
+        )}
       </ThemeProvider>
     </SafeAreaProvider>
   );
@@ -693,13 +690,13 @@ const styles = StyleSheet.create({
     top: -18,
     width: 56,
     height: 56,
-    backgroundColor: COLORS?.pink || '#ff00ff',
+    backgroundColor: COLORS?.pink || '#FF0055',
     borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 4,
-    borderColor: COLORS?.bg || '#000',
-    shadowColor: COLORS?.pink || '#ff00ff',
+    borderColor: COLORS?.bg || '#0A0A0F',
+    shadowColor: COLORS?.pink || '#FF0055',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.6,
     shadowRadius: 6,

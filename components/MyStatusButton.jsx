@@ -76,10 +76,10 @@ export default function MyStatusButton({ stories, user, onAddStatus, onOpenStatu
           accessibilityRole="button"
           accessibilityLabel="Add status"
         >
-          <Ionicons name="add" size={16} color="#071014" />
+          <Ionicons name="add" size={16} color={COLORS.bg} />
         </TouchableOpacity>
       </View>
-      <Text style={styles.name} numberOfLines={1}>My Status</Text>
+      <Text style={[styles.name, { color: COLORS.text }]} numberOfLines={1}>My Status</Text>
       {latestStatus ? (
         <Text style={styles.timestamp} numberOfLines={1}>
           {timestamp}
@@ -107,6 +107,7 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     backgroundColor: COLORS.cyan,
   },
-  name: { width: 70, marginTop: 5, color: '#E8EAED', fontSize: 11, textAlign: 'center' },
-  timestamp: { width: 70, marginTop: 2, color: '#8B95A7', fontSize: 9, textAlign: 'center' },
+  name: { width: 70, marginTop: 5, color: '#fff', fontSize: 11, textAlign: 'center' },
+  timestamp: { width: 70, marginTop: 2, color: COLORS.muted, fontSize: 9, textAlign: 'center' },
 });
+

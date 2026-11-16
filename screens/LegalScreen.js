@@ -113,9 +113,9 @@ export default function LegalScreen({ route, navigation }) {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={23} color="#F6F8FA" />
+          <Ionicons name="arrow-back" size={23} color={COLORS.text} />
         </TouchableOpacity>
-        <Text numberOfLines={1} style={styles.headerTitle}>{data.title}</Text>
+        <Text numberOfLines={1} style={[styles.headerTitle, { color: COLORS.text }]}>{data.title}</Text>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -128,25 +128,25 @@ export default function LegalScreen({ route, navigation }) {
           <View style={styles.heroIcon}>
             <Ionicons name={data.icon} size={26} color={COLORS.cyan} />
           </View>
-          <Text style={styles.title}>{data.title}</Text>
-          <Text style={styles.subtitle}>{data.subtitle}</Text>
-          <Text style={styles.updated}>Last updated: November 2026</Text>
+          <Text style={[styles.title, { color: COLORS.text }]}>{data.title}</Text>
+          <Text style={[styles.subtitle, { color: COLORS.muted }]}>{data.subtitle}</Text>
+          <Text style={[styles.updated, { color: COLORS.muted }]}>Last updated: November 2026</Text>
         </View>
 
         {data.sections.map((section) => (
           <View key={section.heading} style={styles.section}>
-            <Text style={styles.sectionHeading}>{section.heading}</Text>
-            <Text style={styles.sectionBody}>{section.body}</Text>
+            <Text style={[styles.sectionHeading, { color: COLORS.text }]}>{section.heading}</Text>
+            <Text style={[styles.sectionBody, { color: COLORS.muted }]}>{section.body}</Text>
           </View>
         ))}
 
         <View style={styles.contactNote}>
           <Ionicons name="mail-outline" size={17} color={COLORS.cyan} />
-          <Text style={styles.contactText}>
+          <Text style={[styles.contactText, { color: COLORS.muted }]}>
             Questions? Contact us at <Text style={styles.email}>sectionfellas@gmail.com</Text>.
           </Text>
         </View>
-        <Text style={styles.footer}>© {new Date().getFullYear()} MzansiReels</Text>
+        <Text style={[styles.footer, { color: COLORS.muted }]}>© {new Date().getFullYear()} MzansiReels</Text>
       </ScrollView>
     </View>
   );
@@ -173,3 +173,4 @@ const styles = StyleSheet.create({
   email: { color: COLORS.cyan, fontWeight: '700' },
   footer: { color: '#626A75', fontSize: 10, textAlign: 'center', marginTop: 24 },
 });
+

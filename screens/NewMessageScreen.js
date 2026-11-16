@@ -6,12 +6,10 @@ import { databases, Query } from '../config/appwrite';
 import { DATABASE_ID, COLLECTIONS, COLORS } from '../config/constants';
 import Avatar from '../components/Avatar';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
 import { getMessagingErrorMessage } from '../config/chatService';
 
 export default function NewMessageScreen({ navigation }) {
   const { user } = useAuth();
-  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [searchText, setSearchText] = useState('');
   const [users, setUsers] = useState([]);
@@ -77,22 +75,22 @@ export default function NewMessageScreen({ navigation }) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { paddingTop: insets.top + 10, borderBottomColor: colors.border }]}>
+    <View style={[styles.container, { backgroundColor: COLORS.bg }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 10, borderBottomColor: COLORS.border }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={26} color={colors.text} />
+          <Ionicons name="arrow-back" size={26} color={COLORS.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>New Message</Text>
+        <Text style={[styles.headerTitle, { color: COLORS.text }]}>New Message</Text>
         <View style={{ width: 26 }} />
       </View>
 
       <View style={styles.searchContainer}>
-        <View style={[styles.searchBar, { backgroundColor: colors.card }]}>
-          <Ionicons name="search" size={18} color="#888" style={{ marginRight: 8 }} />
+        <View style={[styles.searchBar, { backgroundColor: COLORS.card }]}>
+          <Ionicons name="search" size={18} color={COLORS.muted} style={{ marginRight: 8 }} />
           <TextInput 
-            style={[styles.searchInput, { color: colors.text }]}
+            style={[styles.searchInput, { color: COLORS.text }]}
             placeholder="Search for a user by name or @username..."
-            placeholderTextColor="#888"
+            placeholderTextColor={COLORS.muted}
             value={searchText}
             onChangeText={setSearchText}
           />
@@ -101,11 +99,11 @@ export default function NewMessageScreen({ navigation }) {
 
       {searchText.trim().replace(/^@/, '').length < 2 ? (
         <View style={styles.placeholderContainer}>
-          <Text style={[styles.placeholder, { color: colors.muted }]}>Search for a user to start chatting.</Text>
+          <Text style={[styles.placeholder, { color: COLORS.muted }]}>Search for a user to start chatting.</Text>
         </View>
       ) : loading ? (
         <View style={styles.placeholderContainer}>
-          <ActivityIndicator size="large" color={colors.accent} />
+          <ActivityIndicator size="large" color={COLORS.accent} />
         </View>
       ) : searchError ? (
         <View style={styles.placeholderContainer}>
@@ -123,10 +121,10 @@ export default function NewMessageScreen({ navigation }) {
             <TouchableOpacity style={styles.userRow} onPress={() => startChat(item)}>
               <Avatar uri={item.avatarUrl} userId={item.userId} name={item.name} size={50} />
               <View style={styles.userInfo}>
-                <Text style={[styles.userName, { color: colors.text }]}>{item.name}</Text>
-                <Text style={[styles.userHandle, { color: colors.muted }]}>@{item.username || 'user'}</Text>
+                <Text style={[styles.userName, { color: COLORS.text }]}>{item.name}</Text>
+                <Text style={[styles.userHandle, { color: COLORS.muted }]}>@{item.username || 'user'}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="#555" />
+              <Ionicons name="chevron-forward" size={20} color={COLORS.muted} />
             </TouchableOpacity>
           )}
         />

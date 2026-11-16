@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList,
-  KeyboardAvoidingView, Platform, Alert, Image, ActivityIndicator,
+  KeyboardAvoidingView, Platform, Alert, Image, ActivityIndicator, Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -22,6 +22,7 @@ export default function ChatScreen({ route, navigation }) {
     otherUserId: routeOtherId,
     otherUserName: routeOtherName,
     otherUserAvatar = null,
+    otherUserIsVerified = false,
   } = route?.params || {};
   const otherId = routeOtherId || route?.params?.userId || null;
   const otherName = routeOtherName || route?.params?.userName || 'User';
@@ -33,6 +34,7 @@ export default function ChatScreen({ route, navigation }) {
   const [messagesLoading, setMessagesLoading] = useState(true);
   const [messageError, setMessageError] = useState('');
   const listRef = useRef(null);
+  const [chatMenuVisible, setChatMenuVisible] = useState(false);
 
   // 1. Load or Create the Chat
   useEffect(() => {
@@ -111,15 +113,10 @@ export default function ChatScreen({ route, navigation }) {
       setMessages((prev) => [...prev, optimisticMessage]);
       
       const doc = await createChatMessage(chatId, user.$id, otherId, text);
-      setMessages((prev) => prev.map((message) => (
-        message.$id === optimisticId ? doc : message
-      )));
-      await notify(otherId, user.name, 'message');
+      setMessages((prev) => prev.map((m) => m.$id === optimisticId ? doc : m));
     } catch (error) {
       console.error(error);
-      if (optimisticId) {
-        setMessages((prev) => prev.filter((message) => message.$id !== optimisticId));
-      }
+      if (optimisticId) setMessages((prev) => prev.filter((m) => m.$id !== optimisticId));
       setNewMessage(text);
       Alert.alert('Error', error.message || 'Failed to send message.');
     }
@@ -169,13 +166,21 @@ export default function ChatScreen({ route, navigation }) {
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15 }}>
-          <Ionicons name="arrow-back" size={26} color="#fff" />
+          <Ionicons name="arrow-back" size={26} color={COLORS.text} />
         </TouchableOpacity>
         <Avatar uri={otherUserAvatar} userId={otherId} name={otherName} size={40} style={{ marginRight: 10 }} />
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>{otherName}</Text>
+          <View style={styles.headerNameRow}>
+            <Text style={[styles.headerTitle, { color: COLORS.text }]}>{otherName}</Text>
+            {otherUserIsVerified && (
+              <Ionicons name="checkmark-circle" size={16} color={COLORS.cyan} style={styles.headerBadge} />
+            )}
+          </View>
           <Text style={styles.headerStatus}>Direct messages</Text>
         </View>
+        <TouchableOpacity onPress={() => setChatMenuVisible(true)}>
+          <Ionicons name="ellipsis-vertical" size={22} color={COLORS.text} />
+        </TouchableOpacity>
       </View>
 
       {/* Message List */}
@@ -210,9 +215,9 @@ export default function ChatScreen({ route, navigation }) {
                   {isImage ? (
                     <Image source={{ uri: item.text }} style={styles.imageMsg} />
                   ) : (
-                    <Text style={[styles.text, isMe ? { color: '#000' } : { color: '#fff' }]}>{item.text}</Text>
+                    <Text style={[styles.text, isMe ? { color: COLORS.text } : { color: COLORS.text }]}>{item.text}</Text>
                   )}
-                  <Text style={[styles.time, isMe ? { color: 'rgba(0,0,0,0.6)' } : { color: COLORS.muted }]}>
+                  <Text style={[styles.time, isMe ? { color: COLORS.bg } : { color: COLORS.muted }]}>
                     {formatTime(item.$createdAt)}
                   </Text>
                 </TouchableOpacity>
@@ -233,9 +238,9 @@ export default function ChatScreen({ route, navigation }) {
               </TouchableOpacity>
               <View style={styles.inputWrapper}>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { color: COLORS.text }]}
                   placeholder="Message..."
-                  placeholderTextColor="#888"
+                  placeholderTextColor={COLORS.muted}
                   value={newMessage}
                   onChangeText={setNewMessage}
                   editable={Boolean(chatId)}
@@ -244,7 +249,7 @@ export default function ChatScreen({ route, navigation }) {
               </View>
               {newMessage.trim() ? (
                 <TouchableOpacity style={styles.sendBtn} onPress={sendMessage}>
-                  <Ionicons name="send" size={20} color="#000" />
+                  <Ionicons name="send" size={20} color={COLORS.bg} />
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity style={styles.iconBtn}>
@@ -253,6 +258,40 @@ export default function ChatScreen({ route, navigation }) {
               )}
             </View>
           </View>
+        <Modal visible={chatMenuVisible} animationType="slide" transparent onRequestClose={() => setChatMenuVisible(false)}>
+          <TouchableOpacity style={[styles.sheetBackdrop, { backgroundColor: 'rgba(0,0,0,0.5)' }]} onPress={() => setChatMenuVisible(false)} activeOpacity={1} />
+          <TouchableOpacity style={[styles.sheetPanel, { backgroundColor: COLORS.card }]} onPress={(e) => e.stopPropagation()} activeOpacity={1}>
+            <View style={styles.sheetHandle} />
+            <Text style={[styles.sheetTitle, { color: COLORS.text }]}>Chat Options</Text>
+            <View style={styles.sheetClose} onPress={() => setChatMenuVisible(false)}>
+              <Ionicons name="close" size={24} color={COLORS.text} />
+            </View>
+            <TouchableOpacity style={styles.sheetItem} onPress={() => { setChatMenuVisible(false); navigation.navigate('UserProfile', { userId: otherId, userName: otherName }); }}>
+              <Ionicons name="person-outline" size={22} color={COLORS.text} style={styles.sheetIcon} />
+              <Text style={[styles.sheetItemText, { color: COLORS.text }]}>View Contact</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetItem} onPress={() => { setChatMenuVisible(false); Alert.alert('Search', 'Coming soon.'); }}>
+              <Ionicons name="search-outline" size={22} color={COLORS.text} style={styles.sheetIcon} />
+              <Text style={[styles.sheetItemText, { color: COLORS.text }]}>Search</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetItem} onPress={() => { setChatMenuVisible(false); Alert.alert('Media, Links, and Docs', 'Coming soon.'); }}>
+              <Ionicons name="images-outline" size={22} color={COLORS.text} style={styles.sheetIcon} />
+              <Text style={[styles.sheetItemText, { color: COLORS.text }]}>Media, Links, and Docs</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetItem} onPress={() => { setChatMenuVisible(false); Alert.alert('Mute Notifications', 'Coming soon.'); }}>
+              <Ionicons name="notifications-outline" size={22} color={COLORS.text} style={styles.sheetIcon} />
+              <Text style={[styles.sheetItemText, { color: COLORS.text }]}>Mute Notifications</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetItem} onPress={() => { setChatMenuVisible(false); Alert.alert('Clear Chat', 'Coming soon.'); }}>
+              <Ionicons name="trash-outline" size={22} color={COLORS.text} style={styles.sheetIcon} />
+              <Text style={[styles.sheetItemText, { color: COLORS.text }]}>Clear Chat</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetItem} onPress={() => { setChatMenuVisible(false); Alert.alert('Block User', 'Coming soon.'); }}>
+              <Ionicons name="ban-outline" size={22} color={COLORS.text} style={styles.sheetIcon} />
+              <Text style={[styles.sheetItemText, { color: COLORS.text }]}>Block User</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
         </>
       )}
     </KeyboardAvoidingView>
@@ -264,9 +303,11 @@ const styles = StyleSheet.create({
   messageError: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 30 },
   messageErrorText: { color: COLORS.muted, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 12 },
   retryButton: { backgroundColor: COLORS.cyan, borderRadius: 20, paddingHorizontal: 22, paddingVertical: 10, marginTop: 16 },
-  retryButtonText: { color: '#000', fontWeight: '700' },
+  retryButtonText: { color: COLORS.bg, fontWeight: '700' },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: 'bold' },
+  headerTitle: { color: COLORS.text, fontSize: 17, fontWeight: 'bold' },
+  headerNameRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
+  headerBadge: { marginLeft: 4 },
   headerStatus: { color: COLORS.muted, fontSize: 12, marginTop: 2 },
   bubble: { maxWidth: '80%', padding: 8, borderRadius: 20, marginBottom: 10 },
   mine: { backgroundColor: COLORS.cyan, alignSelf: 'flex-end', borderBottomRightRadius: 4 },
@@ -277,7 +318,15 @@ const styles = StyleSheet.create({
   composerContainer: { borderTopWidth: 1, borderTopColor: COLORS.border },
   inputContainer: { flexDirection: 'row', paddingHorizontal: 10, paddingTop: 10, alignItems: 'center' },
   inputWrapper: { flex: 1, backgroundColor: COLORS.card, borderRadius: 25, paddingHorizontal: 15, paddingVertical: 10, marginHorizontal: 8 },
-  input: { color: '#fff', fontSize: 16 },
+  input: { color: COLORS.text, fontSize: 16 },
   iconBtn: { padding: 5 },
   sendBtn: { backgroundColor: COLORS.cyan, width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginLeft: 5 },
+  sheetBackdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)' },
+  sheetPanel: { width: '100%', height: '65%', backgroundColor: COLORS.card, borderTopLeftRadius: 22, borderTopRightRadius: 22, overflow: 'hidden', justifyContent: 'flex-end' },
+  sheetHandle: { width: 40, height: 4, alignSelf: 'center', borderRadius: 2, backgroundColor: COLORS.muted, marginVertical: 10 },
+  sheetTitle: { flex: 1, color: COLORS.text, fontSize: 17, fontWeight: '800', textAlign: 'center', paddingTop: 10 },
+  sheetClose: { position: 'absolute', right: 18, top: 12 },
+  sheetItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  sheetIcon: { marginRight: 14 },
+  sheetItemText: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
 });

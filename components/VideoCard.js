@@ -10,6 +10,8 @@ import { useEvent } from 'expo';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Network from 'expo-network';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import PostCommentModal from './PostCommentModal';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
@@ -18,7 +20,7 @@ import { databases, storage, ID, Permission, Query, Role } from '../config/appwr
 import { BUCKET_ID, DATABASE_ID, COLLECTIONS, COLORS, fileIdFromUrl } from '../config/constants';
 import { useResponsiveLayout } from '../config/responsive';
 import { useAuth } from '../context/AuthContext';
-import { getUserDoc, notify, reportVideo, requireAuth, toggleVideoLike } from '../config/helpers';
+import { getUserDoc, getVideoThumbnail, notify, reportVideo, requireAuth, toggleVideoLike } from '../config/helpers';
 import Avatar from './Avatar';
 import { createFollowRelationship, deleteFollowRelationships } from '../config/profileContentService';
 
@@ -80,6 +82,8 @@ export default function VideoCard({
   const [appIsActive, setAppIsActive] = useState(
     AppState.currentState === 'active' || AppState.currentState === null,
   );
+  const [dataSaver, setDataSaver] = useState(false);
+  const [networkType, setNetworkType] = useState(null);
 
   const heartScale = useRef(new Animated.Value(1)).current;
   const pausedOverlayOpacity = useRef(new Animated.Value(0)).current;
@@ -87,6 +91,7 @@ export default function VideoCard({
   const followBusy = useRef(false);
   const fetchedMeta = useRef(false);
   const viewCounted = useRef(false);
+  const dataSaverPausedRef = useRef(false);
 
     // Swipe-left-to-profile state
     const swipeX = useRef(new Animated.Value(0)).current;
@@ -136,6 +141,25 @@ export default function VideoCard({
     return () => subscription.remove();
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const value = await AsyncStorage.getItem('@mzansireels/data_saver');
+        if (active && value !== null) setDataSaver(JSON.parse(value));
+      } catch (error) {
+        console.error('Could not load data saver:', error);
+      }
+      try {
+        const network = await Network.getNetworkStateAsync();
+        if (active) setNetworkType(network.networkType);
+      } catch (error) {
+        console.error('Could not get network state:', error);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
   useLayoutEffect(() => {
     if (!player) return;
     player.muted = muted || !isActive || !appIsActive;
@@ -143,8 +167,24 @@ export default function VideoCard({
 
   useEffect(() => {
     if (!player) return;
+    const cellularDataSaver = dataSaver && networkType === (Network.NetworkStateType?.CELLULAR || 'CELLULAR');
+
+    // Data saver + cellular: force pause on first activation (shows play icon), only once per activation.
+    if (cellularDataSaver && isActive && appIsActive && !dataSaverPausedRef.current) {
+      dataSaverPausedRef.current = true;
+      setPaused(true);
+      try { player.pause(); } catch (e) {}
+      return;
+    }
+
+    // Reset when video is no longer active so the next activation re-applies data saver.
+    if (!isActive || !appIsActive) {
+      dataSaverPausedRef.current = false;
+      return;
+    }
+
     try {
-      if (isActive && appIsActive && !paused) {
+      if (!paused) {
         player.play();
       } else {
         player.pause();
@@ -152,7 +192,7 @@ export default function VideoCard({
     } catch (error) {
       console.error(`Could not update Reel playback for ${item.$id}:`, error);
     }
-  }, [appIsActive, isActive, item.$id, paused, player]);
+  }, [appIsActive, isActive, item.$id, paused, player, dataSaver, networkType]);
 
   useEffect(() => {
     let active = true;
@@ -746,14 +786,16 @@ export default function VideoCard({
     || item.username
     || (item.userName && !/\s/.test(item.userName) ? item.userName : 'username unavailable');
 
+  const videoThumbnailUrl = getVideoThumbnail(item);
+
   return (
     <View style={[styles.card, { height: height || '100%' }]}>
       
       {/* 1. FALLBACK BACKGROUND (Thumbnail) */}
-      {item.thumbnailUrl ? (
-        <Image source={{ uri: item.thumbnailUrl }} style={StyleSheet.absoluteFillObject} blurRadius={15} />
+      {videoThumbnailUrl ? (
+        <Image source={{ uri: videoThumbnailUrl }} style={StyleSheet.absoluteFillObject} blurRadius={15} />
       ) : (
-        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#111' }]} />
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: COLORS.bg }]} />
       )}
 
       {/* 2. VIDEO PLAYER (wrapped in the swipe-left-to-profile gesture) */}
@@ -769,16 +811,16 @@ export default function VideoCard({
                       allowsFullscreen={false}
                     />
                     {status === 'loading' ? (
-                      <ActivityIndicator style={styles.playerIndicator} color="#fff" size="large" />
+                      <ActivityIndicator style={styles.playerIndicator} color={COLORS.text} size="large" />
                     ) : status === 'error' ? (
                       <View style={styles.playerError} pointerEvents="none">
-                        <Text style={styles.playerErrorText}>
+                        <Text style={[styles.playerErrorText, { color: COLORS.text }]}>
                           {error?.message || 'This Reel could not be played.'}
                         </Text>
                       </View>
                     ) : !item.videoUrl ? (
                       <View style={styles.playerError} pointerEvents="none">
-                        <Text style={styles.playerErrorText}>This Reel has no playable video URL.</Text>
+                        <Text style={[styles.playerErrorText, { color: COLORS.text }]}>This Reel has no playable video URL.</Text>
                       </View>
                     ) : null}
             </View>
@@ -788,7 +830,7 @@ export default function VideoCard({
                   pointerEvents="none"
                   style={[styles.centerScreen, { opacity: pausedOverlayOpacity }]}
                 >
-                  <Ionicons name="play" size={80} color="rgba(255,255,255,0.78)" />
+                  <Ionicons name="play" size={80} color={COLORS.text} />
                 </Animated.View>
               </Animated.View>
             </GestureDetector>
@@ -798,9 +840,9 @@ export default function VideoCard({
         pointerEvents="none"
               style={[styles.swipeHint, { opacity: profileHintOpacity, top: insets.top + 58 }]}
       >
-              <Ionicons name="chevron-back" size={13} color="#fff" />
+              <Ionicons name="chevron-back" size={13} color={COLORS.text} />
               <View style={styles.swipeHintDivider} />
-              <Ionicons name="person-circle-outline" size={16} color="#fff" />
+              <Ionicons name="person-circle-outline" size={16} color={COLORS.text} />
       </Animated.View>
 
       {Platform.OS === 'web' && isActive && needsPlaybackGesture && (
@@ -810,8 +852,8 @@ export default function VideoCard({
           accessibilityRole="button"
           accessibilityLabel="Play Reel with sound"
         >
-          <Ionicons name="play" size={18} color="#fff" />
-          <Text style={styles.playWithSoundText}>Tap to play with sound</Text>
+          <Ionicons name="play" size={18} color={COLORS.text} />
+          <Text style={[styles.playWithSoundText, { color: COLORS.text }]}>Tap to play with sound</Text>
         </TouchableOpacity>
       )}
 
@@ -823,29 +865,30 @@ export default function VideoCard({
       />
       
       <View style={[styles.bottomOverlay, { bottom: Math.max(insets.bottom, 20) + 10 }]} pointerEvents="box-none">
-        <TouchableOpacity
-          onPress={() => onOpenProfile?.(item)}
-          style={{ alignSelf: 'flex-start', maxWidth: '100%' }}
-          accessibilityRole="button"
-          accessibilityLabel={`View @${creatorUsername} profile`}
-        >
-          <View style={styles.creatorHandleRow}>
-            <Text style={styles.username} numberOfLines={1} ellipsizeMode="tail">@{creatorUsername}</Text>
-            {creatorVerified && (
-              <Ionicons name="checkmark-circle" size={16} color={COLORS.cyan} />
-            )}
-          </View>
-        </TouchableOpacity>
-        
-        <Text style={styles.caption} numberOfLines={2}>{videoCaption}</Text>
+        <View style={styles.postHeaderRow}>
+          <TouchableOpacity
+            onPress={() => onOpenProfile?.(item)}
+            style={{ alignSelf: 'flex-start', maxWidth: '100%' }}
+            accessibilityRole="button"
+            accessibilityLabel={`View @${creatorUsername} profile`}
+          >
+            <View style={styles.creatorHandleRow}>
+              <Text style={[styles.username, { color: COLORS.text }]} numberOfLines={1} ellipsizeMode="tail">@{creatorUsername}</Text>
+              {creatorVerified && (
+                <Ionicons name="checkmark-circle" size={16} color={COLORS.cyan} style={styles.verifyBadge} />
+              )}
+            </View>
+          </TouchableOpacity>
+        </View>
+        <Text style={[styles.caption, { color: COLORS.text }]} numberOfLines={2}>{videoCaption}</Text>
         {item.hashtags && <Text style={styles.hashtags}>{item.hashtags}</Text>}
         
         <View style={styles.soundContainer}>
-          <Ionicons name="musical-notes" size={14} color="#fff" />
-          <Text style={styles.soundText} numberOfLines={1}>{item.soundName || 'Original Audio'}</Text>
+          <Ionicons name="musical-notes" size={14} color={COLORS.text} />
+          <Text style={[styles.soundText, { color: COLORS.text }]} numberOfLines={1}>{item.soundName || 'Original Audio'}</Text>
         </View>
         {isOwnVideo && (
-          <Text style={styles.viewCount}>👁️ {viewCount} views</Text>
+          <Text style={[styles.viewCount, { color: COLORS.text }]}>👁️ {viewCount} views</Text>
         )}
       </View>
 
@@ -856,17 +899,6 @@ export default function VideoCard({
           { bottom: insets.bottom + 20 * scale, width: 64 * scale, maxWidth: 64 * scale },
         ]}
       >
-        <TouchableOpacity
-          style={[
-            styles.muteButton,
-            { width: 42 * scale, height: 42 * scale, marginBottom: 15 * scale },
-          ]}
-          onPress={handleToggleMute}
-          accessibilityRole="button"
-          accessibilityLabel={muted ? 'Unmute Reel audio' : 'Mute Reel audio'}
-        >
-          <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={22 * scale} color="#fff" />
-        </TouchableOpacity>
         <View style={[styles.avatarSection, { width: 56 * scale, marginBottom: 22 * scale }]}>
           <TouchableOpacity onPress={() => onOpenProfile?.(item)}>
             <View style={styles.avatarWrapper}>
@@ -881,7 +913,7 @@ export default function VideoCard({
 
           {!isOwnVideo && (
             <TouchableOpacity onPress={handleFollow} style={[styles.followButton, isFollowing && styles.followingButton]}>
-              <Ionicons name={isFollowing ? 'checkmark' : 'add'} size={16} color="#fff" />
+              <Ionicons name={isFollowing ? 'checkmark' : 'add'} size={16} color={COLORS.text} />
             </TouchableOpacity>
           )}
         </View>
@@ -891,43 +923,35 @@ export default function VideoCard({
           onPress={handleLike}
         >
           <Animated.View style={{ transform: [{ scale: heartScale }] }}>
-            <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={36 * scale} color={isLiked ? COLORS.cyan : '#fff'} />
+            <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={36 * scale} color={isLiked ? COLORS.cyan : COLORS.text} />
           </Animated.View>
-          <Text style={[styles.actionText, { fontSize: Math.max(10, 12 * scale) }]}>{likes}</Text>
+          <Text style={[styles.actionText, { color: COLORS.text }, { fontSize: Math.max(10, 12 * scale) }]}>{likes}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.actionButton, { width: 64 * scale, minHeight: 54 * scale, marginBottom: 18 * scale }]}
           onPress={handleComment}
         >
-          <Ionicons name="chatbubble" size={34 * scale} color="#fff" />
-          <Text style={[styles.actionText, { fontSize: Math.max(10, 12 * scale) }]}>{commentCount}</Text>
+          <Ionicons name="chatbubble" size={34 * scale} color={COLORS.text} />
+          <Text style={[styles.actionText, { color: COLORS.text }, { fontSize: Math.max(10, 12 * scale) }]}>{commentCount}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.actionButton, { width: 64 * scale, minHeight: 54 * scale, marginBottom: 18 * scale }]}
           onPress={handleBookmark}
         >
-          <Ionicons name={isBookmarked ? 'bookmark' : 'bookmark-outline'} size={30 * scale} color={isBookmarked ? COLORS.cyan : '#fff'} />
-          <Text style={[styles.actionText, { fontSize: Math.max(10, 12 * scale) }]}>Save</Text>
+          <Ionicons name={isBookmarked ? 'bookmark' : 'bookmark-outline'} size={30 * scale} color={isBookmarked ? COLORS.cyan : COLORS.text} />
+          <Text style={[styles.actionText, { color: COLORS.text }, { fontSize: Math.max(10, 12 * scale) }]}>Save</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.actionButton, { width: 64 * scale, minHeight: 54 * scale, marginBottom: 18 * scale }]}
-          onPress={shareVideo}
-          disabled={isSharingVideo}
-        >
-          <Ionicons name="arrow-redo" size={32 * scale} color="#fff" />
-          <Text style={[styles.actionText, { fontSize: Math.max(10, 12 * scale) }]}>Share</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.moreOptionsButton, { width: 44 * scale, height: 44 * scale }]}
           onPress={() => setCreatorMenuVisible(true)}
           accessibilityRole="button"
           accessibilityLabel="More video options"
         >
-          <Ionicons name="ellipsis-vertical" size={24 * scale} color="#fff" />
+          <Ionicons name="ellipsis-vertical" size={24 * scale} color={COLORS.text} />
+          <Text style={[styles.actionText, { color: COLORS.text }, { fontSize: Math.max(10, 12 * scale) }]}>More</Text>
         </TouchableOpacity>
       </View>
 
@@ -967,9 +991,9 @@ export default function VideoCard({
           <View style={[styles.creatorSheet, { paddingBottom: Math.max(insets.bottom, 20) }]}>
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Video options</Text>
+              <Text style={[styles.sheetTitle, { color: COLORS.text }]}>Video options</Text>
               <TouchableOpacity onPress={() => setCreatorMenuVisible(false)} accessibilityLabel="Close video options">
-                <Ionicons name="close" size={25} color="#fff" />
+                <Ionicons name="close" size={25} color={COLORS.text} />
               </TouchableOpacity>
             </View>
 
@@ -980,7 +1004,7 @@ export default function VideoCard({
               accessibilityLabel={muted ? 'Unmute video' : 'Mute video'}
             >
               <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={22} color={COLORS.cyan} />
-              <Text style={styles.creatorMenuText}>{muted ? 'Unmute video' : 'Mute video'}</Text>
+              <Text style={[styles.creatorMenuText, { color: COLORS.text }]}>{muted ? 'Unmute video' : 'Mute video'}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.creatorMenuRow}
@@ -989,7 +1013,7 @@ export default function VideoCard({
               accessibilityLabel={isBookmarked ? 'Remove video from saved' : 'Save video'}
             >
               <Ionicons name={isBookmarked ? 'bookmark' : 'bookmark-outline'} size={22} color={COLORS.cyan} />
-              <Text style={styles.creatorMenuText}>{isBookmarked ? 'Remove from saved' : 'Save'}</Text>
+              <Text style={[styles.creatorMenuText, { color: COLORS.text }]}>{isBookmarked ? 'Remove from saved' : 'Save'}</Text>
             </TouchableOpacity>
             {!isOwnVideo && (
               <TouchableOpacity
@@ -998,17 +1022,17 @@ export default function VideoCard({
                 accessibilityRole="button"
                 accessibilityLabel="Report video"
               >
-                <Ionicons name="flag-outline" size={22} color="#FF5B67" />
-                <Text style={styles.creatorMenuText}>Report video</Text>
+                <Ionicons name="flag-outline" size={22} color={COLORS.pink} />
+                <Text style={[styles.creatorMenuText, { color: COLORS.text }]}>Report video</Text>
               </TouchableOpacity>
             )}
 
             {isOwnVideo ? (
               <>
                 <View style={styles.statsRow}>
-                  <Text style={styles.statsText}>Views  {viewCount}</Text>
-                  <Text style={styles.statsText}>Likes  {likes}</Text>
-                  <Text style={styles.statsText}>Comments  {commentCount}</Text>
+                  <Text style={[styles.statsText, { color: COLORS.text }]}>Views  {viewCount}</Text>
+                  <Text style={[styles.statsText, { color: COLORS.text }]}>Likes  {likes}</Text>
+                  <Text style={[styles.statsText, { color: COLORS.text }]}>Comments  {commentCount}</Text>
                 </View>
 
                 <TouchableOpacity
@@ -1021,7 +1045,7 @@ export default function VideoCard({
                   }}
                 >
                   <Ionicons name="create-outline" size={22} color={COLORS.cyan} />
-                  <Text style={styles.creatorMenuText}>Edit caption & category</Text>
+                  <Text style={[styles.creatorMenuText, { color: COLORS.text }]}>Edit caption & category</Text>
                   <Ionicons name="chevron-forward" size={19} color={COLORS.muted} />
                 </TouchableOpacity>
 
@@ -1029,15 +1053,15 @@ export default function VideoCard({
                   <View style={styles.creatorMenuRow}>
                     <Ionicons name={isPrivate ? 'lock-closed-outline' : 'globe-outline'} size={22} color={COLORS.cyan} />
                     <View style={styles.privacyLabel}>
-                      <Text style={styles.creatorMenuText}>{isPrivate ? 'Private video' : 'Public video'}</Text>
+                      <Text style={[styles.creatorMenuText, { color: COLORS.text }]}>{isPrivate ? 'Private video' : 'Public video'}</Text>
                       <Text style={styles.privacyHint}>Only you can see a private video</Text>
                     </View>
                     <Switch
                       value={!isPrivate}
                       onValueChange={() => togglePrivacy(item.$id, isPrivate)}
                       disabled={isUpdatingPrivacy}
-                      trackColor={{ false: '#444', true: COLORS.cyan }}
-                      thumbColor="#fff"
+                      trackColor={{ false: COLORS.bg, true: COLORS.cyan }}
+                      thumbColor={COLORS.text}
                       accessibilityLabel="Make video public"
                     />
                   </View>
@@ -1051,14 +1075,14 @@ export default function VideoCard({
                   {isSavingToDevice
                     ? <ActivityIndicator size="small" color={COLORS.cyan} />
                     : <Ionicons name="download-outline" size={22} color={COLORS.cyan} />}
-                  <Text style={styles.creatorMenuText}>Save to device</Text>
+                  <Text style={[styles.creatorMenuText, { color: COLORS.text }]}>Save to device</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.creatorMenuRow} onPress={shareVideo} disabled={isSharingVideo}>
                   {isSharingVideo
                     ? <ActivityIndicator size="small" color={COLORS.cyan} />
                     : <Ionicons name="share-outline" size={22} color={COLORS.cyan} />}
-                  <Text style={styles.creatorMenuText}>Share video</Text>
+                  <Text style={[styles.creatorMenuText, { color: COLORS.text }]}>Share video</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -1066,10 +1090,10 @@ export default function VideoCard({
                   onPress={confirmDeleteVideo}
                   disabled={isDeletingVideo}
                 >
-                  {isDeletingVideo
-                    ? <ActivityIndicator size="small" color="#FF5B67" />
-                    : <Ionicons name="trash-outline" size={22} color="#FF5B67" />}
-                  <Text style={[styles.creatorMenuText, styles.deleteMenuText]}>Delete video</Text>
+                    {isDeletingVideo
+                      ? <ActivityIndicator size="small" color={COLORS.pink} />
+                      : <Ionicons name="trash-outline" size={22} color={COLORS.pink} />}
+                  <Text style={[styles.creatorMenuText, styles.deleteMenuText, { color: COLORS.text }]}>Delete video</Text>
                 </TouchableOpacity>
               </>
             ) : (
@@ -1082,18 +1106,18 @@ export default function VideoCard({
                   {isSharingVideo
                     ? <ActivityIndicator size="small" color={COLORS.cyan} />
                     : <Ionicons name="share-outline" size={22} color={COLORS.cyan} />}
-                  <Text style={styles.creatorMenuText}>Share video</Text>
+                  <Text style={[styles.creatorMenuText, { color: COLORS.text }]}>Share video</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.creatorMenuRow, styles.deleteMenuRow]}
                   onPress={blockCreator}
                 >
-                  <Ionicons name="person-remove-outline" size={22} color="#FF5B67" />
-                  <Text style={[styles.creatorMenuText, styles.deleteMenuText]}>Block User</Text>
+                  <Ionicons name="person-remove-outline" size={22} color={COLORS.pink} />
+                  <Text style={[styles.creatorMenuText, styles.deleteMenuText, { color: COLORS.text }]}>Block User</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.creatorMenuRow} onPress={hideVideo}>
                   <Ionicons name="eye-off-outline" size={22} color={COLORS.cyan} />
-                  <Text style={styles.creatorMenuText}>Not interested</Text>
+                  <Text style={[styles.creatorMenuText, { color: COLORS.text }]}>Not interested</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -1112,10 +1136,10 @@ export default function VideoCard({
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <View style={styles.editModal}>
-            <Text style={styles.sheetTitle}>Edit video</Text>
+            <Text style={[styles.sheetTitle, { color: COLORS.text }]}>Edit video</Text>
             <Text style={styles.editLabel}>Caption</Text>
             <TextInput
-              style={[styles.editInput, styles.captionInput]}
+              style={[styles.editInput, styles.captionInput, { color: COLORS.text }]}
               value={videoCaption}
               onChangeText={setVideoCaption}
               placeholder="Write a caption"
@@ -1125,7 +1149,7 @@ export default function VideoCard({
             />
             <Text style={styles.editLabel}>Category</Text>
             <TextInput
-              style={styles.editInput}
+              style={[styles.editInput, { color: COLORS.text }]}
               value={videoCategory}
               onChangeText={setVideoCategory}
               placeholder="General"
@@ -1138,7 +1162,7 @@ export default function VideoCard({
                 onPress={() => setEditDetailsVisible(false)}
                 disabled={isSavingDetails}
               >
-                <Text style={styles.cancelText}>Cancel</Text>
+                <Text style={[styles.cancelText, { color: COLORS.text }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.saveButton}
@@ -1155,9 +1179,9 @@ export default function VideoCard({
                 }}
                 disabled={isSavingDetails}
               >
-                {isSavingDetails
-                  ? <ActivityIndicator size="small" color="#000" />
-                  : <Text style={styles.saveText}>Save</Text>}
+                  {isSavingDetails
+                    ? <ActivityIndicator size="small" color={COLORS.bg} />
+                    : <Text style={[styles.saveText, { color: COLORS.bg }]}>Save</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -1170,7 +1194,7 @@ export default function VideoCard({
 const shadow = { textShadowColor: 'rgba(0, 0, 0, 0.7)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 5 };
 
 const styles = StyleSheet.create({
-  card: { width: '100%', justifyContent: 'flex-end', backgroundColor: '#000' },
+  card: { width: '100%', justifyContent: 'flex-end', backgroundColor: COLORS.bg },
   centerScreen: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', zIndex: 5 },
     swipeSurface: { ...StyleSheet.absoluteFillObject },
   videoTouchArea: { ...StyleSheet.absoluteFillObject },
@@ -1187,7 +1211,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 36,
     backgroundColor: 'rgba(0,0,0,0.42)',
   },
-  playerErrorText: { color: '#fff', fontSize: 14, textAlign: 'center' },
+  playerErrorText: { color: COLORS.text, fontSize: 14, textAlign: 'center' },
   playWithSoundButton: {
     position: 'absolute',
     top: '50%',
@@ -1202,7 +1226,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.45)',
   },
-  playWithSoundText: { color: '#fff', fontSize: 14, fontWeight: '700', marginLeft: 8 },
+  playWithSoundText: { color: COLORS.text, fontSize: 14, fontWeight: '700', marginLeft: 8 },
 
   // Gradient overlay at bottom
   bottomGradient: {
@@ -1232,26 +1256,18 @@ const styles = StyleSheet.create({
       marginHorizontal: 4,
       backgroundColor: 'rgba(255,255,255,0.35)',
     },
-  moreOptionsButton: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.48)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
-    zIndex: 12,
-  },
-
+  postHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%', marginBottom: 6 },
+  moreOptionsHeader: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.48)', marginTop: 2 },
+  moreOptionsIcon: { marginTop: 2 },
+  verifyBadge: { marginLeft: 4 },
   bottomOverlay: { position: 'absolute', left: 15, right: 80, zIndex: 10 },
   creatorHandleRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', maxWidth: '100%', gap: 6 },
-  username: { flexShrink: 1, color: '#fff', fontSize: 17, fontWeight: '800', ...shadow },
-  caption: { color: '#fff', fontSize: 15, lineHeight: 20, fontWeight: '400', marginBottom: 2, ...shadow },
+  username: { flexShrink: 1, color: COLORS.text, fontSize: 17, fontWeight: '800', ...shadow },
+  caption: { color: COLORS.text, fontSize: 15, lineHeight: 20, fontWeight: '400', marginBottom: 2, ...shadow },
   hashtags: { color: COLORS.cyan, fontSize: 14, fontWeight: '600', marginBottom: 6, ...shadow },
   soundContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
-  soundText: { color: '#fff', fontSize: 13, marginLeft: 5, ...shadow },
-  viewCount: { color: '#fff', fontSize: 12, fontWeight: '600', marginTop: 5, ...shadow },
+  soundText: { color: COLORS.text, fontSize: 13, marginLeft: 5, ...shadow },
+  viewCount: { color: COLORS.text, fontSize: 12, fontWeight: '600', marginTop: 5, ...shadow },
   rightOverlay: {
     position: 'absolute',
     right: 15,
@@ -1260,17 +1276,6 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     alignItems: 'center',
     zIndex: 10,
-  },
-  muteButton: {
-    width: 42,
-    height: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 15,
-    borderRadius: 21,
-    backgroundColor: 'rgba(0,0,0,0.48)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
   },
 
   avatarSection: {
@@ -1282,7 +1287,7 @@ const styles = StyleSheet.create({
     width: 54,
     height: 54,
     borderWidth: 2,
-    borderColor: '#fff',
+    borderColor: COLORS.border,
     borderRadius: 27,
     padding: 1,
   },
@@ -1297,7 +1302,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#fff',
+    borderColor: COLORS.border,
   },
   followingButton: { backgroundColor: COLORS.cyan },
 
@@ -1310,7 +1315,7 @@ const styles = StyleSheet.create({
   },
   actionText: {
     width: '100%',
-    color: '#fff',
+    color: COLORS.text,
     fontSize: 12,
     fontWeight: '600',
     textAlign: 'center',
@@ -1322,7 +1327,7 @@ const styles = StyleSheet.create({
 
   sheetBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.62)' },
   creatorSheet: {
-    backgroundColor: '#171720',
+    backgroundColor: COLORS.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: 20,
@@ -1330,9 +1335,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderColor: COLORS.border,
   },
-  sheetHandle: { width: 42, height: 4, borderRadius: 2, backgroundColor: '#555', alignSelf: 'center', marginBottom: 14 },
+  sheetHandle: { width: 42, height: 4, borderRadius: 2, backgroundColor: COLORS.muted, alignSelf: 'center', marginBottom: 14 },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
-  sheetTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  sheetTitle: { color: COLORS.text, fontSize: 18, fontWeight: '700' },
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1342,7 +1347,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: 8,
   },
-  statsText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  statsText: { color: COLORS.text, fontSize: 12, fontWeight: '600' },
   creatorMenuRow: {
     minHeight: 54,
     flexDirection: 'row',
@@ -1351,13 +1356,13 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.border,
     gap: 14,
   },
-  creatorMenuText: { flex: 1, color: '#fff', fontSize: 15, fontWeight: '600' },
+  creatorMenuText: { flex: 1, color: COLORS.text, fontSize: 15, fontWeight: '600' },
   privacyLabel: { flex: 1 },
   privacyHint: { color: COLORS.muted, fontSize: 11, marginTop: 3 },
   deleteMenuRow: { borderBottomWidth: 0, marginTop: 2 },
-  deleteMenuText: { color: '#FF5B67' },
+  deleteMenuText: { color: COLORS.pink },
   editModalBackdrop: { flex: 1, justifyContent: 'center', padding: 22, backgroundColor: 'rgba(0,0,0,0.72)' },
-  editModal: { backgroundColor: '#171720', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: COLORS.border },
+  editModal: { backgroundColor: COLORS.card, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: COLORS.border },
   editLabel: { color: COLORS.muted, fontSize: 13, fontWeight: '600', marginTop: 16, marginBottom: 7 },
   editInput: {
     minHeight: 46,
@@ -1365,7 +1370,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bg,
     borderWidth: 1,
     borderColor: COLORS.border,
-    color: '#fff',
+    color: COLORS.text,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 15,
@@ -1373,7 +1378,7 @@ const styles = StyleSheet.create({
   captionInput: { minHeight: 94, textAlignVertical: 'top' },
   editActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 20 },
   cancelButton: { paddingHorizontal: 18, paddingVertical: 11, borderRadius: 9, backgroundColor: COLORS.card },
-  cancelText: { color: '#fff', fontWeight: '600' },
+  cancelText: { color: COLORS.text, fontWeight: '600' },
   saveButton: { minWidth: 76, alignItems: 'center', paddingHorizontal: 18, paddingVertical: 11, borderRadius: 9, backgroundColor: COLORS.cyan },
-  saveText: { color: '#000', fontWeight: '700' },
+  saveText: { color: COLORS.bg, fontWeight: '700' },
 });

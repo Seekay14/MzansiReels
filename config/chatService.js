@@ -1,53 +1,28 @@
 import { databases, ID, Query } from './appwrite';
 import { COLLECTIONS, DATABASE_ID } from './constants';
 
-// Helper to get a user's Document ID from their Auth ID
-async function getUserDocId(authUserId) {
-  const res = await databases.listDocuments(DATABASE_ID, COLLECTIONS.users, [
-    Query.equal('userId', authUserId),
-    Query.limit(1),
-  ]);
-  if (!res.documents[0]) throw new Error('User profile not found');
-  return res.documents[0].$id; // This is the Document ID needed for the relationship
-}
-
-// Helper to handle both String and Array formats for participants
-function getParticipantIds(participants) {
-  if (Array.isArray(participants)) return participants;
-  if (typeof participants === 'string') {
-    return participants.split(',').map(id => id.trim()).filter(Boolean);
-  }
-  return [];
-}
-
 export async function getOrCreateChat(currentUserId, targetUserId) {
   if (!currentUserId || !targetUserId || currentUserId === targetUserId) {
     throw new Error('A valid current user and target user are required.');
   }
 
   try {
-    // 1. Get the Document IDs for both users (Required for Relationships)
-    const currentUserDocId = await getUserDocId(currentUserId);
-    const targetUserDocId = await getUserDocId(targetUserId);
+    // 1. Create the string of participants (sorted so it's always the same)
+    const participantString = [currentUserId, targetUserId].sort().join(',');
 
-    // 2. Search for a chat that contains the current user's Document ID
+    // 2. Search for an existing chat with this exact string
     const result = await databases.listDocuments(DATABASE_ID, COLLECTIONS.chats, [
-      Query.contains('participants', currentUserDocId),
-      Query.orderDesc('updatedAt'),
-      Query.limit(100),
+      Query.equal('participants', participantString),
+      Query.limit(1),
     ]);
 
-    // 3. Find the one that ALSO contains the target user's Document ID
-    const existingChat = result.documents.find((chat) => {
-      const ids = getParticipantIds(chat.participants);
-      return ids.includes(targetUserDocId);
-    });
+    if (result.documents[0]) {
+      return result.documents[0];
+    }
 
-    if (existingChat) return existingChat;
-
-    // 4. Create a new chat using the Document IDs
+    // 3. Create a new chat
     return await databases.createDocument(DATABASE_ID, COLLECTIONS.chats, ID.unique(), {
-      participants: [currentUserDocId, targetUserDocId], // Array of Document IDs
+      participants: participantString,
       lastMessage: 'Chat started',
       updatedAt: new Date().toISOString(),
     });
@@ -64,6 +39,7 @@ export async function sendMessage(chatId, senderId, receiverId, text) {
 
   const cleanText = text.trim();
   try {
+    // 1. Create the message
     const message = await databases.createDocument(
       DATABASE_ID,
       COLLECTIONS.messages,
@@ -71,6 +47,7 @@ export async function sendMessage(chatId, senderId, receiverId, text) {
       { chatId, senderId, receiverId, text: cleanText, isRead: false },
     );
 
+    // 2. Update the chat's last message
     await databases.updateDocument(DATABASE_ID, COLLECTIONS.chats, chatId, {
       lastMessage: cleanText,
       updatedAt: new Date().toISOString(),

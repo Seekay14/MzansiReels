@@ -37,14 +37,14 @@ export default function AnalyticsModal({ visible, post, commentCount, onClose })
             <View style={styles.headerIcon}>
               <Ionicons name="bar-chart-outline" size={20} color={COLORS.cyan} />
             </View>
-            <Text style={styles.title}>Post Analytics</Text>
+            <Text style={[styles.title, { color: COLORS.text }]}>Post Analytics</Text>
             <TouchableOpacity
               style={styles.closeButton}
               onPress={onClose}
               accessibilityRole="button"
               accessibilityLabel="Close post analytics"
             >
-              <Ionicons name="close" size={21} color="#AAB1BA" />
+              <Ionicons name="close" size={21} color={COLORS.muted} />
             </TouchableOpacity>
           </View>
 
@@ -54,12 +54,12 @@ export default function AnalyticsModal({ visible, post, commentCount, onClose })
                 <View style={[styles.statIcon, { backgroundColor: `${item.color}1A` }]}>
                   <Ionicons name={item.icon} size={20} color={item.color} />
                 </View>
-                <Text style={styles.statValue}>{stats[item.key].toLocaleString()}</Text>
-                <Text style={styles.statLabel}>{item.label}</Text>
+                <Text style={[styles.statValue, { color: COLORS.text }]}>{stats[item.key].toLocaleString()}</Text>
+                <Text style={[styles.statLabel, { color: COLORS.muted }]}>{item.label}</Text>
               </View>
             ))}
           </View>
-          <Text style={styles.note}>Analytics are updated in real-time.</Text>
+          <Text style={[styles.note, { color: COLORS.muted }]}>Analytics are updated in real-time.</Text>
         </View>
       </View>
     </Modal>
@@ -79,9 +79,9 @@ const styles = StyleSheet.create({
     maxWidth: 420,
     padding: 20,
     borderWidth: 1,
-    borderColor: '#2A3038',
+    borderColor: COLORS.border,
     borderRadius: 22,
-    backgroundColor: '#12151B',
+    backgroundColor: COLORS.card,
   },
   header: {
     flexDirection: 'row',
@@ -99,7 +99,7 @@ const styles = StyleSheet.create({
   title: {
     flex: 1,
     marginLeft: 11,
-    color: '#F3F5F7',
+    color: '#fff',
     fontSize: 18,
     fontWeight: '800',
   },
@@ -109,7 +109,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 17,
-    backgroundColor: '#20242C',
+    backgroundColor: COLORS.card,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -122,9 +122,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 14,
     borderWidth: 1,
-    borderColor: '#282D35',
+    borderColor: COLORS.border,
     borderRadius: 16,
-    backgroundColor: '#191D24',
+    backgroundColor: COLORS.card,
   },
   statIcon: {
     width: 34,
@@ -135,20 +135,21 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   statValue: {
-    color: '#F5F7F9',
+    color: '#fff',
     fontSize: 22,
     fontWeight: '900',
   },
   statLabel: {
-    color: '#939DA8',
+    color: COLORS.muted,
     fontSize: 12,
     fontWeight: '600',
     marginTop: 2,
   },
   note: {
-    color: '#7D8792',
+    color: COLORS.muted,
     fontSize: 11,
     textAlign: 'center',
     marginTop: 18,
   },
 });
+

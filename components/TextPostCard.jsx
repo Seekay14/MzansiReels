@@ -20,7 +20,6 @@ import AnalyticsModal from './AnalyticsModal';
 import PostCommentModal from './PostCommentModal';
 import ShareModal from './ShareModal';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useTheme } from '../context/ThemeContext';
 import { useResponsiveLayout } from '../config/responsive';
 
 function InlinePostVideo({ uri }) {
@@ -77,7 +76,6 @@ export default function TextPostCard({
   desktop = false,
 }) {
   const currentUser = currentUserProp === undefined ? user : currentUserProp;
-  const { colors } = useTheme();
   const [likes, setLikes] = useState(Number(post.likes) || 0);
   const [views, setViews] = useState(Number(post.views) || 0);
   const [shares, setShares] = useState(Number(post.shares) || 0);
@@ -302,9 +300,9 @@ export default function TextPostCard({
     <>
       <View style={[
         styles.card,
-        { backgroundColor: colors.card, borderColor: colors.border },
+        { backgroundColor: COLORS.card, borderColor: COLORS.border },
         desktop && styles.desktopCard,
-        desktop && { backgroundColor: colors.card, borderColor: colors.border },
+        desktop && { backgroundColor: COLORS.card, borderColor: COLORS.border },
       ]}>
         <View style={styles.postHeader}>
           <TouchableOpacity
@@ -328,13 +326,13 @@ export default function TextPostCard({
               accessibilityRole="button"
               accessibilityLabel={`View ${post.userName || 'creator'} profile`}
             >
-              <Text style={[styles.authorName, { color: colors.text }]}>{authorProfile?.name || authorProfile?.username || post.userName || 'User'}</Text>
+              <Text style={[styles.authorName, { color: COLORS.text }]}>{authorProfile?.name || authorProfile?.username || post.userName || 'User'}</Text>
               {authorVerified ? (
                 <Ionicons name="checkmark-circle" size={15} color={COLORS.cyan} />
               ) : null}
             </TouchableOpacity>
             <View style={styles.postMeta}>
-              <Text style={[styles.postTime, { color: colors.muted }]}>{postedAt ? timeAgo(postedAt) : 'Recently'}</Text>
+              <Text style={[styles.postTime, { color: COLORS.muted }]}>{postedAt ? timeAgo(postedAt) : 'Recently'}</Text>
               {isOwner ? (
                 <>
                   <TouchableOpacity
@@ -345,7 +343,7 @@ export default function TextPostCard({
                   >
                     <Ionicons name="bar-chart-outline" size={14} color={COLORS.cyan} />
                   </TouchableOpacity>
-                  <Text style={[styles.postTime, { color: colors.muted }]}> · {formatNumber(views)} Views</Text>
+                  <Text style={[styles.postTime, { color: COLORS.muted }]}> · {formatNumber(views)} Views</Text>
                 </>
               ) : null}
             </View>
@@ -378,7 +376,7 @@ export default function TextPostCard({
             </TouchableOpacity>
           </View>
         ) : null}
-        {post.content ? <Text style={[styles.postContent, { color: colors.text }]}>{post.content}</Text> : null}
+        {post.content ? <Text style={[styles.postContent, { color: COLORS.text }]}>{post.content}</Text> : null}
         {post.postType === 'image' && post.imageUrl ? (
           <Image source={{ uri: post.imageUrl }} style={styles.postImage} resizeMode="cover" />
         ) : null}
@@ -434,7 +432,7 @@ export default function TextPostCard({
               </TouchableOpacity>
             </View>
           ) : (
-            <Text style={[styles.guestReadOnlyText, { color: colors.muted }]}>
+            <Text style={[styles.guestReadOnlyText, { color: COLORS.muted }]}>
               Guest view · Sign in to interact
             </Text>
           )}
@@ -536,14 +534,14 @@ export default function TextPostCard({
 const styles = StyleSheet.create({
   card: { paddingTop: 14, paddingHorizontal: 15, paddingBottom: 8, marginHorizontal: 10, marginBottom: 11, borderWidth: 1, borderColor: '#252A33', borderRadius: 16, backgroundColor: '#14171E' },
   desktopCard: { width: '100%', maxWidth: 600, alignSelf: 'center', marginHorizontal: 0, marginVertical: 8, borderRadius: 8, borderColor: '#3A3B3C', backgroundColor: '#242526' },
-  postHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 11 },
+  postHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 11 },
   authorInfo: { flex: 1, marginLeft: 10 },
   authorNameRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 5 },
   authorName: { color: '#F2F4F6', fontSize: 14, fontWeight: '800' },
   postMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
   postTime: { color: '#858E99', fontSize: 10 },
   analyticsButton: { width: 23, height: 20, alignItems: 'center', justifyContent: 'center', marginLeft: 5 },
-  optionsButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18 },
+  optionsButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, marginTop: 2 },
   postContent: { color: '#E1E5E9', fontSize: 14, lineHeight: 21, marginBottom: 11 },
   sharedFromBanner: { flexDirection: 'row', alignItems: 'center', marginBottom: 9, paddingVertical: 5 },
   sharedFromPrefix: { color: '#9BA4AE', fontSize: 12, marginLeft: 7 },
@@ -575,3 +573,4 @@ const styles = StyleSheet.create({
   cancelButton: { minHeight: 45, alignItems: 'center', justifyContent: 'center', marginTop: 10, borderRadius: 12, backgroundColor: '#242932' },
   cancelText: { color: '#F1F4F7', fontSize: 14, fontWeight: '800' },
 });
+

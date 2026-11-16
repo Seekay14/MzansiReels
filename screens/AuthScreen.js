@@ -138,7 +138,11 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [pendingAccount, setPendingAccount] = useState(null);
+  const [otpUserId, setOtpUserId] = useState('');
+  const [otpEmail, setOtpEmail] = useState('');
   const welcomeOpacity = useRef(new Animated.Value(0)).current;
+  const signupOpacity = useRef(new Animated.Value(0)).current;
+  const signupTranslate = useRef(new Animated.Value(30)).current;
 
   useEffect(() => {
     if (!pendingAccount) return undefined;
@@ -195,6 +199,17 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
   }, [logoScale]);
 
   useEffect(() => {
+    if (activeTab !== 'signup') return undefined;
+    signupOpacity.setValue(0);
+    signupTranslate.setValue(30);
+    Animated.parallel([
+      Animated.timing(signupOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
+      Animated.timing(signupTranslate, { toValue: 0, duration: 500, useNativeDriver: true }),
+    ]).start();
+    return undefined;
+  }, [activeTab, signupOpacity, signupTranslate]);
+
+  useEffect(() => {
     let active = true;
     let timer;
 
@@ -240,61 +255,61 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
     setLoading(true);
     setMessage('');
     try {
-      console.log('LOGIN STEP 1: Creating email/password session');
-      const session = await account.createEmailPasswordSession(normalizedEmail, loginPassword);
-      if (!session?.$id || !session?.userId) {
-        throw new Error('Appwrite returned a session without its session ID or user ID.');
+      // STEP 1: Verify password by creating a session, then immediately logging out.
+      console.log('OTP LOGIN STEP 1: Creating email/password session');
+      await account.createEmailPasswordSession(normalizedEmail, loginPassword);
+      console.log('OTP LOGIN STEP 1: Deleting session');
+      await account.deleteSession('current');
+
+      // STEP 2: Send a 6-digit OTP code to the email.
+      console.log('OTP LOGIN STEP 2: Creating email token');
+      const token = await account.createEmailToken(ID.unique(), normalizedEmail);
+      if (!token?.$id) {
+        throw new Error('Appwrite did not return an email token.');
       }
-      console.log('SESSION CREATED:', {
-        sessionId: session.$id,
-        userId: session.userId,
-      });
-
-      // Persist the remember-me preference.
-      try {
-        if (rememberMe) {
-          await AsyncStorage.setItem(REMEMBERED_EMAIL_KEY, normalizedEmail);
-        } else {
-          await AsyncStorage.removeItem(REMEMBERED_EMAIL_KEY);
-        }
-      } catch (storageError) {
-        console.error('Could not save the remember-me preference:', storageError);
-      }
-
-      // Load the user profile from the database using session.userId.
-      // Bypass account.get() entirely; session.userId is the authenticated user ID.
-      const response = await databases.listDocuments(DATABASE_ID, COLLECTIONS.users, [
-        Query.equal('userId', session.userId),
-        Query.limit(1),
-      ]);
-      const userProfile = response.documents[0];
-      if (!userProfile) {
-        throw new Error('User profile not found in database.');
-      }
-      if (userProfile.userId !== session.userId) {
-        throw new Error('The loaded profile does not match the authenticated session.');
-      }
-
-      // Build the Appwrite user record from the session (no account.get() call).
-      const currentUser = {
-        $id: session.userId,
-        email: normalizedEmail,
-        name: userProfile.name || '',
-        status: true,
-      };
-
-      // Update the application auth state with the verified user.
-      await setUser(currentUser, {
-        profile: userProfile,
-        skipOnboarding: userProfile.profileSetupComplete === true,
-      });
-
-      console.log('LOGIN STEP 2 COMPLETE: User profile loaded and saved');
+      setOtpUserId(token.userId);
+      setOtpEmail(normalizedEmail);
+      navigation.navigate('OTPScreen', { otpUserId: token.userId, otpEmail: normalizedEmail });
+      console.log('OTP LOGIN STEP 2: OTP sent to', normalizedEmail);
     } catch (error) {
-      logAuthError(error, 'session creation');
+      logAuthError(error, 'otp login');
       const errorMessage = error?.message || 'An unexpected error occurred.';
       showLoginError({ message: errorMessage });
       setMessage(`Login Failed: ${errorMessage}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyOtp = async (otpCode) => {
+    if (!otpUserId) return setMessage('Session expired. Please try logging in again.');
+    if (!otpCode || otpCode.length !== 6) return setMessage('Please enter a valid 6-digit code.');
+    setLoading(true);
+    setMessage('');
+    try {
+      // STEP 3: Verify the OTP code and create the authenticated session.
+      console.log('OTP LOGIN STEP 3: Verifying OTP');
+      await account.createSession(otpUserId, otpCode);
+      console.log('OTP LOGIN STEP 3: Session created, fetching user');
+
+      // Fetch the authenticated user profile.
+      const currentUser = await account.get();
+      const authUser = {
+        $id: currentUser.$id,
+        email: currentUser.email || otpEmail,
+        name: currentUser.name || '',
+        status: true,
+      };
+
+      // Save user to Auth Context and navigate to Home.
+      await setUser(authUser);
+      console.log('OTP LOGIN STEP 3 COMPLETE: User saved and navigating home');
+      navigation.navigate('Home');
+    } catch (error) {
+      logAuthError(error, 'otp verification');
+      const errorMessage = error?.message || 'An unexpected error occurred.';
+      showLoginError({ message: errorMessage });
+      setMessage(`OTP Verification Failed: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -425,7 +440,7 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
         <Animated.View style={[styles.welcomeContent, { opacity: welcomeOpacity }]}>
           <View style={styles.welcomeBrand}>
             <Ionicons name="videocam" size={30} color={COLORS.cyan} />
-            <Text style={styles.welcomeBrandText}>MzansiReels</Text>
+            <Text style={[styles.welcomeBrandText, { color: COLORS.text }]}>MzansiReels</Text>
           </View>
 
           <Avatar
@@ -436,7 +451,7 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
             bordered
             style={styles.welcomeAvatar}
           />
-          <Text style={styles.welcomeTitle}>Welcome back, {displayName}!</Text>
+          <Text style={[styles.welcomeTitle, { color: COLORS.text }]}>Welcome back, {displayName}!</Text>
           <Text style={styles.welcomeEmail}>{user.email}</Text>
 
           <TouchableOpacity
@@ -445,8 +460,8 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
             disabled={loading}
             accessibilityRole="button"
           >
-            <Text style={styles.continueButtonText}>Continue as {displayName}</Text>
-            <Ionicons name="arrow-forward" size={20} color="#001014" />
+            <Text style={[styles.continueButtonText, { color: COLORS.text }]}>Continue as {displayName}</Text>
+            <Ionicons name="arrow-forward" size={20} color={COLORS.text} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -458,7 +473,7 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
             {loading ? (
               <ActivityIndicator size="small" color={COLORS.cyan} />
             ) : (
-              <Text style={styles.switchAccountText}>Not you? Log in to a different account</Text>
+              <Text style={[styles.switchAccountText, { color: COLORS.muted }]}>Not you? Log in to a different account</Text>
             )}
           </TouchableOpacity>
           {!!message && <Text style={styles.message}>{message}</Text>}
@@ -486,8 +501,8 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
       >
         <Animated.View style={[styles.logoContainer, { marginBottom: 22 * scale, transform: [{ scale: logoScale }] }]}>
           <Ionicons name="videocam" size={60 * scale} color={COLORS.cyan} />
-          <Text style={[styles.logoText, { fontSize: 32 * scale }]}>MzansiReels</Text>
-          <Animated.Text style={[styles.brandSubtitle, { opacity: subtitleOpacity }]}>
+          <Text style={[styles.logoText, { color: COLORS.text, fontSize: 32 * scale }]}>MzansiReels</Text>
+          <Animated.Text style={[styles.brandSubtitle, { opacity: subtitleOpacity, color: COLORS.muted }]}>
             {subtitles[subtitleIndex]}
           </Animated.Text>
         </Animated.View>
@@ -496,7 +511,7 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
           <BlurView intensity={18} tint="dark" style={StyleSheet.absoluteFill} />
           <View style={[styles.authCardContent, { padding: 25 * scale }]}>
             <View
-              style={styles.tabContainer}
+              style={[styles.tabContainer, { borderBottomColor: COLORS.border }]}
               onLayout={(event) => setTabWidth(event.nativeEvent.layout.width / 3)}
             >
               <Animated.View
@@ -531,12 +546,12 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
 
         {activeTab === 'login' && (
           <>
-            <View style={[styles.iconInputRow, focusedInput === 'loginEmail' && styles.inputFocused]}>
-              <Ionicons name="mail-outline" size={19} color="#8C969E" style={styles.inputLeadingIcon} />
+            <View style={[styles.iconInputRow, { borderColor: COLORS.border, backgroundColor: COLORS.card },focusedInput === 'loginEmail' && styles.inputFocused]}>
+              <Ionicons name="mail-outline" size={19} color={COLORS.muted} style={styles.inputLeadingIcon} />
               <TextInput
-                style={styles.iconInput}
+                style={[styles.iconInput, { color: COLORS.text }]}
                 placeholder="Email"
-                placeholderTextColor="#888"
+                placeholderTextColor={COLORS.muted}
                 value={email}
                 onChangeText={setEmail}
                 onFocus={() => setFocusedInput('loginEmail')}
@@ -546,12 +561,12 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
                 autoComplete="email"
               />
             </View>
-            <View style={[styles.iconInputRow, styles.loginPasswordInputRow, focusedInput === 'loginPassword' && styles.inputFocused]}>
-              <Ionicons name="lock-closed-outline" size={19} color="#8C969E" style={styles.inputLeadingIcon} />
+            <View style={[styles.iconInputRow, { borderColor: COLORS.border, backgroundColor: COLORS.card },styles.loginPasswordInputRow, focusedInput === 'loginPassword' && styles.inputFocused]}>
+              <Ionicons name="lock-closed-outline" size={19} color={COLORS.muted} style={styles.inputLeadingIcon} />
               <TextInput
-                style={styles.iconInput}
+                style={[styles.iconInput, { color: COLORS.text }]}
                 placeholder="Password"
-                placeholderTextColor="#888"
+                placeholderTextColor={COLORS.muted}
                 value={password}
                 onChangeText={setPassword}
                 onFocus={() => setFocusedInput('loginPassword')}
@@ -565,7 +580,7 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
                 accessibilityRole="button"
                 accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
               >
-                <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={21} color="#8C969E" />
+                <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={21} color={COLORS.muted} />
               </TouchableOpacity>
             </View>
             <View style={styles.loginOptionsRow}>
@@ -576,9 +591,9 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
                 accessibilityState={{ checked: rememberMe }}
               >
                 <View style={[styles.checkbox, rememberMe && styles.checkboxSelected]}>
-                  {rememberMe && <Ionicons name="checkmark" size={14} color="#001014" />}
+                  {rememberMe && <Ionicons name="checkmark" size={14} color={COLORS.text} />}
                 </View>
-                <Text style={styles.rememberMeText}>Remember Me</Text>
+                <Text style={[styles.rememberMeText, { color: COLORS.muted }]}>Remember Me</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.forgotPasswordLink}
@@ -599,18 +614,25 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
         )}
 
         {activeTab === 'signup' && (
-          <>
+          <Animated.View style={[styles.signupWrapper, { opacity: signupOpacity, transform: [{ translateY: signupTranslate }] }]}>
+            <LinearGradient
+              colors={['#0B0E14', '#111827', '#0B0E14']}
+              locations={[0, 0.58, 1]}
+              style={styles.signupGradient}
+            />
+            <View style={styles.signupOrbTop} pointerEvents="none" />
+            <View style={styles.signupOrbBottom} pointerEvents="none" />
             <View style={styles.signupStepHeader}>
-              <Text style={styles.signupStepLabel}>CREATE YOUR ACCOUNT</Text>
-              <Text style={styles.signupStepTitle}>Start scrolling with Mzansi.</Text>
-              <Text style={styles.signupStepSubtitle}>A few details now. Your profile comes next.</Text>
+              <Text style={styles.signupStepLabel}>JOIN THE MZANSI</Text>
+              <Text style={[styles.signupStepTitle, { color: COLORS.text }]}>Create your account</Text>
+              <Text style={styles.signupStepSubtitle}>Your next favorite creator is one tap away.</Text>
             </View>
-            <View style={[styles.iconInputRow, focusedInput === 'signupName' && styles.inputFocused]}>
-              <Ionicons name="person-outline" size={19} color="#8C969E" style={styles.inputLeadingIcon} />
+            <View style={[styles.signupIconInputRow, { borderColor: COLORS.border, backgroundColor: 'rgba(255,255,255,0.03)' }, focusedInput === 'signupName' && styles.signupInputFocused]}>
+              <Ionicons name="person-outline" size={19} color={focusedInput === 'signupName' ? COLORS.cyan : '#8C969E'} style={styles.inputLeadingIcon} />
               <TextInput
-                style={styles.iconInput}
+                style={[styles.signupIconInput, { color: COLORS.text }]}
                 placeholder="Full name"
-                placeholderTextColor="#888"
+                placeholderTextColor={COLORS.muted}
                 value={fullName}
                 onChangeText={setFullName}
                 onFocus={() => setFocusedInput('signupName')}
@@ -619,12 +641,12 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
                 autoComplete="name"
               />
             </View>
-            <View style={[styles.iconInputRow, focusedInput === 'signupEmail' && styles.inputFocused]}>
-              <Ionicons name="mail-outline" size={19} color="#8C969E" style={styles.inputLeadingIcon} />
+            <View style={[styles.signupIconInputRow, { borderColor: COLORS.border, backgroundColor: 'rgba(255,255,255,0.03)' }, focusedInput === 'signupEmail' && styles.signupInputFocused]}>
+              <Ionicons name="mail-outline" size={19} color={focusedInput === 'signupEmail' ? COLORS.cyan : '#8C969E'} style={styles.inputLeadingIcon} />
               <TextInput
-                style={styles.iconInput}
+                style={[styles.signupIconInput, { color: COLORS.text }]}
                 placeholder="Email"
-                placeholderTextColor="#888"
+                placeholderTextColor={COLORS.muted}
                 value={email}
                 onChangeText={setEmail}
                 onFocus={() => setFocusedInput('signupEmail')}
@@ -634,12 +656,12 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
                 autoComplete="email"
               />
             </View>
-            <View style={[styles.iconInputRow, focusedInput === 'signupPassword' && styles.inputFocused]}>
-              <Ionicons name="lock-closed-outline" size={19} color="#8C969E" style={styles.inputLeadingIcon} />
+            <View style={[styles.signupIconInputRow, { borderColor: COLORS.border, backgroundColor: 'rgba(255,255,255,0.03)' }, focusedInput === 'signupPassword' && styles.signupInputFocused]}>
+              <Ionicons name="lock-closed-outline" size={19} color={focusedInput === 'signupPassword' ? COLORS.cyan : '#8C969E'} style={styles.inputLeadingIcon} />
               <TextInput
-                style={styles.iconInput}
+                style={[styles.signupIconInput, { color: COLORS.text }]}
                 placeholder="Password (min 8 characters)"
-                placeholderTextColor="#888"
+                placeholderTextColor={COLORS.muted}
                 value={password}
                 onChangeText={setPassword}
                 onFocus={() => setFocusedInput('signupPassword')}
@@ -653,15 +675,15 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
                 accessibilityRole="button"
                 accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
               >
-                <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={21} color="#8C969E" />
+                <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={21} color={focusedInput === 'signupPassword' ? COLORS.cyan : COLORS.muted} />
               </TouchableOpacity>
             </View>
-            <View style={[styles.iconInputRow, focusedInput === 'signupConfirmPassword' && styles.inputFocused]}>
-              <Ionicons name="lock-closed-outline" size={19} color="#8C969E" style={styles.inputLeadingIcon} />
+            <View style={[styles.signupIconInputRow, { borderColor: COLORS.border, backgroundColor: 'rgba(255,255,255,0.03)' }, focusedInput === 'signupConfirmPassword' && styles.signupInputFocused]}>
+              <Ionicons name="lock-closed-outline" size={19} color={focusedInput === 'signupConfirmPassword' ? COLORS.cyan : '#8C969E'} style={styles.inputLeadingIcon} />
               <TextInput
-                style={styles.iconInput}
+                style={[styles.signupIconInput, { color: COLORS.text }]}
                 placeholder="Confirm Password"
-                placeholderTextColor="#888"
+                placeholderTextColor={COLORS.muted}
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 onFocus={() => setFocusedInput('signupConfirmPassword')}
@@ -671,14 +693,18 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
               />
             </View>
             <TouchableOpacity
-              style={[styles.button, loading && styles.buttonLoading]}
+              style={[styles.signupButton, { backgroundColor: COLORS.cyan }]}
               onPress={() => registerUser(email, password, fullName)}
               disabled={loading}
               accessibilityRole="button"
             >
-              {loading ? <ActivityIndicator color="#000" /> : <Text style={styles.buttonText}>Create Account</Text>}
+              {loading ? <ActivityIndicator color={COLORS.bg} /> : <Text style={[styles.signupButtonText, { color: COLORS.bg }]}>Create Account</Text>}
             </TouchableOpacity>
-          </>
+            <TouchableOpacity style={styles.signupLoginLink} onPress={() => switchTab('login')}>
+              <Text style={[styles.signupLoginLinkText, { color: COLORS.text }]}>Already have an account?</Text>
+              <Text style={[styles.signupLoginLinkText, { color: COLORS.cyan, fontWeight: '800' }]}> Log In</Text>
+            </TouchableOpacity>
+          </Animated.View>
         )}
 
         {activeTab === 'otp' && (
@@ -765,7 +791,7 @@ const styles = StyleSheet.create({
   container: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, paddingVertical: 34 },
   logoContainer: { alignItems: 'center', marginBottom: 26 },
   logoText: { color: '#fff', fontSize: 32, fontWeight: 'bold', marginTop: 10, letterSpacing: -0.5 },
-  brandSubtitle: { color: '#9299A3', fontSize: 14, marginTop: 8, textAlign: 'center' },
+  brandSubtitle: { color: COLORS.muted, fontSize: 14, marginTop: 8, textAlign: 'center' },
   authCard: {
     width: '100%',
     maxWidth: 470,
@@ -773,25 +799,25 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    backgroundColor: 'rgba(26,26,30,0.82)',
-    shadowColor: '#000',
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.card,
+    shadowColor: COLORS.bg,
     shadowOpacity: 0.42,
     shadowRadius: 30,
     shadowOffset: { width: 0, height: 20 },
     elevation: 12,
   },
   authCardContent: { padding: 25, zIndex: 1 },
-  tabContainer: { position: 'relative', flexDirection: 'row', marginBottom: 27, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.09)' },
+  tabContainer: { position: 'relative', flexDirection: 'row', marginBottom: 27, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   tabIndicator: { position: 'absolute', bottom: -1, left: 0, height: 2, backgroundColor: COLORS.cyan, borderRadius: 2, zIndex: 1 },
   tab: { flex: 1, minHeight: 46, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 3 },
-  tabText: { color: '#858B95', fontWeight: '700', fontSize: 13 },
-  activeTabText: { color: '#F7FCFD' },
+  tabText: { color: COLORS.muted, fontWeight: '700', fontSize: 13 },
+  activeTabText: { color: COLORS.text },
   subtitle: { color: COLORS.muted, fontSize: 14, textAlign: 'center', marginBottom: 20 },
-  input: { backgroundColor: 'rgba(12,14,18,0.78)', color: '#fff', borderRadius: 12, padding: 18, marginBottom: 15, fontSize: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
+  input: { backgroundColor: COLORS.card, color: COLORS.text, borderRadius: 12, padding: 18, marginBottom: 15, fontSize: 16, borderWidth: 1, borderColor: COLORS.border },
   inputFocused: {
     borderColor: COLORS.cyan,
-    shadowColor: '#00E5FF',
+    shadowColor: COLORS.cyan,
     shadowOpacity: 0.18,
     shadowRadius: 9,
     shadowOffset: { width: 0, height: 0 },
@@ -806,8 +832,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    backgroundColor: 'rgba(12,14,18,0.78)',
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.card,
   },
   loginPasswordInputRow: { marginBottom: 10 },
   inputLeadingIcon: { marginRight: 12 },
@@ -821,13 +847,41 @@ const styles = StyleSheet.create({
   forgotPasswordText: { color: COLORS.cyan, fontSize: 13, fontWeight: '600' },
   eye: { position: 'absolute', right: 15 },
   button: { minHeight: 54, flexDirection: 'row', justifyContent: 'center', backgroundColor: COLORS.cyan, padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 8 },
-  buttonLoading: { backgroundColor: '#12343A' },
-  buttonText: { color: '#000', fontSize: 18, fontWeight: 'bold' },
+  buttonLoading: { backgroundColor: COLORS.bg },
+  buttonText: { color: COLORS.bg, fontSize: 18, fontWeight: 'bold' },
   message: { color: COLORS.pink, textAlign: 'center', marginTop: 20, fontWeight: 'bold', fontSize: 15 },
-  signupStepHeader: { marginBottom: 20 },
-  signupStepLabel: { color: COLORS.cyan, fontSize: 10, fontWeight: '800', letterSpacing: 1.5 },
-  signupStepTitle: { color: '#fff', fontSize: 23, fontWeight: '800' },
-  signupStepSubtitle: { color: COLORS.muted, fontSize: 13, lineHeight: 19, marginTop: 6 },
-  checkbox: { width: 21, height: 21, alignItems: 'center', justifyContent: 'center', borderRadius: 5, borderWidth: 1.5, borderColor: '#737780', marginRight: 10 },
+  signupStepHeader: { marginBottom: 22 },
+  signupStepLabel: { color: COLORS.cyan, fontSize: 10, fontWeight: '900', letterSpacing: 2, textTransform: 'uppercase' },
+  signupStepTitle: { color: COLORS.text, fontSize: 26, fontWeight: '900', letterSpacing: -0.5 },
+  signupStepSubtitle: { color: COLORS.muted, fontSize: 13, lineHeight: 20, marginTop: 8 },
+  signupWrapper: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 24 },
+  signupGradient: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  signupOrbTop: { position: 'absolute', top: '6%', right: -40, width: 300, height: 300, borderRadius: 150, backgroundColor: 'rgba(0,229,255,0.08)', blurRadius: 40 },
+  signupOrbBottom: { position: 'absolute', bottom: '8%', left: -40, width: 340, height: 340, borderRadius: 170, backgroundColor: 'rgba(255,0,85,0.06)', blurRadius: 40 },
+  signupIconInputRow: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  signupIconInput: { flex: 1, color: COLORS.text, fontSize: 15, paddingVertical: 16 },
+  signupInputFocused: {
+    borderColor: COLORS.cyan,
+    shadowColor: COLORS.cyan,
+    shadowOpacity: 0.25,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
+  },
+  signupButton: { minHeight: 58, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', borderRadius: 18, marginTop: 20, overflow: 'hidden' },
+  signupButtonText: { color: COLORS.bg, fontSize: 17, fontWeight: '900', letterSpacing: 0.5 },
+  signupLoginLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 18 },
+  signupLoginLinkText: { fontSize: 13, fontWeight: '600' },
+  checkbox: { width: 21, height: 21, alignItems: 'center', justifyContent: 'center', borderRadius: 5, borderWidth: 1.5, borderColor: COLORS.muted, marginRight: 10 },
   checkboxSelected: { borderColor: COLORS.cyan, backgroundColor: COLORS.cyan },
 });

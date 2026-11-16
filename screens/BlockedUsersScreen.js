@@ -82,11 +82,11 @@ export default function BlockedUsersScreen({ navigation }) {
           <Image source={{ uri: item.profile.avatarUrl }} style={styles.avatar} />
         ) : (
           <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarInitial}>{initial}</Text>
+            <Text style={[styles.avatarInitial, { color: COLORS.bg }]}>{initial}</Text>
           </View>
         )}
         <View style={styles.userCopy}>
-          <Text style={styles.name} numberOfLines={1}>{displayName}</Text>
+          <Text style={[styles.name, { color: COLORS.text }]} numberOfLines={1}>{displayName}</Text>
           {!!item.profile?.username && (
             <Text style={styles.username} numberOfLines={1}>@{item.profile.username}</Text>
           )}
@@ -117,9 +117,9 @@ export default function BlockedUsersScreen({ navigation }) {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="arrow-back" size={23} color="#fff" />
+          <Ionicons name="arrow-back" size={23} color={COLORS.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Blocked Users</Text>
+        <Text style={[styles.headerTitle, { color: COLORS.text }]}>Blocked Users</Text>
         <View style={styles.headerSpacer} />
       </View>
       {loading ? (
@@ -172,7 +172,7 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.border,
   },
   backButton: { width: 40, height: 40, justifyContent: 'center' },
-  headerTitle: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
   headerSpacer: { width: 40 },
   list: { paddingHorizontal: 17, paddingTop: 8, paddingBottom: 30 },
   row: {
@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
     marginRight: 12,
     backgroundColor: COLORS.cyan,
   },
-  avatarInitial: { color: '#061116', fontSize: 16, fontWeight: '800' },
+  avatarInitial: { color: COLORS.bg, fontSize: 16, fontWeight: '800' },
   userCopy: { flex: 1, paddingRight: 8 },
   name: { color: '#fff', fontSize: 14, fontWeight: '700' },
   username: { color: COLORS.muted, fontSize: 12, marginTop: 3 },
@@ -206,3 +206,4 @@ const styles = StyleSheet.create({
   retryButton: { padding: 12 },
   retryText: { color: COLORS.cyan, fontWeight: '700' },
 });
+

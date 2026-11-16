@@ -292,26 +292,28 @@ export default function ProfileSetupScreen() {
             >
               <Text style={styles.photoLink}>Add a profile photo</Text>
             </TouchableOpacity>
-            <Text style={[styles.title, { fontSize: 29 * scale }]}>Create your identity</Text>
-            <Text style={styles.subtitle}>Let the MzansiReels community know who you are.</Text>
+            <Text style={[styles.title, { fontSize: 29 * scale, color: COLORS.text }]}>Create your identity</Text>
+            <Text style={[styles.subtitle, { color: COLORS.muted }]}>Let the MzansiReels community know who you are.</Text>
           </View>
 
           <View style={[styles.fields, { gap: 22 * scale }]}>
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Username</Text>
+              <Text style={[styles.label, { color: COLORS.text }]}>Username</Text>
               <View style={[styles.inputShell, focusField === 'username' && styles.inputFocused]}>
-                <Ionicons name="at" size={20} color={focusField === 'username' ? COLORS.cyan : '#929AA5'} />
                 <TextInput
-                  style={styles.textInput}
+                  style={[styles.textInput, { color: COLORS.text }]}
                   value={username}
-                  onChangeText={(value) => setUsername(value.replace(/\s/g, '').replace(/^@+/, ''))}
+                  onChangeText={(value) => {
+                    const cleaned = value.replace(/\s/g, '').replace(/^@+/, '');
+                    setUsername('@' + cleaned);
+                  }}
                   onFocus={() => setFocusField('username')}
                   onBlur={() => setFocusField(null)}
-                  placeholder="your_unique_name"
-                  placeholderTextColor="#717985"
+                  placeholder="masternative751"
+                  placeholderTextColor={COLORS.muted}
                   autoCapitalize="none"
                   autoCorrect={false}
-                  maxLength={31}
+                  maxLength={32}
                   returnKeyType="next"
                   accessibilityLabel="Username"
                 />
@@ -328,6 +330,7 @@ export default function ProfileSetupScreen() {
                   styles.availabilityText,
                   availability === 'available' && styles.availableText,
                   ['taken', 'invalid', 'error'].includes(availability) && styles.unavailableText,
+                  { color: COLORS.muted },
                 ]}>
                   {availabilityMessage}
                 </Text>
@@ -335,7 +338,7 @@ export default function ProfileSetupScreen() {
             </View>
 
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Bio</Text>
+              <Text style={[styles.label, { color: COLORS.text }]}>Bio</Text>
               <View style={[
                 styles.inputShell,
                 styles.bioShell,
@@ -344,28 +347,28 @@ export default function ProfileSetupScreen() {
                 <Ionicons
                   name="create-outline"
                   size={19}
-                  color={focusField === 'bio' ? COLORS.cyan : '#929AA5'}
+                  color={focusField === 'bio' ? COLORS.cyan : COLORS.muted}
                   style={styles.bioIcon}
                 />
                 <TextInput
-                  style={[styles.textInput, styles.bioInput]}
+                  style={[styles.textInput, styles.bioInput, { color: COLORS.text }]}
                   value={bio}
                   onChangeText={setBio}
                   onFocus={() => setFocusField('bio')}
                   onBlur={() => setFocusField(null)}
                   placeholder="Tell people a little about yourself"
-                  placeholderTextColor="#717985"
+                  placeholderTextColor={COLORS.muted}
                   multiline
                   maxLength={160}
                   textAlignVertical="top"
                   accessibilityLabel="Bio"
                 />
-                <Text style={styles.bioCount}>{bio.length}/160</Text>
+                <Text style={[styles.bioCount, { color: COLORS.muted }]}>{bio.length}/160</Text>
               </View>
             </View>
 
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Province</Text>
+              <Text style={[styles.label, { color: COLORS.text }]}>Province</Text>
               <TouchableOpacity
                 style={[styles.inputShell, focusField === 'province' && styles.inputFocused]}
                 onPress={() => {
@@ -379,12 +382,12 @@ export default function ProfileSetupScreen() {
                 <Ionicons
                   name="location-outline"
                   size={20}
-                  color={focusField === 'province' ? COLORS.cyan : '#929AA5'}
+                  color={focusField === 'province' ? COLORS.cyan : COLORS.muted}
                 />
-                <Text style={[styles.provinceValue, !province && styles.placeholder]}>
+                <Text style={[styles.provinceValue, !province && styles.placeholder, { color: COLORS.text }]}>
                   {province || 'Choose your province'}
                 </Text>
-                <Ionicons name="chevron-down" size={18} color="#929AA5" />
+                <Ionicons name="chevron-down" size={18} color={COLORS.muted} />
               </TouchableOpacity>
             </View>
           </View>
@@ -398,10 +401,10 @@ export default function ProfileSetupScreen() {
               style={styles.termsCheckboxButton}
             >
             <View style={[styles.checkbox, termsAccepted && styles.checkboxChecked]}>
-              {termsAccepted && <Ionicons name="checkmark" size={14} color="#071014" />}
+              {termsAccepted && <Ionicons name="checkmark" size={14} color={COLORS.bg} />}
             </View>
             </TouchableOpacity>
-            <Text style={styles.termsText}>
+            <Text style={[styles.termsText, { color: COLORS.muted }]}>
               I agree to the{' '}
               <Text
                 style={styles.termsLink}
@@ -418,7 +421,7 @@ export default function ProfileSetupScreen() {
             disabled={saving}
             accessibilityRole="button"
           >
-            <Text style={styles.logoutText}>Log out</Text>
+            <Text style={[styles.logoutText, { color: COLORS.muted }]}>Log out</Text>
           </TouchableOpacity>
         </ScrollView>
 
@@ -431,13 +434,13 @@ export default function ProfileSetupScreen() {
             accessibilityState={{ disabled: !canFinish }}
           >
             {saving ? (
-              <ActivityIndicator color="#071014" />
+              <ActivityIndicator color={COLORS.bg} />
             ) : (
               <>
-                <Text style={styles.finishButtonText}>
+                <Text style={[styles.finishButtonText, { color: COLORS.bg }]}>
                   {imageUploading ? 'Uploading photo…' : 'Finish'}
                 </Text>
-                <Ionicons name="arrow-forward" size={20} color="#071014" />
+                <Ionicons name="arrow-forward" size={20} color={COLORS.bg} />
               </>
             )}
           </TouchableOpacity>
@@ -465,7 +468,7 @@ export default function ProfileSetupScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Close"
               >
-                <Ionicons name="close" size={23} color="#fff" />
+                <Ionicons name="close" size={23} color={COLORS.text} />
               </TouchableOpacity>
             </View>
             <ScrollView>
@@ -480,7 +483,7 @@ export default function ProfileSetupScreen() {
                   }}
                   accessibilityRole="button"
                 >
-                  <Text style={styles.provinceOptionText}>{item}</Text>
+                  <Text style={[styles.provinceOptionText, { color: COLORS.text }]}>{item}</Text>
                   {province === item && <Ionicons name="checkmark" size={18} color={COLORS.cyan} />}
                 </TouchableOpacity>
               ))}
@@ -649,3 +652,4 @@ const styles = StyleSheet.create({
   },
   provinceOptionText: { color: '#E8EAED', fontSize: 14 },
 });
+

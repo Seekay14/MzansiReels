@@ -10,7 +10,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../config/constants';
-import { useTheme } from '../context/ThemeContext';
 
 const TABS = [
   { id: 'Search', icon: 'search-outline', description: 'Search videos, people, sounds, and hashtags.' },
@@ -19,7 +18,6 @@ const TABS = [
 ];
 
 export default function SearchMenu({ visible, onClose, navigation, searchTab, setSearchTab }) {
-  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const selectedTab = TABS.find((tab) => tab.id === searchTab) || TABS[0];
 
@@ -43,16 +41,16 @@ export default function SearchMenu({ visible, onClose, navigation, searchTab, se
           accessibilityRole="button"
           accessibilityLabel="Dismiss search menu"
         />
-        <View style={[styles.menu, { backgroundColor: colors.bg }]}>
-          <View style={[styles.header, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.heading, { color: colors.text }]}>Discover</Text>
+        <View style={[styles.menu, { backgroundColor: COLORS.bg }]}>
+          <View style={[styles.header, { borderBottomColor: COLORS.border }]}>
+            <Text style={[styles.heading, { color: COLORS.text }]}>Discover</Text>
             <TouchableOpacity
               style={styles.closeButton}
               onPress={onClose}
               accessibilityRole="button"
               accessibilityLabel="Close search menu"
             >
-              <Ionicons name="close" size={24} color={colors.text} />
+              <Ionicons name="close" size={24} color={COLORS.text} />
             </TouchableOpacity>
           </View>
 
@@ -64,14 +62,14 @@ export default function SearchMenu({ visible, onClose, navigation, searchTab, se
                   key={tab.id}
                   style={[
                     styles.tab,
-                    { borderColor: isSelected ? COLORS.cyan : colors.border, backgroundColor: colors.card },
+                    { borderColor: isSelected ? COLORS.cyan : COLORS.border, backgroundColor: COLORS.card },
                   ]}
                   onPress={() => setSearchTab(tab.id)}
                   accessibilityRole="tab"
                   accessibilityState={{ selected: isSelected }}
                 >
-                  <Ionicons name={tab.icon} size={22} color={isSelected ? COLORS.cyan : colors.muted} />
-                  <Text style={[styles.tabLabel, { color: isSelected ? COLORS.cyan : colors.text }]}>
+                  <Ionicons name={tab.icon} size={22} color={isSelected ? COLORS.cyan : COLORS.muted} />
+                  <Text style={[styles.tabLabel, { color: isSelected ? COLORS.cyan : COLORS.text }]}>
                     {tab.id}
                   </Text>
                 </TouchableOpacity>
@@ -81,11 +79,11 @@ export default function SearchMenu({ visible, onClose, navigation, searchTab, se
 
           <View style={styles.selectedContent}>
             <Ionicons name={selectedTab.icon} size={34} color={COLORS.cyan} />
-            <Text style={[styles.selectedTitle, { color: colors.text }]}>{selectedTab.id}</Text>
-            <Text style={[styles.description, { color: colors.muted }]}>{selectedTab.description}</Text>
+            <Text style={[styles.selectedTitle, { color: COLORS.text }]}>{selectedTab.id}</Text>
+            <Text style={[styles.description, { color: COLORS.muted }]}>{selectedTab.description}</Text>
             <TouchableOpacity style={styles.openButton} onPress={openSelectedTab} accessibilityRole="button">
               <Text style={styles.openButtonText}>Open {selectedTab.id}</Text>
-              <Ionicons name="arrow-forward" size={18} color="#000" />
+              <Ionicons name="arrow-forward" size={18} color={COLORS.bg} />
             </TouchableOpacity>
           </View>
         </View>
@@ -108,5 +106,6 @@ const styles = StyleSheet.create({
   selectedTitle: { fontSize: 23, fontWeight: '800', marginTop: 14 },
   description: { textAlign: 'center', fontSize: 14, lineHeight: 21, marginTop: 8 },
   openButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.cyan, borderRadius: 24, paddingHorizontal: 22, paddingVertical: 12, marginTop: 24 },
-  openButtonText: { color: '#000', fontWeight: '800', marginRight: 8 },
+  openButtonText: { color: COLORS.bg, fontWeight: '800', marginRight: 8 },
 });
+

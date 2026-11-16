@@ -78,19 +78,19 @@ export default function ResetPasswordScreen({ navigation }) {
           accessibilityRole="button"
           accessibilityLabel="Back"
         >
-          <Ionicons name="arrow-back" size={23} color="#fff" />
+          <Ionicons name="arrow-back" size={23} color={COLORS.text} />
         </TouchableOpacity>
 
         <View style={styles.iconWrap}>
           <Ionicons name="key-outline" size={30} color={COLORS.cyan} />
         </View>
-        <Text style={styles.title}>Create New Password</Text>
-        <Text style={styles.subtitle}>Enter your new password below.</Text>
+        <Text style={[styles.title, { color: COLORS.text }]}>Create New Password</Text>
+        <Text style={[styles.subtitle, { color: COLORS.muted }]}>Enter your new password below.</Text>
 
         <View style={styles.inputWrap}>
           <Ionicons name="lock-closed-outline" size={20} color={COLORS.muted} />
           <TextInput
-            style={styles.input}
+            style={[styles.input, { color: COLORS.text }]}
             placeholder="New Password"
             placeholderTextColor="#737B86"
             value={password}
@@ -112,7 +112,7 @@ export default function ResetPasswordScreen({ navigation }) {
         <View style={styles.inputWrap}>
           <Ionicons name="lock-closed-outline" size={20} color={COLORS.muted} />
           <TextInput
-            style={styles.input}
+            style={[styles.input, { color: COLORS.text }]}
             placeholder="Confirm New Password"
             placeholderTextColor="#737B86"
             value={confirmPassword}
@@ -140,7 +140,7 @@ export default function ResetPasswordScreen({ navigation }) {
         >
           {loading
             ? <ActivityIndicator color="#071014" />
-            : <Text style={styles.submitButtonText}>Update Password</Text>}
+            : <Text style={[styles.submitButtonText, { color: COLORS.bg }]}>Update Password</Text>}
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -196,3 +196,4 @@ const styles = StyleSheet.create({
   submitButtonText: { color: '#071014', fontSize: 16, fontWeight: '800' },
   errorText: { color: COLORS.pink, fontSize: 13, marginTop: 2, marginBottom: 8 },
 });
+

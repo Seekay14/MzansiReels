@@ -8,7 +8,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from './Avatar';
 import { COLORS } from '../config/constants';
-import { useTheme } from '../context/ThemeContext';
 
 export default function CreatePostComposer({
   user,
@@ -18,7 +17,6 @@ export default function CreatePostComposer({
   onPressEmoji,
   desktop = false,
 }) {
-  const { colors } = useTheme();
   const prompt = user?.name
     ? `What's on your mind, ${user.name}?`
     : "What's on your mind?";
@@ -26,9 +24,9 @@ export default function CreatePostComposer({
   return (
     <View style={[
       styles.container,
-      { backgroundColor: colors.card, borderColor: colors.border },
+      { backgroundColor: COLORS.card, borderColor: COLORS.border },
       desktop && styles.desktopContainer,
-      desktop && { backgroundColor: colors.card, borderColor: colors.border },
+      desktop && { backgroundColor: COLORS.card, borderColor: COLORS.border },
     ]}>
       <Avatar
         uri={user?.avatarUrl}
@@ -37,13 +35,13 @@ export default function CreatePostComposer({
         size={40}
       />
       <TouchableOpacity
-        style={[styles.promptPill, { backgroundColor: colors.input }]}
+        style={[styles.promptPill, { backgroundColor: COLORS.input }]}
         onPress={onPressComposer}
         activeOpacity={0.75}
         accessibilityRole="button"
         accessibilityLabel={prompt}
       >
-        <Text style={[styles.promptText, { color: colors.muted }]} numberOfLines={1}>{prompt}</Text>
+        <Text style={[styles.promptText, { color: COLORS.muted }]} numberOfLines={1}>{prompt}</Text>
       </TouchableOpacity>
       <View style={styles.actions}>
         <TouchableOpacity
@@ -52,7 +50,7 @@ export default function CreatePostComposer({
           accessibilityRole="button"
           accessibilityLabel="Create a video post"
         >
-          <Ionicons name="videocam" size={21} color="#FF4D5E" />
+          <Ionicons name="videocam" size={22} color={COLORS.pink} />
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.actionButton}
@@ -60,7 +58,7 @@ export default function CreatePostComposer({
           accessibilityRole="button"
           accessibilityLabel="Create a photo post"
         >
-          <Ionicons name="image" size={21} color="#35C976" />
+          <Ionicons name="image" size={22} color={COLORS.cyan} />
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.actionButton}
@@ -68,7 +66,7 @@ export default function CreatePostComposer({
           accessibilityRole="button"
           accessibilityLabel="Create a text post"
         >
-          <Ionicons name="happy" size={21} color="#FFAA32" />
+          <Ionicons name="happy" size={22} color="#FFD700" />
         </TouchableOpacity>
       </View>
     </View>
@@ -87,9 +85,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 11,
     borderWidth: 1,
-    borderColor: '#252A35',
+    borderColor: COLORS.border,
     borderRadius: 19,
-    backgroundColor: '#151820',
+    backgroundColor: COLORS.card,
     shadowColor: '#000',
     shadowOpacity: 0.2,
     shadowRadius: 10,
@@ -99,8 +97,8 @@ const styles = StyleSheet.create({
   desktopContainer: {
     marginHorizontal: 10,
     borderRadius: 12,
-    borderColor: '#3A3B3C',
-    backgroundColor: '#242526',
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.card,
   },
   promptPill: {
     flex: 1,
@@ -109,9 +107,10 @@ const styles = StyleSheet.create({
     minHeight: 42,
     paddingHorizontal: 13,
     borderRadius: 22,
-    backgroundColor: '#20242D',
+    backgroundColor: COLORS.card,
   },
   promptText: { color: COLORS.muted, fontSize: 13, fontWeight: '500' },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 15, justifyContent: 'space-around' },
   actionButton: { width: 31, height: 40, alignItems: 'center', justifyContent: 'center' },
 });
+

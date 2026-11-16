@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
+import { COLORS } from '../config/constants';
 const LAUNCH_MESSAGE_SEEN_KEY = '@mzansireels/launch-message-seen';
 
 export default function LaunchModal() {
@@ -70,8 +70,8 @@ export default function LaunchModal() {
           <View style={styles.celebration}>
             <Text style={styles.emoji} accessibilityLabel="Celebration">🎉</Text>
           </View>
-          <Text style={styles.title}>MzansiReels is LIVE!</Text>
-          <Text style={styles.subtitle}>
+          <Text style={[styles.title, { color: COLORS.text }]}>MzansiReels is LIVE!</Text>
+          <Text style={[styles.subtitle, { color: COLORS.muted }]}>
             Discover the heartbeat of Mzansi. Watch, share, and upload your first reel today.
           </Text>
 
@@ -86,11 +86,11 @@ export default function LaunchModal() {
             onPress={handleGetStarted}
             style={[styles.button, (saving || checkingStorage) && styles.buttonDisabled]}
           >
-            {saving ? (
-              <ActivityIndicator color="#08110B" />
-            ) : (
-              <Text style={styles.buttonText}>Get Started</Text>
-            )}
+              {saving ? (
+                <ActivityIndicator color={COLORS.bg} />
+              ) : (
+                <Text style={[styles.buttonText, { color: COLORS.bg }]}>Get Started</Text>
+              )}
           </TouchableOpacity>
         </View>
       </View>
@@ -113,8 +113,8 @@ const styles = StyleSheet.create({
     padding: 28,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#292932',
-    backgroundColor: '#111118',
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.card,
   },
   celebration: {
     width: 88,
@@ -123,27 +123,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 22,
     borderRadius: 44,
-    backgroundColor: '#202018',
+    backgroundColor: COLORS.card,
   },
   emoji: {
     fontSize: 48,
   },
   title: {
-    color: '#FFFFFF',
+    color: '#fff',
     fontSize: 26,
     fontWeight: '800',
     textAlign: 'center',
   },
   subtitle: {
     marginTop: 12,
-    color: '#B8B8C2',
+    color: COLORS.muted,
     fontSize: 16,
     lineHeight: 24,
     textAlign: 'center',
   },
   error: {
     marginTop: 16,
-    color: '#FF8A8A',
+    color: COLORS.pink,
     fontSize: 14,
     textAlign: 'center',
   },
@@ -154,14 +154,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 26,
     borderRadius: 14,
-    backgroundColor: '#21C55D',
+    backgroundColor: COLORS.pink,
   },
   buttonDisabled: {
     opacity: 0.7,
   },
   buttonText: {
-    color: '#08110B',
+    color: '#000',
     fontSize: 16,
     fontWeight: '800',
   },
 });
+

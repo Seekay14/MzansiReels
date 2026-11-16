@@ -92,8 +92,8 @@ export default function EditProfileScreen({ route, navigation }) {
       <ScrollView contentContainerStyle={[styles.container, { paddingTop: insets.top + 10 }]}>
         
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}><Ionicons name="close" size={28} color="#fff" /></TouchableOpacity>
-          <Text style={styles.headerTitle}>Edit Profile</Text>
+          <TouchableOpacity onPress={() => navigation.goBack()}>          <Ionicons name="close" size={28} color={COLORS.text} /></TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: COLORS.text }]}>Edit Profile</Text>
           <TouchableOpacity onPress={handleSave} disabled={loading || uploadingAvatar}>
             {loading ? <ActivityIndicator color={COLORS.cyan} /> : <Text style={styles.saveText}>Save</Text>}
           </TouchableOpacity>
@@ -110,7 +110,7 @@ export default function EditProfileScreen({ route, navigation }) {
             <Avatar uri={userDoc?.avatarUrl} userId={user?.$id} name={name || user?.name} size={96} bordered />
             {uploadingAvatar && (
               <View style={styles.avatarLoading}>
-                <ActivityIndicator color="#fff" size="large" />
+                <ActivityIndicator color={COLORS.bg} size="large" />
               </View>
             )}
           </View>
@@ -130,28 +130,28 @@ export default function EditProfileScreen({ route, navigation }) {
 
         <View style={styles.form}>
           <Text style={styles.label}>Name</Text>
-          <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Your display name" placeholderTextColor="#555" />
+          <TextInput style={[styles.input, { color: COLORS.text }]} value={name} onChangeText={setName} placeholder="Your display name" placeholderTextColor={COLORS.muted} />
 
           <Text style={styles.label}>Username (@handle)</Text>
           <View style={styles.usernameWrapper}>
             <Text style={styles.atSymbol}>@</Text>
             <TextInput 
-              style={[styles.input, styles.usernameInput]} 
+              style={[styles.input, styles.usernameInput, { color: COLORS.text }]} 
               value={username} 
               onChangeText={setUsername} 
               placeholder="username" 
-              placeholderTextColor="#555"
+              placeholderTextColor={COLORS.muted}
               autoCapitalize="none"
             />
           </View>
 
           <Text style={styles.label}>Bio</Text>
           <TextInput 
-            style={[styles.input, styles.bioInput]} 
+            style={[styles.input, styles.bioInput, { color: COLORS.text }]} 
             value={bio} 
             onChangeText={setBio} 
             placeholder="Tell people about yourself..." 
-            placeholderTextColor="#555" 
+            placeholderTextColor={COLORS.muted} 
             multiline 
             maxLength={150}
           />
@@ -164,7 +164,7 @@ export default function EditProfileScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   container: { flexGrow: 1, backgroundColor: COLORS.bg },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  headerTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  headerTitle: { color: COLORS.text, fontSize: 18, fontWeight: 'bold' },
   saveText: { color: COLORS.cyan, fontSize: 16, fontWeight: 'bold' },
   avatarPicker: { alignItems: 'center', paddingTop: 24 },
   avatarContainer: { width: 100, height: 100, justifyContent: 'center', alignItems: 'center' },
@@ -175,7 +175,7 @@ const styles = StyleSheet.create({
   avatarStatusError: { color: '#FF5B67' },
   form: { padding: 20 },
   label: { color: COLORS.muted, fontSize: 14, marginBottom: 8, marginTop: 15, fontWeight: '600' },
-  input: { backgroundColor: COLORS.card, color: '#fff', borderRadius: 10, padding: 15, fontSize: 16, borderWidth: 1, borderColor: '#2A2A35' },
+  input: { backgroundColor: COLORS.card, color: COLORS.text, borderRadius: 10, padding: 15, fontSize: 16, borderWidth: 1, borderColor: COLORS.border },
   usernameWrapper: { flexDirection: 'row', alignItems: 'center' },
   atSymbol: { color: COLORS.muted, fontSize: 18, fontWeight: 'bold', position: 'absolute', left: 15, zIndex: 1 },
   usernameInput: { flex: 1, paddingLeft: 35 },

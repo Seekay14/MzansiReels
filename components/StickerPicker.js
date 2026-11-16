@@ -36,13 +36,13 @@ export default function StickerPicker({ visible, onClose, onSelect }) {
         <TouchableOpacity style={StyleSheet.absoluteFill} onPress={onClose} />
         <View style={styles.sheet}>
           <View style={styles.header}>
-            <Text style={styles.title}>Stickers</Text>
+            <Text style={[styles.title, { color: COLORS.text }]}>Stickers</Text>
             <TouchableOpacity
               onPress={onClose}
               accessibilityRole="button"
               accessibilityLabel="Close sticker picker"
             >
-              <Ionicons name="close" size={24} color="#fff" />
+              <Ionicons name="close" size={24} color={COLORS.text} />
             </TouchableOpacity>
           </View>
           <FlatList
@@ -79,7 +79,7 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
-    backgroundColor: '#11141A',
+    backgroundColor: COLORS.card,
   },
   header: {
     height: 56,
@@ -91,7 +91,7 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.border,
   },
   title: {
-    color: '#F3F5F7',
+    color: '#fff',
     fontSize: 17,
     fontWeight: '800',
   },
@@ -111,11 +111,12 @@ const styles = StyleSheet.create({
     width: 112,
     height: 112,
     borderRadius: 12,
-    backgroundColor: '#232833',
+    backgroundColor: COLORS.card,
   },
   label: {
     marginTop: 6,
-    color: '#DCE1E6',
+    color: '#fff',
     fontSize: 12,
   },
 });
+

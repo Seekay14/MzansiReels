@@ -24,16 +24,16 @@ export default function HelpCenterScreen({ navigation }) {
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={26} color="#fff" />
+          <Ionicons name="arrow-back" size={26} color={COLORS.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Help Center</Text>
+        <Text style={[styles.headerTitle, { color: COLORS.text }]}>Help Center</Text>
         <View style={{ width: 26 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.heroBox}>
           <Ionicons name="chatbubbles" size={40} color={COLORS.cyan} />
-          <Text style={styles.heroTitle}>How can we help?</Text>
+          <Text style={[styles.heroTitle, { color: COLORS.text }]}>How can we help?</Text>
           <Text style={styles.heroSub}>Find answers to common questions below.</Text>
         </View>
 
@@ -47,7 +47,7 @@ export default function HelpCenterScreen({ navigation }) {
             onPress={() => toggleExpand(index)}
           >
             <View style={styles.faqHeader}>
-              <Text style={styles.question}>{faq.q}</Text>
+              <Text style={[styles.question, { color: COLORS.text }]}>{faq.q}</Text>
               <Ionicons 
                 name={expandedIndex === index ? "chevron-up" : "chevron-down"} 
                 size={20} 
@@ -61,11 +61,11 @@ export default function HelpCenterScreen({ navigation }) {
         ))}
 
         <View style={styles.contactBox}>
-          <Text style={styles.contactTitle}>Still need help?</Text>
+          <Text style={[styles.contactTitle, { color: COLORS.text }]}>Still need help?</Text>
           <Text style={styles.contactText}>Our support team is available Monday to Friday, 9am - 5pm SAST.</Text>
           <TouchableOpacity style={styles.emailBtn}>
-            <Ionicons name="mail" size={20} color="#000" />
-            <Text style={styles.emailBtnText}>Email Support</Text>
+            <Ionicons name="mail" size={20} color={COLORS.bg} />
+            <Text style={[styles.emailBtnText, { color: COLORS.bg }]}>Email Support</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

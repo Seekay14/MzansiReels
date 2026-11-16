@@ -17,10 +17,9 @@ import * as Linking from 'expo-linking';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { client, databases, ID, Query } from '../config/appwrite';
+import { databases, ID, Query } from '../config/appwrite';
 import { DATABASE_ID, COLLECTIONS, COLORS } from '../config/constants';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
 import {
   blockUser,
   createNotification,
@@ -54,7 +53,6 @@ export default function UserProfileScreen({ route, navigation }) {
   const { userId, userName } = route.params || {};
   const profileUserId = userId;
   const { user } = useAuth();
-  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const scale = getResponsiveScale(width);
@@ -72,6 +70,7 @@ export default function UserProfileScreen({ route, navigation }) {
   const [blockDocumentId, setBlockDocumentId] = useState('');
   const [blockBusy, setBlockBusy] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
+  const [hasStatus, setHasStatus] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [activeTab, setActiveTab] = useState('posts');
@@ -228,26 +227,13 @@ export default function UserProfileScreen({ route, navigation }) {
     if (isSelf || !user?.$id || !userId) return undefined;
     let active = true;
     let refreshTimer = null;
-    const unsubscribe = client.subscribe(
-      `databases.${DATABASE_ID}.collections.${COLLECTIONS.follows}.documents`,
-      (event) => {
-        if (!active) return;
-        const relationship = event.payload || {};
-        const involvesProfile = relationship.followerId === userId
-          || relationship.followingId === userId;
-        const involvesViewer = relationship.followerId === user.$id
-          || relationship.followingId === user.$id;
-        if (!involvesProfile && !involvesViewer) return;
-        if (refreshTimer) clearTimeout(refreshTimer);
-        refreshTimer = setTimeout(() => {
-          if (active) refreshFollowState();
-        }, 120);
-      },
-    );
+    const followPollTimer = setInterval(() => {
+      if (active) refreshFollowState();
+    }, 30000);
     return () => {
       active = false;
       if (refreshTimer) clearTimeout(refreshTimer);
-      unsubscribe();
+      clearInterval(followPollTimer);
       followRefreshRequest.current += 1;
     };
   }, [isSelf, refreshFollowState, user?.$id, userId]));
@@ -396,7 +382,7 @@ export default function UserProfileScreen({ route, navigation }) {
   };
 
   if (loading || loadedUserId !== userId) {
-    return <View style={[styles.container, { justifyContent: 'center', backgroundColor: colors.bg }]}><ActivityIndicator size="large" color={colors.accent} /></View>;
+    return <View style={[styles.container, { justifyContent: 'center', backgroundColor: COLORS.bg }]}><ActivityIndicator size="large" color={COLORS.accent} /></View>;
   }
 
   const isPrivateProfile = !isSelf && userDoc?.isPrivate === true;
@@ -443,48 +429,65 @@ export default function UserProfileScreen({ route, navigation }) {
     />
   );
   const header = (
-    <View>
-      <View style={[styles.topBar, { paddingTop: insets.top + 10 }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}><Ionicons name="arrow-back" size={24} color="#fff" /></TouchableOpacity>
+    <View style={[styles.headerWrapper, { paddingTop: Math.max(insets.top, 8) }]}>
+      <View style={styles.topBarRow}>
+        {!isSelf && (
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color={COLORS.text} />
+          </TouchableOpacity>
+        )}
+        <View style={styles.headerSpacer} />
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Settings')}
+          style={styles.headerIcon}
+          accessibilityRole="button"
+          accessibilityLabel="Settings"
+        >
+          <Ionicons name="settings-outline" size={22} color={COLORS.text} />
+        </TouchableOpacity>
       </View>
-      <View style={styles.profileInfo}>
-        <Avatar
-          uri={userDoc?.avatarUrl}
-          userId={userId}
-          name={displayName}
-          size={90 * scale}
-          bordered
-          style={{ marginBottom: 10 }}
-        />
-        
-        <View style={styles.usernameVerificationRow}>
-          <Text
-            numberOfLines={1}
-            ellipsizeMode="tail"
-            style={[styles.username, { color: colors.text, fontSize: 20 * scale }]}
-          >
-            @{username}
-          </Text>
+
+      <View style={styles.identityContainer}>
+        <View style={styles.usernameRow}>
+          <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.usernameText, { color: COLORS.text }]}>@{username}</Text>
           {userDoc?.isVerified === true && (
-            <Ionicons name="checkmark-circle" size={20} color={COLORS.cyan} />
+            <Ionicons name="checkmark-circle" size={16} color={COLORS.cyan} style={styles.verifiedBadge} />
+          )}
+        </View>
+        <View style={[styles.avatarWrapperBase, hasStatus && styles.activeAvatarRing]}
+          accessibilityRole="button"
+          accessibilityLabel="Profile picture"
+        >
+          <Avatar uri={userDoc?.avatarUrl} userId={userId} name={displayName} size={96 * scale} />
+          {isSelf && (
+            <View style={styles.cameraBadgeLarge}>
+              <Ionicons name="camera" size={16} color={COLORS.bg} />
+            </View>
           )}
         </View>
         {userDoc?.bio ? (
-          <Text
-            numberOfLines={2}
-            ellipsizeMode="tail"
-            style={[
-              styles.bioText,
-              { color: colors.text, textAlign: 'center' },
-            ]}
-          >
+          <Text style={[styles.bioText, { color: COLORS.text }]}>
             {userDoc.bio}
           </Text>
+        ) : (
+          <Text style={[styles.bioText, { color: COLORS.muted }]}>Tap to add a bio...</Text>
+        )}
+        {userDoc?.province ? (
+          <View style={styles.locationRow}>
+            <Ionicons name="location-outline" size={15} color={COLORS.muted} />
+            <Text style={[styles.locationText, { color: COLORS.muted }]}>{userDoc.province}, SA</Text>
+          </View>
         ) : null}
         <View style={styles.statsRow}>
-          <TouchableOpacity style={styles.statBox} activeOpacity={0.72} onPress={() => setActiveTab('posts')} accessibilityRole="button" accessibilityLabel={`View ${contentCount} posts`}>
-            <Text style={[styles.statNumber, { color: colors.text }]}>{contentCount}</Text>
-            <Text style={[styles.statLabel, { color: colors.muted }]}>Posts</Text>
+          <TouchableOpacity
+            style={styles.statBox}
+            activeOpacity={0.72}
+            onPress={() => setActiveTab('posts')}
+            accessibilityRole="button"
+            accessibilityLabel={`View ${contentCount} posts`}
+          >
+            <Text style={[styles.statNumber, { color: COLORS.text }]}>{contentCount}</Text>
+            <Text style={[styles.statLabel, { color: COLORS.muted }]}>Posts</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.statBox}
@@ -493,8 +496,8 @@ export default function UserProfileScreen({ route, navigation }) {
             accessibilityRole="button"
             accessibilityLabel={`View ${formatCompactCount(followCounts.followers)} followers`}
           >
-            <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactCount(followCounts.followers)}</Text>
-            <Text style={[styles.statLabel, { color: colors.muted }]}>Followers</Text>
+            <Text style={[styles.statNumber, { color: COLORS.text }]}>{formatCompactCount(followCounts.followers)}</Text>
+            <Text style={[styles.statLabel, { color: COLORS.muted }]}>Followers</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.statBox}
@@ -503,8 +506,8 @@ export default function UserProfileScreen({ route, navigation }) {
             accessibilityRole="button"
             accessibilityLabel={`View ${formatCompactCount(followCounts.following)} following`}
           >
-            <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactCount(followCounts.following)}</Text>
-            <Text style={[styles.statLabel, { color: colors.muted }]}>Following</Text>
+            <Text style={[styles.statNumber, { color: COLORS.text }]}>{formatCompactCount(followCounts.following)}</Text>
+            <Text style={[styles.statLabel, { color: COLORS.muted }]}>Following</Text>
           </TouchableOpacity>
         </View>
         {!isSelf && (
@@ -513,14 +516,14 @@ export default function UserProfileScreen({ route, navigation }) {
               style={[styles.followButton, isFollowing ? styles.followingButton : styles.notFollowingButton]}
               onPress={toggleFollow}
               disabled={busy}
-              activeOpacity={0.8}
+              activeOpacity={0.7}
               accessibilityRole="button"
               accessibilityLabel={followLabel}
             >
               {busy ? (
-                <ActivityIndicator size="small" color={isFollowing ? '#fff' : '#000'} />
+                <ActivityIndicator size="small" color={COLORS.text} />
               ) : (
-                <Text style={[styles.followText, isFollowing && { color: '#fff' }]}>{followLabel}</Text>
+                <Text style={[styles.followText, { color: isFollowing ? COLORS.cyan : COLORS.bg }]}>{followLabel}</Text>
               )}
             </TouchableOpacity>
             <TouchableOpacity
@@ -534,25 +537,36 @@ export default function UserProfileScreen({ route, navigation }) {
               accessibilityRole="button"
               accessibilityLabel={`Message ${displayName}`}
             >
-              <Ionicons name="chatbubble-ellipses-outline" size={20} color="#fff" />
+              <Ionicons name="chatbubble-ellipses-outline" size={20} color={COLORS.text} />
+            </TouchableOpacity>
+          </View>
+        )}
+        {isSelf && (
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={[styles.editProfileButton, { borderColor: COLORS.border, backgroundColor: COLORS.card }]}
+              onPress={() => navigation.navigate('EditProfile', { userDoc })}
+              accessibilityRole="button"
+            >
+              <Text style={[styles.editProfileText, { color: COLORS.text }]}>Edit Profile</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.messageButton}
-              onPress={() => setMenuVisible(true)}
-              activeOpacity={0.8}
+              style={styles.uploadButton}
+              onPress={() => navigation.getParent()?.navigate('Upload')}
               accessibilityRole="button"
-              accessibilityLabel="More profile actions"
+              accessibilityLabel="Upload a new video"
             >
-              <Ionicons name="ellipsis-vertical" size={20} color="#fff" />
+              <Ionicons name="add" size={27} color={COLORS.text} />
             </TouchableOpacity>
           </View>
         )}
         {mutualFriendsCount > 0 ? (
-          <Text style={[styles.mutualFriendsText, { color: colors.muted }]}>
+          <Text style={[styles.mutualFriendsText, { color: COLORS.muted }]}>
             {mutualFriendsText}
           </Text>
         ) : null}
       </View>
+
       <View style={styles.tabBar}>
         {PROFILE_TABS.map((tab) => {
           const selected = activeTab === tab.id;
@@ -565,7 +579,7 @@ export default function UserProfileScreen({ route, navigation }) {
               accessibilityState={{ selected }}
             >
               <Ionicons name={tab.icon} size={17} color={selected ? COLORS.cyan : '#89919C'} />
-              <Text style={[styles.tabLabel, { color: selected ? colors.text : colors.muted }]}>{tab.label}</Text>
+              <Text style={[styles.tabLabel, { color: selected ? COLORS.text : COLORS.muted }]}>{tab.label}</Text>
               <View style={[styles.tabUnderline, selected && styles.tabUnderlineActive]} />
             </TouchableOpacity>
           );
@@ -575,7 +589,7 @@ export default function UserProfileScreen({ route, navigation }) {
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
+    <View style={[styles.container, { backgroundColor: COLORS.bg }]}>
       {activeTab === 'posts' ? (
         <FlatList
           data={posts}
@@ -621,15 +635,15 @@ export default function UserProfileScreen({ route, navigation }) {
             accessibilityRole="button"
             accessibilityLabel="Close profile actions"
           />
-          <View style={[styles.menuSheet, { backgroundColor: colors.card, paddingBottom: Math.max(insets.bottom, 18) }]}>
+          <View style={[styles.menuSheet, { backgroundColor: COLORS.card, paddingBottom: Math.max(insets.bottom, 18) }]}>
             <View style={styles.menuHandle} />
             <TouchableOpacity style={styles.menuItem} onPress={shareProfile} disabled={blockBusy}>
-              <Ionicons name="share-social-outline" size={20} color={colors.text} />
-              <Text style={[styles.menuItemText, { color: colors.text }]}>Share Profile</Text>
+              <Ionicons name="share-social-outline" size={20} color={COLORS.text} />
+              <Text style={[styles.menuItemText, { color: COLORS.text }]}>Share Profile</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.menuItem} onPress={() => showUnavailableAction('Mute')} disabled={blockBusy}>
-              <Ionicons name="volume-mute-outline" size={20} color={colors.text} />
-              <Text style={[styles.menuItemText, { color: colors.text }]}>Mute</Text>
+              <Ionicons name="volume-mute-outline" size={20} color={COLORS.text} />
+              <Text style={[styles.menuItemText, { color: COLORS.text }]}>Mute</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.menuItem} onPress={confirmBlockUser} disabled={blockBusy}>
               <Ionicons name="ban-outline" size={20} color={COLORS.pink} />
@@ -649,33 +663,45 @@ export default function UserProfileScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
-  topBar: { paddingHorizontal: 20, paddingBottom: 10 },
+  container: { flex: 1, width: '100%', backgroundColor: COLORS.bg },
+  headerWrapper: { width: '100%', alignItems: 'center', paddingHorizontal: 24, paddingBottom: 12 },
+  topBarRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingTop: 10, paddingBottom: 4 },
+  headerSpacer: { width: 40 },
   backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.card, justifyContent: 'center', alignItems: 'center' },
-  profileInfo: { alignItems: 'center', paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  usernameVerificationRow: { maxWidth: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 15, paddingHorizontal: 20 },
-  username: { flexShrink: 1, color: '#fff', fontSize: 20, fontWeight: 'bold' },
-  bioText: { fontSize: 14, lineHeight: 20, marginTop: 8, paddingHorizontal: 20 },
-  statsRow: { flexDirection: 'row', justifyContent: 'space-around', width: '80%', marginBottom: 20 },
-  statBox: { alignItems: 'center' },
-  statNumber: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  statLabel: { color: COLORS.muted, fontSize: 12 },
-  actions: { flexDirection: 'row', alignItems: 'center' },
+  headerIcon: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  identityContainer: { alignItems: 'center', gap: 10, paddingHorizontal: 24, marginTop: 8, width: '100%' },
+  usernameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 4, width: '100%' },
+  usernameText: { color: COLORS.text, fontSize: 24, fontWeight: '900', textAlign: 'center', letterSpacing: -0.5 },
+  verifiedBadge: { marginLeft: 6 },
+  avatarWrapperBase: { position: 'relative', width: 120, height: 120, alignItems: 'center', justifyContent: 'center', borderRadius: 60 },
+  activeAvatarRing: { borderWidth: 2, borderColor: COLORS.cyan },
+  cameraBadgeLarge: { position: 'absolute', right: -6, bottom: -6, width: 26, height: 26, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: COLORS.cyan, borderWidth: 2, borderColor: COLORS.bg },
+  bioText: { color: COLORS.text, fontSize: 14, lineHeight: 20, textAlign: 'center', maxWidth: '80%', marginTop: 4 },
+  locationRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 6 },
+  locationText: { color: COLORS.muted, fontSize: 12 },
+  statsRow: { flexDirection: 'row', justifyContent: 'center', gap: 24, marginTop: 18, width: '100%' },
+  statBox: { alignItems: 'center', minWidth: 60 },
+  statNumber: { color: COLORS.text, fontSize: 20, fontWeight: '900' },
+  statLabel: { color: COLORS.muted, fontSize: 11, fontWeight: '700', marginTop: 4 },
+  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 14 },
   followButton: { minWidth: 118, minHeight: 42, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
   notFollowingButton: { backgroundColor: COLORS.cyan },
-  followingButton: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: '#333' },
-  followText: { color: '#000', fontWeight: 'bold', fontSize: 16 },
-  messageButton: { width: 42, height: 42, borderRadius: 21, backgroundColor: COLORS.card, borderWidth: 1, borderColor: '#333', justifyContent: 'center', alignItems: 'center', marginLeft: 10 },
+  followingButton: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.cyan },
+  followText: { color: COLORS.bg, fontWeight: 'bold', fontSize: 16 },
+  editProfileButton: { flex: 1, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 10, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.card },
+  editProfileText: { color: COLORS.text, fontSize: 13, fontWeight: '800' },
+  uploadButton: { width: 46, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: COLORS.cyan },
+  messageButton: { width: 42, height: 42, borderRadius: 21, backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border, justifyContent: 'center', alignItems: 'center', marginLeft: 10 },
   mutualFriendsText: { fontSize: 11, marginTop: 10 },
-  tabBar: { height: 48, flexDirection: 'row', borderBottomWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  tabBar: { height: 48, flexDirection: 'row', borderBottomWidth: 1, borderColor: COLORS.border, width: '100%' },
   tabButton: { flex: 1, position: 'relative', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   tabLabel: { fontSize: 12, fontWeight: '700' },
   tabUnderline: { position: 'absolute', height: 2, left: '22%', right: '22%', bottom: 0, backgroundColor: 'transparent', borderRadius: 1 },
   tabUnderlineActive: { backgroundColor: COLORS.cyan },
   menuOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },
   menuSheet: { borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingHorizontal: 20, paddingTop: 12 },
-  menuHandle: { width: 42, height: 4, alignSelf: 'center', borderRadius: 2, backgroundColor: '#737B87', marginBottom: 14 },
-  menuItem: { minHeight: 52, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
+  menuHandle: { width: 42, height: 4, alignSelf: 'center', borderRadius: 2, backgroundColor: COLORS.muted, marginBottom: 14 },
+  menuItem: { minHeight: 52, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: COLORS.border },
   menuItemText: { fontSize: 15, fontWeight: '600', marginLeft: 13 },
   dangerText: { color: COLORS.pink },
   emptyPosts: { color: COLORS.muted, textAlign: 'center', paddingVertical: 32, paddingHorizontal: 20 },

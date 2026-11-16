@@ -20,7 +20,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { databases, Query } from '../config/appwrite';
 import { COLLECTIONS, COLORS, DATABASE_ID, fileIdFromUrl } from '../config/constants';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
 import { ensureUserDoc, getVideoThumbnail } from '../config/helpers';
 import { formatCompactCount } from '../config/formatNumbers';
 import {
@@ -49,7 +48,6 @@ const PROFILE_TABS = [
 function MyProfileScreen({ navigation }) {
   const { user, setUser } = useAuth();
   const profileUserId = user?.$id;
-  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const scale = getResponsiveScale(width);
@@ -66,6 +64,7 @@ function MyProfileScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [hasStatus, setHasStatus] = useState(false);
   const loadRequest = useRef(0);
 
   const fetchProfile = useCallback(async () => {
@@ -238,8 +237,8 @@ function MyProfileScreen({ navigation }) {
         accessibilityLabel={isPost ? `Open post ${item.content || ''}` : `Open reel ${item.caption || ''}`}
       >
         {isTextPost ? (
-          <View style={styles.textPostTile}>
-            <Ionicons name="text-outline" size={30} color="#AAB2BD" />
+          <View style={[styles.textPostTile, { backgroundColor: COLORS.card }]}>
+            <Ionicons name="text-outline" size={30} color={COLORS.muted} />
           </View>
         ) : thumbnailUrl && !failedThumbnailIds[item.$id] ? (
           <Image
@@ -272,14 +271,14 @@ function MyProfileScreen({ navigation }) {
             }}
           />
         ) : (
-          <View style={styles.videoPlaceholder}>
-            <Ionicons name={isPost ? 'image-outline' : 'videocam-outline'} size={28} color="#727985" />
+          <View style={[styles.videoPlaceholder, { backgroundColor: COLORS.card }]}>
+            <Ionicons name={isPost ? 'image-outline' : 'videocam-outline'} size={28} color={COLORS.muted} />
           </View>
         )}
         {isVideo ? (
           <View style={styles.tileMeta}>
-            <Ionicons name="play" size={12} color="#fff" />
-            <Text style={styles.tileMetaText}>{formatCompactCount(item.views)}</Text>
+            <Ionicons name="play" size={12} color={COLORS.text} />
+            <Text style={[styles.tileMetaText, { color: COLORS.text }]}>{formatCompactCount(item.views)}</Text>
           </View>
         ) : null}
       </TouchableOpacity>
@@ -310,7 +309,7 @@ function MyProfileScreen({ navigation }) {
   const renderEmptyGrid = () => (
     <View style={styles.emptyGrid}>
       {Array.from({ length: 9 }, (_, index) => (
-        <View key={`empty-${index}`} style={[styles.skeletonTile, { width: tileSize, height: tileSize }]} />
+        <View key={`empty-${index}`} style={[styles.skeletonTile, { width: tileSize, height: tileSize, backgroundColor: COLORS.card }]} />
       ))}
       <View pointerEvents="none" style={styles.emptyGridMessage}>
         <Ionicons name={
@@ -318,12 +317,12 @@ function MyProfileScreen({ navigation }) {
             : activeTab === 'videos' ? 'videocam-outline'
               : activeTab === 'saved' ? 'bookmark-outline' : 'heart-outline'
         } size={23} color={COLORS.cyan} />
-        <Text style={styles.emptyGridTitle}>
+        <Text style={[styles.emptyGridTitle, { color: COLORS.text }]}>
           {activeTab === 'posts' ? 'No posts yet'
             : activeTab === 'videos' ? 'No videos yet'
               : activeTab === 'saved' ? 'No saved content yet' : 'No liked content yet'}
         </Text>
-        {activeTab === 'videos' && <Text style={styles.emptyGridSubtitle}>Tap + to get started</Text>}
+        {activeTab === 'videos' && <Text style={[styles.emptyGridSubtitle, { color: COLORS.muted }]}>Tap + to get started</Text>}
       </View>
     </View>
   );
@@ -331,104 +330,96 @@ function MyProfileScreen({ navigation }) {
   const header = (
     <View style={[styles.profileHeader, { paddingTop: insets.top + 8 }]}>
       <View style={styles.topBar}>
-        <TouchableOpacity onPress={shareProfile} style={styles.headerIcon} accessibilityRole="button" accessibilityLabel="Share profile">
-          <Ionicons name="share-social-outline" size={22} color="#F6F8FA" />
-        </TouchableOpacity>
-        <Text numberOfLines={1} style={[styles.usernameHeader, { color: colors.text }]}>@{username}</Text>
         <TouchableOpacity
           onPress={() => navigation.navigate('Settings')}
           style={styles.headerIcon}
           accessibilityRole="button"
           accessibilityLabel="Settings"
         >
-          <Ionicons name="settings-outline" size={22} color="#F6F8FA" />
+          <Ionicons name="settings-outline" size={22} color={COLORS.text} />
         </TouchableOpacity>
       </View>
 
-      <View style={styles.profileDetails}>
+      <View style={styles.identityContainer}>
+        <View style={styles.usernameRow}>
+          <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.usernameText, { color: COLORS.text }]}>@{username}</Text>
+          {userDoc?.isVerified === true && (
+            <Ionicons name="checkmark-circle" size={16} color={COLORS.cyan} style={styles.verifiedBadge} />
+          )}
+        </View>
         <TouchableOpacity
           onPress={pickAvatar}
           disabled={uploadingAvatar}
-          style={[styles.avatarWrapper, { width: 112 * scale, height: 112 * scale }]}
+          style={[styles.avatarWrapperBase, hasStatus && styles.activeAvatarRing]}
           accessibilityRole="button"
           accessibilityLabel="Edit profile picture"
         >
-          <Avatar uri={userDoc?.avatarUrl} userId={user?.$id} name={displayName} size={104 * scale} bordered />
-          <View style={styles.cameraBadge}>
+          <Avatar uri={userDoc?.avatarUrl} userId={user?.$id} name={displayName} size={96 * scale} bordered />
+          <View style={styles.cameraBadgeLarge}>
             {uploadingAvatar
-              ? <ActivityIndicator size="small" color="#071014" />
-              : <Ionicons name="camera" size={15} color="#071014" />}
+              ? <ActivityIndicator size="small" color={COLORS.text} />
+              : <Ionicons name="camera" size={16} color={COLORS.text} />}
           </View>
         </TouchableOpacity>
-
-        <View style={styles.identity}>
-          <View style={styles.handleRow}>
-            <Text numberOfLines={1} ellipsizeMode="tail" style={styles.handleText}>@{username}</Text>
-            {userDoc?.isVerified === true && (
-              <Ionicons name="checkmark-circle" size={17} color={COLORS.cyan} style={styles.verifiedIcon} />
-            )}
+        <TouchableOpacity
+          onPress={() => navigation.navigate('EditProfile', { userDoc })}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={userDoc?.bio ? 'Edit bio' : 'Add a bio'}
+        >
+          <Text style={[styles.bioText, { color: COLORS.text }, !userDoc?.bio && { color: COLORS.muted }]}>
+            {userDoc?.bio || 'Tap to add a bio...'}
+          </Text>
+        </TouchableOpacity>
+        {userDoc?.province ? (
+          <View style={styles.locationRow}>
+            <Ionicons name="location-outline" size={15} color={COLORS.muted} />
+            <Text style={[styles.locationText, { color: COLORS.muted }]}>{userDoc.province}, SA</Text>
           </View>
+        ) : null}
+        <View style={styles.statsRow}>
           <TouchableOpacity
-            onPress={() => navigation.navigate('EditProfile', { userDoc })}
-            activeOpacity={0.7}
+            style={styles.statBox}
+            activeOpacity={0.72}
+            onPress={() => setActiveTab('posts')}
             accessibilityRole="button"
-            accessibilityLabel={userDoc?.bio ? 'Edit bio' : 'Add a bio'}
+            accessibilityLabel={`View ${postsCount} posts`}
           >
-            <Text style={[styles.bioText, { color: colors.text }, !userDoc?.bio && { color: colors.muted }]}>
-              {userDoc?.bio || 'Tap to add a bio...'}
-            </Text>
+            <Text style={[styles.statNumber, { color: COLORS.text }]}>{postsCount}</Text>
+            <Text style={[styles.statLabel, { color: COLORS.muted }]}>Posts</Text>
           </TouchableOpacity>
-          {userDoc?.province ? (
-            <View style={styles.locationRow}>
-              <Ionicons name="location-outline" size={15} color="#929AA5" />
-              <Text style={styles.locationText}>{userDoc.province}, SA</Text>
-            </View>
-          ) : null}
+          <TouchableOpacity
+            style={styles.statBox}
+            activeOpacity={0.72}
+            onPress={() => navigation.navigate('FollowersList', { userId: user?.$id, username })}
+            accessibilityRole="button"
+            accessibilityLabel={`View ${followCounts.followers} followers`}
+          >
+            <Text style={[styles.statNumber, { color: COLORS.text }]}>{formatCompactCount(followCounts.followers)}</Text>
+            <Text style={[styles.statLabel, { color: COLORS.muted }]}>Followers</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.statBox}
+            activeOpacity={0.72}
+            onPress={() => navigation.navigate('FollowingList', { userId: user?.$id, username })}
+            accessibilityRole="button"
+            accessibilityLabel={`View ${followCounts.following} following`}
+          >
+            <Text style={[styles.statNumber, { color: COLORS.text }]}>{formatCompactCount(followCounts.following)}</Text>
+            <Text style={[styles.statLabel, { color: COLORS.muted }]}>Following</Text>
+          </TouchableOpacity>
         </View>
-      </View>
-
-      <View style={styles.statsRow}>
-        <TouchableOpacity
-          style={styles.statBox}
-          activeOpacity={0.72}
-          onPress={() => setActiveTab('posts')}
-          accessibilityRole="button"
-          accessibilityLabel={`View ${postsCount} posts`}
-        >
-          <Text style={[styles.statNumber, { color: colors.text }]}>{postsCount}</Text>
-          <Text style={[styles.statLabel, { color: colors.muted }]}>Posts</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.statBox}
-          activeOpacity={0.72}
-          onPress={() => navigation.navigate('FollowersList', { userId: user?.$id, username })}
-          accessibilityRole="button"
-          accessibilityLabel={`View ${followCounts.followers} followers`}
-        >
-          <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactCount(followCounts.followers)}</Text>
-          <Text style={[styles.statLabel, { color: colors.muted }]}>Followers</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.statBox}
-          activeOpacity={0.72}
-          onPress={() => navigation.navigate('FollowingList', { userId: user?.$id, username })}
-          accessibilityRole="button"
-          accessibilityLabel={`View ${followCounts.following} following`}
-        >
-          <Text style={[styles.statNumber, { color: colors.text }]}>{formatCompactCount(followCounts.following)}</Text>
-          <Text style={[styles.statLabel, { color: colors.muted }]}>Following</Text>
-        </TouchableOpacity>
       </View>
 
       <LaunchCountdownCard />
 
       <View style={styles.actionRow}>
         <TouchableOpacity
-          style={styles.editProfileButton}
+          style={[styles.editProfileButton, { borderColor: COLORS.border, backgroundColor: COLORS.card }]}
           onPress={() => navigation.navigate('EditProfile', { userDoc })}
           accessibilityRole="button"
         >
-          <Text style={styles.editProfileText}>Edit Profile</Text>
+          <Text style={[styles.editProfileText, { color: COLORS.text }]}>Edit Profile</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.uploadButton}
@@ -436,7 +427,7 @@ function MyProfileScreen({ navigation }) {
           accessibilityRole="button"
           accessibilityLabel="Upload a new video"
         >
-          <Ionicons name="add" size={27} color="#071014" />
+          <Ionicons name="add" size={27} color={COLORS.text} />
         </TouchableOpacity>
       </View>
 
@@ -451,8 +442,8 @@ function MyProfileScreen({ navigation }) {
               accessibilityRole="tab"
               accessibilityState={{ selected }}
             >
-              <Ionicons name={tab.icon} size={17} color={selected ? COLORS.cyan : '#89919C'} />
-              <Text style={[styles.tabLabel, selected && styles.tabLabelActive]}>{tab.label}</Text>
+              <Ionicons name={tab.icon} size={17} color={selected ? COLORS.cyan : COLORS.muted} />
+              <Text style={[styles.tabLabel, selected && { color: COLORS.text }]}>{tab.label}</Text>
               <View style={[styles.tabUnderline, selected && styles.tabUnderlineActive]} />
             </TouchableOpacity>
           );
@@ -463,7 +454,7 @@ function MyProfileScreen({ navigation }) {
 
   if (loading && !refreshing) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.bg }]}>
+      <View style={[styles.container, { backgroundColor: COLORS.bg }]}>
         <View style={styles.loadingContainer}>
           <MzansiLoader />
         </View>
@@ -473,9 +464,9 @@ function MyProfileScreen({ navigation }) {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
+    <View style={[styles.container, { backgroundColor: COLORS.bg }]}>
       <TopLoadingBar isLoading={loading || refreshing} />
-      {errorMessage ? <Text style={styles.errorMessage}>{errorMessage}</Text> : null}
+      <Text style={[styles.errorMessage, { backgroundColor: COLORS.raised }]}>{errorMessage}</Text>
       <FlatList
         key={activeTab === 'posts' ? 'profile-posts-list' : 'profile-grid-three-columns'}
         data={activeTab === 'posts'
@@ -516,33 +507,31 @@ export default function ProfileScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+  container: { flex: 1, width: '100%', backgroundColor: COLORS.bg },
   loadingContainer: { alignItems: 'center', justifyContent: 'center' },
-  profileHeader: { paddingBottom: 0 },
-  topBar: { height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 17 },
-  headerIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  usernameHeader: { flex: 1, color: '#F6F8FA', fontSize: 16, fontWeight: '800', textAlign: 'center', marginHorizontal: 8 },
-  profileDetails: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 21, paddingTop: 16 },
-  avatarWrapper: { position: 'relative', width: 112, height: 112, alignItems: 'center', justifyContent: 'center', marginRight: 19 },
-  cameraBadge: { position: 'absolute', right: 3, bottom: 3, width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 15, backgroundColor: COLORS.cyan, borderWidth: 3, borderColor: COLORS.bg },
-  identity: { flex: 1, justifyContent: 'center' },
-  handleRow: { minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 3 },
-  handleText: { flexShrink: 1, color: '#fff', fontSize: 15, fontWeight: '800' },
-  verifiedIcon: { flexShrink: 0 },
-  bioText: { color: '#E8EAED', fontSize: 13, lineHeight: 18, marginTop: 10 },
-  bioPlaceholder: { color: '#818995' },
-  locationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 7 },
-  locationText: { color: '#929AA5', fontSize: 12, marginLeft: 4 },
-  statsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', marginTop: 19, marginHorizontal: 17, paddingVertical: 13, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
-  statBox: { minWidth: 78, alignItems: 'center' },
-  statNumber: { color: '#fff', fontSize: 18, fontWeight: '900' },
-  statLabel: { color: '#9098A3', fontSize: 11, fontWeight: '600', marginTop: 3 },
+  profileHeader: { width: '100%', paddingBottom: 0 },
+  topBar: { width: '100%', paddingHorizontal: 24, paddingTop: 10, paddingBottom: 4, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' },
+  headerIcon: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  identityContainer: { alignItems: 'center', gap: 10, paddingHorizontal: 24, marginTop: 10, width: '100%' },
+  usernameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 4, width: '100%' },
+  usernameText: { color: COLORS.text, fontSize: 24, fontWeight: '900', textAlign: 'center', letterSpacing: -0.5 },
+  verifiedBadge: { marginLeft: 6 },
+  avatarWrapperBase: { position: 'relative', width: 120, height: 120, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.muted, borderRadius: 60 },
+  activeAvatarRing: { borderWidth: 2, borderColor: COLORS.cyan },
+  cameraBadgeLarge: { position: 'absolute', right: -6, bottom: -6, width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 15, backgroundColor: COLORS.cyan, borderWidth: 3, borderColor: COLORS.bg },
+  bioText: { color: COLORS.text, fontSize: 14, lineHeight: 20, textAlign: 'center', maxWidth: '80%' },
+  locationRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 6 },
+  locationText: { color: COLORS.muted, fontSize: 12 },
+  statsRow: { flexDirection: 'row', justifyContent: 'center', gap: 24, marginTop: 18, width: '100%' },
+  statBox: { alignItems: 'center', minWidth: 60 },
+  statNumber: { color: COLORS.text, fontSize: 20, fontWeight: '900' },
+  statLabel: { color: COLORS.muted, fontSize: 11, fontWeight: '700', marginTop: 4 },
   emptyPosts: { color: COLORS.muted, textAlign: 'center', paddingVertical: 32, paddingHorizontal: 20 },
-  actionRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginTop: 15, marginBottom: 16, gap: 10 },
+  actionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, marginTop: 15, marginBottom: 16, gap: 10 },
   editProfileButton: { flex: 1, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 10, borderWidth: 1, borderColor: '#3A414B', backgroundColor: '#151820' },
   editProfileText: { color: '#F3F5F7', fontSize: 13, fontWeight: '800' },
   uploadButton: { width: 46, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: COLORS.cyan },
-  tabBar: { height: 48, flexDirection: 'row', borderBottomWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  tabBar: { height: 48, flexDirection: 'row', borderBottomWidth: 1, borderColor: 'rgba(255,255,255,0.08)', width: '100%' },
   tabButton: { flex: 1, position: 'relative', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   tabLabel: { color: '#89919C', fontSize: 12, fontWeight: '700' },
   tabLabelActive: { color: '#F5F7F9' },
@@ -560,3 +549,4 @@ const styles = StyleSheet.create({
   emptyGridSubtitle: { color: '#9CA4AE', fontSize: 12, marginTop: 4 },
   errorMessage: { color: '#FF7B86', textAlign: 'center', fontSize: 12, padding: 8, backgroundColor: '#21171B' },
 });
+

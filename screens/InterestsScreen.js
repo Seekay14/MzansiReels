@@ -129,8 +129,8 @@ export default function InterestsScreen() {
             <Ionicons name="sparkles" size={15} color={COLORS.cyan} />
             <Text style={styles.eyebrowText}>YOUR PERSONALIZED FEED</Text>
           </View>
-          <Text style={styles.title}>What are you into?</Text>
-          <Text style={styles.description}>
+          <Text style={[styles.title, { color: COLORS.text }]}>What are you into?</Text>
+          <Text style={[styles.description, { color: COLORS.muted }]}>
             Select at least 3 topics to personalize your For You feed.
           </Text>
         </View>
@@ -151,13 +151,13 @@ export default function InterestsScreen() {
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: selected }}
               >
-                <Text style={[styles.categoryText, selected && styles.categoryTextSelected]}>
+                <Text style={[styles.categoryText, selected && styles.categoryTextSelected, { color: selected ? COLORS.bg : COLORS.text }]}>
                   {category}
                 </Text>
                 <Ionicons
                   name={selected ? 'checkmark-circle' : 'add-circle-outline'}
                   size={21}
-                  color={selected ? '#071014' : COLORS.cyan}
+                  color={selected ? COLORS.bg : COLORS.cyan}
                 />
               </TouchableOpacity>
             );
@@ -165,7 +165,7 @@ export default function InterestsScreen() {
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.selectionHint}>
+          <Text style={[styles.selectionHint, { color: COLORS.muted }]}>
             {selectedInterests.length < 3
               ? `Choose ${3 - selectedInterests.length} more to continue`
               : `${selectedInterests.length} topics selected`}
@@ -177,11 +177,11 @@ export default function InterestsScreen() {
             accessibilityRole="button"
           >
             {saving ? (
-              <ActivityIndicator color="#071014" />
+              <ActivityIndicator color={COLORS.bg} />
             ) : (
               <>
-                <Text style={styles.continueText}>Continue</Text>
-                <Ionicons name="arrow-forward" size={20} color={canContinue ? '#071014' : '#777'} />
+                <Text style={[styles.continueText, { color: COLORS.bg }]}>Continue</Text>
+                <Ionicons name="arrow-forward" size={20} color={canContinue ? COLORS.bg : COLORS.muted} />
               </>
             )}
           </TouchableOpacity>
@@ -191,8 +191,8 @@ export default function InterestsScreen() {
             disabled={saving}
             accessibilityRole="button"
           >
-            <Ionicons name="log-out-outline" size={17} color="#A0A8B1" />
-            <Text style={styles.logoutText}>Log Out</Text>
+            <Ionicons name="log-out-outline" size={17} color={COLORS.muted} />
+            <Text style={[styles.logoutText, { color: COLORS.muted }]}>Log Out</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -244,3 +244,4 @@ const styles = StyleSheet.create({
   logoutButton: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', padding: 12, marginTop: 8 },
   logoutText: { color: '#A0A8B1', fontSize: 13, fontWeight: '600', marginLeft: 6 },
 });
+

@@ -159,14 +159,14 @@ export default function EmailOTPScreen({ navigation }) {
           accessibilityRole="button"
           accessibilityLabel="Back to login"
         >
-          <Ionicons name="arrow-back" size={22} color="#F1F4F7" />
+          <Ionicons name="arrow-back" size={22} color={COLORS.text} />
         </TouchableOpacity>
 
         <View style={styles.brandIcon}>
           <Ionicons name="mail" size={28} color={COLORS.cyan} />
         </View>
-        <Text style={styles.title}>{step === 'email' ? 'Sign in with email' : 'Check your email'}</Text>
-        <Text style={styles.subtitle}>
+        <Text style={[styles.title, { color: COLORS.text }]}>{step === 'email' ? 'Sign in with email' : 'Check your email'}</Text>
+        <Text style={[styles.subtitle, { color: COLORS.muted }]}>
           {step === 'email'
             ? 'We’ll send you a one-time code to sign in or create your account.'
             : `Enter the 6-digit code sent to ${email}.`}
@@ -174,16 +174,16 @@ export default function EmailOTPScreen({ navigation }) {
 
         {step === 'email' ? (
           <>
-            <Text style={styles.label}>Email address</Text>
-            <TextInput
-              style={styles.emailInput}
+            <Text style={[styles.label, { color: COLORS.muted }]}>Email address</Text>
+              <TextInput
+                style={[styles.emailInput, { color: COLORS.text }]}
               value={email}
               onChangeText={(value) => {
                 setEmail(value);
                 setErrorMessage('');
               }}
               placeholder="you@example.com"
-              placeholderTextColor="#7D8793"
+              placeholderTextColor={COLORS.muted}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
@@ -200,8 +200,8 @@ export default function EmailOTPScreen({ navigation }) {
               accessibilityRole="button"
             >
               {sending
-                ? <ActivityIndicator color="#071014" />
-                : <Text style={styles.primaryButtonText}>Send OTP</Text>}
+                ? <ActivityIndicator color={COLORS.bg} />
+                : <Text style={[styles.primaryButtonText, { color: COLORS.bg }]}>Send OTP</Text>}
             </TouchableOpacity>
           </>
         ) : (
@@ -214,7 +214,7 @@ export default function EmailOTPScreen({ navigation }) {
             >
               {Array.from({ length: 6 }, (_, index) => (
                 <View key={index} style={[styles.otpCell, otp.length === index && styles.otpCellActive]}>
-                  <Text style={styles.otpDigit}>{otp[index] || ''}</Text>
+                  <Text style={[styles.otpDigit, { color: COLORS.text }]}>{otp[index] || ''}</Text>
                 </View>
               ))}
               <TextInput
@@ -241,12 +241,12 @@ export default function EmailOTPScreen({ navigation }) {
               accessibilityRole="button"
             >
               {verifying
-                ? <ActivityIndicator color="#071014" />
-                : <Text style={styles.primaryButtonText}>Verify &amp; Login</Text>}
+                ? <ActivityIndicator color={COLORS.bg} />
+                : <Text style={[styles.primaryButtonText, { color: COLORS.bg }]}>Verify &amp; Login</Text>}
             </TouchableOpacity>
 
             <View style={styles.resendRow}>
-              <Text style={styles.resendText}>Didn’t get a code?</Text>
+              <Text style={[styles.resendText, { color: COLORS.muted }]}>Didn’t get a code?</Text>
               <TouchableOpacity
                 onPress={() => sendOTP(email)}
                 disabled={sending || secondsRemaining > 0}
@@ -266,12 +266,12 @@ export default function EmailOTPScreen({ navigation }) {
               </TouchableOpacity>
             </View>
             <TouchableOpacity onPress={changeEmail} style={styles.changeEmail}>
-              <Text style={styles.changeEmailText}>Change email address</Text>
+              <Text style={[styles.changeEmailText, { color: COLORS.muted }]}>Change email address</Text>
             </TouchableOpacity>
           </>
         )}
 
-        {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
+        {errorMessage ? <Text style={[styles.error, { color: COLORS.pink }]}>{errorMessage}</Text> : null}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -308,17 +308,17 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     backgroundColor: 'rgba(0,229,255,0.11)',
   },
-  title: { color: '#F3F5F7', fontSize: 26, fontWeight: '900', textAlign: 'center', marginTop: 22 },
-  subtitle: { color: '#9BA3AD', fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 10, marginBottom: 30 },
-  label: { color: '#DCE1E6', fontSize: 13, fontWeight: '700', marginBottom: 8 },
+  title: { color: COLORS.text, fontSize: 26, fontWeight: '900', textAlign: 'center', marginTop: 22 },
+  subtitle: { color: COLORS.muted, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 10, marginBottom: 30 },
+  label: { color: COLORS.muted, fontSize: 13, fontWeight: '700', marginBottom: 8 },
   emailInput: {
     height: 54,
     paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: '#343B45',
+    borderColor: COLORS.border,
     borderRadius: 13,
-    backgroundColor: '#151923',
-    color: '#F3F5F7',
+    backgroundColor: COLORS.card,
+    color: COLORS.text,
     fontSize: 15,
   },
   primaryButton: {
@@ -330,7 +330,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.cyan,
   },
   buttonDisabled: { opacity: 0.65 },
-  primaryButtonText: { color: '#071014', fontSize: 15, fontWeight: '900' },
+  primaryButtonText: { color: COLORS.bg, fontSize: 15, fontWeight: '900' },
   otpCells: { flexDirection: 'row', justifyContent: 'space-between', position: 'relative', marginBottom: 8 },
   otpCell: {
     width: 42,
@@ -338,24 +338,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#343B45',
+    borderColor: COLORS.border,
     borderRadius: 11,
-    backgroundColor: '#151923',
+    backgroundColor: COLORS.card,
   },
   otpCellActive: { borderColor: COLORS.cyan },
-  otpDigit: { color: '#F3F5F7', fontSize: 22, fontWeight: '800' },
+  otpDigit: { color: COLORS.text, fontSize: 22, fontWeight: '800' },
   hiddenOtpInput: { ...StyleSheet.absoluteFillObject, opacity: 0, color: 'transparent' },
   resendRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 7, marginTop: 24 },
-  resendText: { color: '#9BA3AD', fontSize: 13 },
+  resendText: { color: COLORS.muted, fontSize: 13 },
   resendAction: { color: COLORS.cyan, fontSize: 13, fontWeight: '800' },
-  resendDisabled: { color: '#78818C' },
+  resendDisabled: { color: COLORS.muted },
   changeEmail: { alignSelf: 'center', paddingVertical: 14 },
-  changeEmailText: { color: '#AAB1BA', fontSize: 13, fontWeight: '600' },
+  changeEmailText: { color: COLORS.muted, fontSize: 13, fontWeight: '600' },
   error: {
-    color: '#FF737F',
+    color: COLORS.pink,
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 19,
     marginTop: 18,
   },
 });
+

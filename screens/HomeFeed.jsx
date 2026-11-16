@@ -5,6 +5,7 @@ import {
   FlatList,
   Platform,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -18,15 +19,14 @@ import SkeletonPost from '../components/SkeletonPost';
 import BrandTitle from '../components/BrandTitle';
 import CreatePostComposer from '../components/CreatePostComposer';
 import CreatePostModal from '../components/CreatePostModal';
-import StoriesRow, { groupStories } from '../components/StoriesRow';
+import { groupStories } from '../components/StoriesRow';
 import StoryViewer from '../components/StoryViewer';
 import TopLoadingBar from '../components/TopLoadingBar';
-import { client, databases, Query } from '../config/appwrite';
+import { databases, Query } from '../config/appwrite';
 import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
 import { fetchActiveStories } from '../config/storyService';
 import { useAuth } from '../context/AuthContext';
 import { requireAuth } from '../config/helpers';
-import { useTheme } from '../context/ThemeContext';
 import { useSearchMenu } from '../context/SearchMenuContext';
 import * as ImagePicker from 'expo-image-picker';
 import Avatar from '../components/Avatar';
@@ -35,7 +35,6 @@ const PAGE_SIZE = 20;
 
 export default function HomeFeed({ navigation }) {
   const { user } = useAuth();
-  const { colors } = useTheme();
   const { openSearchMenu } = useSearchMenu();
   const { width } = useWindowDimensions();
   const [layoutWidth, setLayoutWidth] = useState(width);
@@ -162,8 +161,33 @@ export default function HomeFeed({ navigation }) {
       setErrorMessage('');
     }
     try {
+      if (!user?.$id) {
+        setLoading(false);
+        setRefreshing(false);
+        setLoadingMore(false);
+        setPosts([]);
+        return;
+      }
+
+      const followsResult = await databases.listDocuments(DATABASE_ID, COLLECTIONS.follows, [
+        Query.equal('followerId', user.$id),
+        Query.limit(1000),
+      ]);
+      const followingIds = followsResult.documents.map((doc) => doc.followingId).filter(Boolean);
+
+      if (followingIds.length === 0) {
+        setPosts([]);
+        setHasMore(false);
+        setErrorMessage('');
+        setLoading(false);
+        setRefreshing(false);
+        setLoadingMore(false);
+        return;
+      }
+
       const result = await databases.listDocuments(DATABASE_ID, COLLECTIONS.posts, [
         Query.orderDesc('uploadedAt'),
+        Query.equal('userId', followingIds),
         Query.limit(PAGE_SIZE),
         Query.offset(append ? listOffset.current : 0),
       ]);
@@ -187,7 +211,7 @@ export default function HomeFeed({ navigation }) {
       setRefreshing(false);
       setLoadingMore(false);
     }
-  }, []);
+  }, [user?.$id]);
 
   const fetchStories = useCallback(async () => {
     if (!user?.$id) {
@@ -214,15 +238,8 @@ export default function HomeFeed({ navigation }) {
 
   useEffect(() => {
     if (!focused || !user?.$id) return undefined;
-    const unsubscribe = client.subscribe(
-      `databases.${DATABASE_ID}.collections.${COLLECTIONS.stories}.documents`,
-      (event) => {
-        if (event.events?.some((name) => name.endsWith('.create') || name.endsWith('.delete'))) {
-          fetchStories();
-        }
-      },
-    );
-    return unsubscribe;
+    const storyTimer = setInterval(fetchStories, 30000);
+    return () => clearInterval(storyTimer);
   }, [fetchStories, focused, user?.$id]);
 
   const refresh = useCallback(() => {
@@ -352,14 +369,6 @@ export default function HomeFeed({ navigation }) {
   const visiblePosts = posts.filter((post) => !hiddenPostIds.includes(post.$id));
   const storiesHeader = (
     <View>
-      <StoriesRow
-        stories={stories}
-        user={user}
-        onOpenStory={(index) => {
-          setActiveStoryGroup(index);
-          setStoryViewerVisible(true);
-        }}
-      />
       {user?.$id ? (
         <CreatePostComposer
           user={user}
@@ -370,6 +379,48 @@ export default function HomeFeed({ navigation }) {
           onPressEmoji={() => openPostModal('text', null, true)}
         />
       ) : null}
+      <View style={[styles.storiesContainer, { borderBottomColor: COLORS.border }]}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.storiesList}
+        >
+          <TouchableOpacity
+            style={[styles.storyItem, styles.createStoryItem]}
+            onPress={() => navigation.navigate('Messages', { screen: 'Status' })}
+            accessibilityRole="button"
+            accessibilityLabel="Create your own story"
+          >
+            <View style={styles.createStoryRing}>
+              <View style={styles.createStoryAvatar}>
+                <Ionicons name="videocam" size={28} color={COLORS.cyan} />
+              </View>
+              <View style={styles.createStoryPlusBadge} />
+            </View>
+            <Text numberOfLines={1} style={[styles.storyName, { color: COLORS.text }]}>Create story</Text>
+          </TouchableOpacity>
+          {storyGroups.map((group) => {
+            const story = group.latest;
+            const creatorName = group.stories[0]?.userName || group.stories[0]?.name || 'User';
+            return (
+              <TouchableOpacity
+                key={group.userId}
+                style={styles.storyItem}
+                onPress={() => { setActiveStoryGroup(storyGroups.indexOf(group)); setStoryViewerVisible(true); }}
+                accessibilityRole="button"
+                accessibilityLabel={`View ${creatorName}'s story`}
+              >
+                <View style={[styles.storyRing, styles.activeRing]}>
+                  <View style={styles.avatarFrame}>
+                    <Avatar uri={group.stories[0]?.avatarUrl} userId={group.userId} name={creatorName} size={56} />
+                  </View>
+                </View>
+                <Text numberOfLines={1} style={[styles.storyName, { color: COLORS.text }]}>{creatorName}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
     </View>
   );
 
@@ -389,8 +440,8 @@ export default function HomeFeed({ navigation }) {
     <View style={styles.center}>
       <Ionicons name="cloud-offline-outline" size={40} color={COLORS.muted} />
       <Text style={styles.emptyText}>{errorMessage}</Text>
-      <TouchableOpacity style={styles.retryButton} onPress={() => fetchPosts()}>
-        <Text style={styles.retryText}>Try again</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={() => fetchPosts()}>
+          <Text style={[styles.retryText, { color: COLORS.muted }]}>Try again</Text>
       </TouchableOpacity>
     </View>
   ) : (
@@ -429,10 +480,10 @@ export default function HomeFeed({ navigation }) {
       ListEmptyComponent={(
         <View style={styles.center}>
           <View style={styles.emptyIcon}>
-            <Ionicons name="newspaper-outline" size={38} color={COLORS.cyan} />
+            <Ionicons name="person-add-outline" size={38} color={COLORS.cyan} />
           </View>
-          <Text style={styles.emptyTitle}>Nothing to see here yet</Text>
-          <Text style={styles.emptyText}>Follow some creators or post your first update!</Text>
+          <Text style={[styles.emptyTitle, { color: COLORS.text }]}>Follow some creators to see their posts here.</Text>
+          <Text style={[styles.emptyText, { color: COLORS.muted }]}>Find creators you like, tap Follow, and their posts will show up in your feed.</Text>
         </View>
       )}
       ListFooterComponent={loadingMore ? <ActivityIndicator color={COLORS.cyan} style={styles.footerLoader} /> : null}
@@ -450,9 +501,9 @@ export default function HomeFeed({ navigation }) {
     <View
       style={[
         styles.screen,
-        { backgroundColor: colors.bg },
+        { backgroundColor: COLORS.bg },
         isDesktop && styles.desktopScreen,
-        isDesktop && { backgroundColor: colors.bg },
+        isDesktop && { backgroundColor: COLORS.bg },
       ]}
       onLayout={({ nativeEvent }) => {
         const nextWidth = nativeEvent.layout.width;
@@ -463,29 +514,29 @@ export default function HomeFeed({ navigation }) {
     >
       <View style={[
         styles.topBar,
-        { backgroundColor: colors.bg, borderBottomColor: colors.border },
+        { backgroundColor: COLORS.bg, borderBottomColor: COLORS.border },
         isDesktop && styles.desktopTopBar,
-        isDesktop && { backgroundColor: colors.card, borderBottomColor: colors.border },
+        isDesktop && { backgroundColor: COLORS.card, borderBottomColor: COLORS.border },
       ]}>
         <BrandTitle />
         <View style={styles.topActions}>
           {user ? (
             <TouchableOpacity
-              style={styles.topIconButton}
+              style={[styles.topIconButton, { backgroundColor: COLORS.raised }]}
               onPress={() => navigation.navigate('Notifications')}
               accessibilityRole="button"
               accessibilityLabel="Notifications"
             >
-              <Ionicons name="notifications-outline" size={22} color={colors.text} />
+              <Ionicons name="notifications-outline" size={22} color={COLORS.text} />
             </TouchableOpacity>
           ) : null}
-          <TouchableOpacity
-            style={styles.topIconButton}
-            onPress={openSearchMenu}
-            accessibilityRole="button"
-            accessibilityLabel="Search"
-          >
-            <Ionicons name="search-outline" size={22} color={colors.text} />
+            <TouchableOpacity
+              style={[styles.topIconButton, { backgroundColor: COLORS.raised }]}
+              onPress={openSearchMenu}
+              accessibilityRole="button"
+              accessibilityLabel="Search"
+            >
+            <Ionicons name="search-outline" size={22} color={COLORS.text} />
           </TouchableOpacity>
         </View>
       </View>
@@ -496,8 +547,8 @@ export default function HomeFeed({ navigation }) {
           accessibilityRole="button"
           accessibilityLabel="Show new posts"
         >
-          <Ionicons name="arrow-up" size={16} color="#061116" />
-          <Text style={styles.newPostsText}>Show new posts</Text>
+              <Ionicons name="arrow-up" size={16} color={COLORS.muted} />
+          <Text style={[styles.newPostsText, { color: COLORS.muted }]}>Show new posts</Text>
         </TouchableOpacity>
       ) : null}
       <View
@@ -511,8 +562,8 @@ export default function HomeFeed({ navigation }) {
         ]}
       >
         {isDesktop ? (
-          <View style={[styles.sidebar, styles.leftSidebar, { width: sidebarWidth, borderRightColor: colors.border }]}>
-            <Text style={[styles.sidebarHeading, { color: colors.muted }]}>Navigation</Text>
+          <View style={[styles.sidebar, styles.leftSidebar, { width: sidebarWidth, borderRightColor: COLORS.border }]}>
+            <Text style={[styles.sidebarHeading, { color: COLORS.muted }]}>Navigation</Text>
             {[
               { label: 'Home', icon: 'home-outline', route: 'Home', active: true },
               { label: 'Reels', icon: 'play-circle-outline', route: 'Reels' },
@@ -526,8 +577,8 @@ export default function HomeFeed({ navigation }) {
                 accessibilityRole="button"
                 accessibilityLabel={item.label}
               >
-                <Ionicons name={item.icon} size={21} color={item.active ? colors.accent : colors.muted} />
-                <Text style={[styles.sidebarLinkText, { color: colors.text }, item.active && styles.sidebarLinkTextActive]}>
+                <Ionicons name={item.icon} size={21} color={item.active ? COLORS.accent : COLORS.muted} />
+                <Text style={[styles.sidebarLinkText, { color: COLORS.text }, item.active && styles.sidebarLinkTextActive]}>
                   {item.label}
                 </Text>
               </TouchableOpacity>
@@ -538,8 +589,8 @@ export default function HomeFeed({ navigation }) {
               accessibilityRole="button"
               accessibilityLabel="Search"
             >
-              <Ionicons name="search-outline" size={21} color={colors.muted} />
-              <Text style={[styles.sidebarLinkText, { color: colors.text }]}>Search</Text>
+              <Ionicons name="search-outline" size={21} color={COLORS.muted} />
+              <Text style={[styles.sidebarLinkText, { color: COLORS.text }]}>Search</Text>
             </TouchableOpacity>
           </View>
         ) : null}
@@ -548,14 +599,14 @@ export default function HomeFeed({ navigation }) {
             styles.feedColumn,
             isDesktop && styles.desktopFeedColumn,
             isDesktop && { width: feedWidth },
-            isDesktop && { backgroundColor: colors.card, borderColor: colors.border },
+            isDesktop && { backgroundColor: COLORS.card, borderColor: COLORS.border },
           ]}
         >
           {feedContent}
         </View>
         {showRightSidebar ? (
-          <View style={[styles.sidebar, styles.rightSidebar, { width: sidebarWidth, borderLeftColor: colors.border }]}>
-            <Text style={[styles.sidebarHeading, { color: colors.muted }]}>Suggested Creators</Text>
+          <View style={[styles.sidebar, styles.rightSidebar, { width: sidebarWidth, borderLeftColor: COLORS.border }]}>
+            <Text style={[styles.sidebarHeading, { color: COLORS.muted }]}>Suggested Creators</Text>
             {suggestedCreators.length ? suggestedCreators.map((creator) => (
               <TouchableOpacity
                 key={creator.userId}
@@ -569,17 +620,17 @@ export default function HomeFeed({ navigation }) {
               >
                 <Avatar uri={creator.avatarUrl} userId={creator.userId} name={creator.name} size={40} />
                 <View style={styles.creatorCopy}>
-                  <Text style={[styles.creatorName, { color: colors.text }]} numberOfLines={1}>{creator.name}</Text>
-                  <Text style={[styles.creatorSubtitle, { color: colors.muted }]}>Suggested for you</Text>
+                  <Text style={[styles.creatorName, { color: COLORS.text }]} numberOfLines={1}>{creator.name}</Text>
+                  <Text style={[styles.creatorSubtitle, { color: COLORS.muted }]}>Suggested for you</Text>
                 </View>
               </TouchableOpacity>
             )) : (
-              <Text style={[styles.sidebarEmpty, { color: colors.muted }]}>Creators from your feed will appear here.</Text>
+              <Text style={[styles.sidebarEmpty, { color: COLORS.muted }]}>Creators from your feed will appear here.</Text>
             )}
           </View>
         ) : null}
       </View>
-      {!loading && errorMessage && posts.length > 0 ? <Text style={styles.inlineError}>{errorMessage}</Text> : null}
+      {!loading && errorMessage && posts.length > 0 ? <Text style={[styles.inlineError, { color: COLORS.muted }]}>{errorMessage}</Text> : null}
       <TopLoadingBar isLoading={loading || refreshing || loadingMore || loadingStories} />
       <StoryViewer
         visible={storyViewerVisible}
@@ -632,6 +683,16 @@ const styles = StyleSheet.create({
   newPostsBanner: { position: 'absolute', zIndex: 2, top: 62, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 9, borderRadius: 20, backgroundColor: COLORS.cyan, elevation: 5, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
   newPostsText: { color: '#061116', fontSize: 12, fontWeight: '800', marginLeft: 6 },
   listContent: { paddingTop: 12, paddingBottom: 18 },
+  storiesContainer: { paddingTop: 10, paddingBottom: 12 },
+  storiesList: { paddingHorizontal: 13, paddingTop: 8, gap: 14 },
+  storyItem: { width: 70, alignItems: 'center' },
+  createStoryItem: { width: 70, alignItems: 'center', marginLeft: 0 },
+  storyRing: { width: 66, height: 66, alignItems: 'center', justifyContent: 'center', borderRadius: 33, borderWidth: 2, borderColor: COLORS.border },
+  activeRing: { borderColor: COLORS.cyan },
+  createStoryRing: { width: 66, height: 66, alignItems: 'center', justifyContent: 'center', borderRadius: 33, borderWidth: 2, borderColor: COLORS.border },
+  createStoryAvatar: { width: 60, height: 60, alignItems: 'center', justifyContent: 'center', borderRadius: 30, borderWidth: 2, borderColor: COLORS.bg, backgroundColor: COLORS.card, overflow: 'hidden', position: 'relative' },
+  createStoryPlusBadge: { position: 'absolute', right: -4, bottom: -4, width: 20, height: 20, borderRadius: 10, backgroundColor: COLORS.cyan, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: COLORS.bg },
+  storyName: { width: 70, marginTop: 5, color: '#E8EAED', fontSize: 11, textAlign: 'center' },
   emptyList: { flexGrow: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
   emptyIcon: { width: 76, height: 76, alignItems: 'center', justifyContent: 'center', borderRadius: 38, backgroundColor: 'rgba(0,229,255,0.1)' },
@@ -642,3 +703,4 @@ const styles = StyleSheet.create({
   footerLoader: { paddingVertical: 16 },
   inlineError: { color: '#FF7B86', textAlign: 'center', padding: 8 },
 });
+

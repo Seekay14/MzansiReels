@@ -70,7 +70,7 @@ export default function Avatar({
   }
   return (
     <View style={[base, styles.placeholder, border, style]}>
-      <Text style={{ color: '#000', fontWeight: 'bold', fontSize: size * 0.4 }}>
+      <Text style={{ color: COLORS.bg, fontWeight: 'bold', fontSize: size * 0.4 }}>
         {(name || '?').charAt(0).toUpperCase()}
       </Text>
     </View>
@@ -81,3 +81,4 @@ const styles = StyleSheet.create({
   placeholder: { backgroundColor: COLORS.cyan, justifyContent: 'center', alignItems: 'center' },
   border: { borderWidth: 2, borderColor: COLORS.cyan },
 });
+

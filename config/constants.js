@@ -17,7 +17,7 @@ export const COLLECTIONS = {
   profilePictures: '6af3abb50025851a7cc4',
   users: '6af0c69b0019c1c74d74',
   messages: '6af0c7fd002e8d46827c',
-  notifications: '6af46388001b8d4a8597',
+  notifications: '6af0c95100156e8da70c',
   videoLikes: '6af4582e000090ea8aec',
   postLikes: '6af3b1930015013e6b4b',
   follows: '6af0dfe100196e6116f4',

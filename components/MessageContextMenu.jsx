@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { COLORS } from '../config/constants';
 
 const QUICK_REACTIONS = ['❤️', '😂', '👍', '😮', '😢'];
 
@@ -145,9 +146,9 @@ export default function MessageContextMenu({
                 <Ionicons
                   name={action.icon}
                   size={19}
-                  color={action.destructive ? '#FF5B6E' : '#E9EDF2'}
+                  color={action.destructive ? COLORS.pink : COLORS.text}
                 />
-                <Text style={[styles.actionText, action.destructive && styles.destructiveText]}>
+                <Text style={[styles.actionText, action.destructive && styles.destructiveText, { color: action.destructive ? COLORS.pink : COLORS.text }]}>
                   {action.label}
                 </Text>
               </TouchableOpacity>
@@ -181,7 +182,7 @@ export default function MessageContextMenu({
                 accessibilityRole="button"
                 accessibilityLabel="Close message info"
               >
-                <Ionicons name="close" size={22} color="#AAB3BF" />
+                <Ionicons name="close" size={22} color={COLORS.muted} />
               </TouchableOpacity>
             </View>
             <View style={styles.senderRow}>
@@ -189,12 +190,12 @@ export default function MessageContextMenu({
                 {senderAvatarUrl ? (
                   <Image source={{ uri: senderAvatarUrl }} style={styles.senderAvatarImage} />
                 ) : (
-                  <Text style={styles.senderInitial}>{(senderName || '?').charAt(0).toUpperCase()}</Text>
+                  <Text style={[styles.senderInitial, { color: COLORS.bg }]}>{(senderName || '?').charAt(0).toUpperCase()}</Text>
                 )}
               </View>
               <View style={styles.senderDetails}>
-                <Text style={styles.senderName}>{senderName || 'Unknown sender'}</Text>
-                <Text style={styles.senderId}>{message.senderId || 'Sender ID unavailable'}</Text>
+                <Text style={[styles.senderName, { color: COLORS.text }]}>{senderName || 'Unknown sender'}</Text>
+                <Text style={[styles.senderId, { color: COLORS.muted }]}>{message.senderId || 'Sender ID unavailable'}</Text>
               </View>
             </View>
             <InfoRow label="Sent" value={timestamp} />
@@ -221,7 +222,7 @@ function InfoRow({ label, value }) {
   return (
     <View style={styles.infoRow}>
       <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
+      <Text style={[styles.infoValue, { color: COLORS.text }]}>{value}</Text>
     </View>
   );
 }
@@ -235,9 +236,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     padding: 10,
     borderWidth: 1,
-    borderColor: '#343434',
+    borderColor: COLORS.border,
     borderRadius: 19,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: COLORS.card,
     shadowColor: '#000',
     shadowOpacity: 0.35,
     shadowRadius: 18,
@@ -245,26 +246,27 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   reactions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingVertical: 7 },
-  reactionButton: { width: 48, height: 45, alignItems: 'center', justifyContent: 'center', borderRadius: 23, backgroundColor: '#262626' },
+  reactionButton: { width: 48, height: 45, alignItems: 'center', justifyContent: 'center', borderRadius: 23, backgroundColor: COLORS.card },
   reaction: { fontSize: 24 },
-  divider: { height: 1, marginVertical: 6, backgroundColor: '#353535' },
+  divider: { height: 1, marginVertical: 6, backgroundColor: COLORS.border },
   action: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 10, borderRadius: 10 },
-  actionText: { color: '#E9EDF2', fontSize: 14, fontWeight: '600' },
-  destructiveText: { color: '#FF5B6E' },
+  actionText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  destructiveText: { color: COLORS.pink },
   infoBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'rgba(0,0,0,0.64)' },
-  infoCard: { width: '100%', maxWidth: 360, padding: 18, borderWidth: 1, borderColor: '#343434', borderRadius: 18, backgroundColor: '#1A1A1A' },
+  infoCard: { width: '100%', maxWidth: 360, padding: 18, borderWidth: 1, borderColor: COLORS.border, borderRadius: 18, backgroundColor: COLORS.card },
   infoHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  infoTitle: { color: '#F3F5F7', fontSize: 17, fontWeight: '800' },
-  senderRow: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 16, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: '#353535' },
-  senderAvatar: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderRadius: 21, backgroundColor: '#00E5FF' },
+  infoTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  senderRow: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 16, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  senderAvatar: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderRadius: 21, backgroundColor: COLORS.cyan },
   senderAvatarImage: { width: 42, height: 42, borderRadius: 21 },
   senderInitial: { color: '#061116', fontSize: 16, fontWeight: '900' },
   senderDetails: { flex: 1 },
-  senderName: { color: '#F3F5F7', fontSize: 14, fontWeight: '700' },
-  senderId: { color: '#8993A0', fontSize: 10, marginTop: 3 },
+  senderName: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  senderId: { color: COLORS.muted, fontSize: 10, marginTop: 3 },
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 14, paddingVertical: 7 },
-  infoLabel: { color: '#8993A0', fontSize: 12 },
-  infoValue: { flex: 1, color: '#E9EDF2', fontSize: 12, textAlign: 'right' },
-  doneButton: { minHeight: 42, alignItems: 'center', justifyContent: 'center', marginTop: 12, borderRadius: 12, backgroundColor: '#292929' },
-  doneText: { color: '#00E5FF', fontSize: 13, fontWeight: '800' },
+  infoLabel: { color: COLORS.muted, fontSize: 12 },
+  infoValue: { flex: 1, color: '#fff', fontSize: 12, textAlign: 'right' },
+  doneButton: { minHeight: 42, alignItems: 'center', justifyContent: 'center', marginTop: 12, borderRadius: 12, backgroundColor: COLORS.card },
+  doneText: { color: COLORS.cyan, fontSize: 13, fontWeight: '800' },
 });
+

@@ -3,12 +3,15 @@ import {
   ActivityIndicator,
   Animated,
   AppState,
+  Alert,
+  FlatList,
   Image,
   Modal,
   Pressable,
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -17,11 +20,10 @@ import { useEvent } from 'expo';
 import { useIsFocused } from '@react-navigation/native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import Avatar from './Avatar';
-import ViewersListModal from './ViewersListModal';
-import { databases, Query } from '../config/appwrite';
-import { COLLECTIONS, DATABASE_ID } from '../config/constants';
-import { recordStoryView } from '../config/storyViewService';
+import { databases, ID, Query } from '../config/appwrite';
+import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
 import { formatStoryAge, getStoryExpiresAt } from '../config/storyUtils';
+import { getOrCreateChat, sendMessage } from '../config/chatService';
 
 const STORY_DURATION_MS = 15000;
 
@@ -51,7 +53,7 @@ function StoryVideo({ uri, shouldPlay }) {
           <Text style={styles.mediaErrorText}>{error?.message || 'Could not load this video.'}</Text>
         </View>
       ) : status === 'loading' ? (
-        <ActivityIndicator style={styles.mediaLoading} color="#00E5FF" size="large" />
+        <ActivityIndicator style={styles.mediaLoading} color={COLORS.cyan} size="large" />
       ) : null}
     </>
   );
@@ -66,6 +68,95 @@ function ProgressSegment({ active, complete, progress }) {
     <View style={styles.progressTrack}>
       <Animated.View style={[styles.progressFill, { width }]} />
     </View>
+  );
+}
+
+function ViewersBottomSheet({ visible, storyId, onClose }) {
+  const [viewers, setViewers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!visible || !storyId) return;
+    loadViewers();
+  }, [visible, storyId]);
+
+  const loadViewers = async () => {
+    if (!storyId) return;
+    setLoading(true);
+    setError('');
+    try {
+      const pages = [];
+      let offset = 0;
+      let hasMore = true;
+      while (hasMore) {
+        const page = await databases.listDocuments(DATABASE_ID, COLLECTIONS.storyViews, [
+          Query.equal('storyId', storyId),
+          Query.orderDesc('viewedAt'),
+          Query.limit(100),
+          Query.offset(offset),
+        ]);
+        pages.push(...page.documents);
+        offset += page.documents.length;
+        hasMore = page.documents.length > 0 && offset < page.total;
+      }
+
+      const viewerById = new Map();
+      pages.forEach((doc) => {
+        const prev = viewerById.get(doc.viewerId);
+        if (!prev || new Date(doc.viewedAt) > new Date(prev.viewedAt)) {
+          viewerById.set(doc.viewerId, doc);
+        }
+      });
+
+      const uniqueViewers = [...viewerById.values()];
+      setViewers(uniqueViewers);
+    } catch (err) {
+      console.error('Could not load story viewers:', err);
+      setError(err.message || 'Could not load viewers.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <TouchableOpacity style={styles.sheetBackdrop} onPress={onClose} activeOpacity={1} />
+      <TouchableOpacity
+        style={[styles.sheet, { paddingBottom: undefined }]}
+        onPress={(e) => e.stopPropagation()}
+        activeOpacity={1}
+      >
+        <View style={styles.sheetHandle} />
+        <Text style={[styles.sheetTitle, { color: COLORS.text }]}>Story Views</Text>
+        <View style={styles.sheetClose} onPress={onClose}>
+          <Ionicons name="close" size={24} color={COLORS.text} />
+        </View>
+
+        {loading ? (
+          <View style={styles.sheetLoading}>
+            <ActivityIndicator size="large" color={COLORS.cyan} />
+          </View>
+        ) : error ? (
+          <View style={styles.sheetError}>
+            <Text style={styles.sheetErrorText}>{error}</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={viewers}
+            keyExtractor={(item) => item.$id || item.viewerId}
+            renderItem={({ item }) => (
+              <View style={styles.viewerItem}>
+                <Avatar uri={item.viewerAvatar} userId={item.viewerId} name={item.viewerName} size={40} />
+                <Text style={[styles.viewerName, { color: COLORS.text }]}>{item.viewerName || 'Mzansi User'}</Text>
+              </View>
+            )}
+            contentContainerStyle={styles.viewerList}
+            ListEmptyComponent={<Text style={styles.sheetEmpty}>No views yet.</Text>}
+          />
+        )}
+      </TouchableOpacity>
+    </Modal>
   );
 }
 
@@ -100,6 +191,9 @@ export default function StoryViewer({
   const isOwner = story?.userId === userId;
   const [viewersVisible, setViewersVisible] = useState(false);
   const [viewTrackingError, setViewTrackingError] = useState('');
+  const [viewerCount, setViewerCount] = useState(0);
+  const [replyText, setReplyText] = useState('');
+  const [sendingReply, setSendingReply] = useState(false);
   const screenFocused = useIsFocused();
   const storyPaused = pressPaused || viewersVisible || !appIsActive || !screenFocused;
   const pendingInitialStoryId = useRef(null);
@@ -229,15 +323,36 @@ export default function StoryViewer({
     trackedStoryIds.current.add(selectedStory.$id);
 
     setViewTrackingError('');
-    recordStoryView(selectedStory, currentUser)
-      .then(({ story: updatedStory }) => {
-        if (mountedRef.current) onViewRecorded?.(updatedStory, selectedStory.$id);
-      })
-      .catch((error) => {
-        console.error(`Could not record a view for story ${selectedStory.$id}:`, error);
+
+    (async () => {
+      try {
+        const existing = await databases.listDocuments(DATABASE_ID, COLLECTIONS.storyViews, [
+          Query.equal('storyId', selectedStory.$id),
+          Query.equal('viewerId', userId),
+          Query.limit(1),
+        ]);
+
+        if (existing.documents.length > 0) {
+          if (active) setViewerCount(existing.documents.length);
+          return;
+        }
+
+        await databases.createDocument(DATABASE_ID, COLLECTIONS.storyViews, ID.unique(), {
+          storyId: selectedStory.$id,
+          viewerId: userId,
+          viewerName: currentUser?.name || '',
+          viewerAvatar: currentUser?.avatarUrl || '',
+          viewedAt: new Date().toISOString(),
+        });
+
+        if (active) setViewerCount(1);
+        if (mountedRef.current) onViewRecorded?.(selectedStory, selectedStory.$id);
+      } catch (error) {
+        console.error(`Could not record story view for ${selectedStory.$id}:`, error);
         trackedStoryIds.current.delete(selectedStory.$id);
         if (active) setViewTrackingError(error.message || 'Could not record this story view.');
-      });
+      }
+    })();
 
     return () => { active = false; };
   }, [currentUser, isOwner, onViewRecorded, screenFocused, story?.$id, userId, visible]);
@@ -252,6 +367,55 @@ export default function StoryViewer({
     const expirationTimer = setTimeout(closeViewer, expiresAt - Date.now());
     return () => clearTimeout(expirationTimer);
   }, [closeViewer, story, visible]);
+
+  const loadViewerCount = async () => {
+    if (!story?.$id) return;
+    try {
+      const result = await databases.listDocuments(DATABASE_ID, COLLECTIONS.storyViews, [
+        Query.equal('storyId', story.$id),
+        Query.limit(1),
+      ]);
+      setViewerCount(result.total);
+    } catch (error) {
+      console.error('Could not load viewer count:', error);
+    }
+  };
+
+  useEffect(() => {
+    loadViewerCount();
+  }, [story?.$id]);
+
+  const sendReply = async () => {
+    if (!replyText.trim()) return;
+    if (!currentUser?.$id) return;
+    setSendingReply(true);
+    try {
+      const chat = await getOrCreateChat(currentUser.$id, story.userId);
+      await sendMessage(chat.$id, currentUser.$id, story.userId, replyText);
+      setReplyText('');
+      Alert.alert('Reply sent!');
+    } catch (error) {
+      console.error('Could not send story reply:', error);
+      Alert.alert('Reply failed', error.message || 'Could not send your reply.');
+    } finally {
+      setSendingReply(false);
+    }
+  };
+
+  const sendHeartReply = async () => {
+    if (!currentUser?.$id) return;
+    setSendingReply(true);
+    try {
+      const chat = await getOrCreateChat(currentUser.$id, story.userId);
+      await sendMessage(chat.$id, currentUser.$id, story.userId, '❤️');
+      Alert.alert('Reply sent!');
+    } catch (error) {
+      console.error('Could not send heart reply:', error);
+      Alert.alert('Reply failed', error.message || 'Could not send your reply.');
+    } finally {
+      setSendingReply(false);
+    }
+  };
 
   if (!story) return null;
   const expiresAt = getStoryExpiresAt(story);
@@ -294,11 +458,11 @@ export default function StoryViewer({
             />
           ) : mediaUrl ? (
             <View style={styles.mediaError}>
-              <Text style={styles.mediaErrorText}>Could not load this image.</Text>
+              <Text style={[styles.mediaErrorText, { color: COLORS.text }]}>Could not load this image.</Text>
             </View>
           ) : (
             <View style={styles.textStory}>
-              <Text style={styles.storyText}>{story.content}</Text>
+              <Text style={[styles.storyText, { color: COLORS.text }]}>{story.content}</Text>
             </View>
           )}
 
@@ -321,26 +485,16 @@ export default function StoryViewer({
 
           {isOwner ? (
             <View style={styles.analyticsOverlay}>
-              <View style={styles.analyticsCounts}>
-                <View style={styles.analyticsCount}>
-                  <Ionicons name="eye-outline" size={17} color="#FFFFFF" />
-                  <Text style={styles.analyticsText}>{Number(story.views) || 0} views</Text>
-                </View>
-                <View style={styles.analyticsCount}>
-                  <Ionicons name="heart-outline" size={17} color="#FF668B" />
-                  <Text style={styles.analyticsText}>
-                    {Number.isFinite(Number(story.likes)) ? `${Number(story.likes)} likes` : 'Likes unavailable'}
-                  </Text>
-                </View>
-              </View>
               <TouchableOpacity
                 style={styles.viewersButton}
                 onPress={() => setViewersVisible(true)}
                 accessibilityRole="button"
                 accessibilityLabel="View story viewers"
               >
-                <Ionicons name="people-outline" size={17} color="#061116" />
-                <Text style={styles.viewersButtonText}>Viewers</Text>
+                <Ionicons name="eye-outline" size={17} color={COLORS.bg} />
+                <Text style={[styles.viewersButtonText, { color: COLORS.bg }]}>
+                  {viewerCount} Viewers
+                </Text>
               </TouchableOpacity>
             </View>
           ) : viewTrackingError ? (
@@ -368,8 +522,8 @@ export default function StoryViewer({
                 size={36}
               />
               <View style={styles.authorDetails}>
-                <Text numberOfLines={1} style={styles.userName}>{authorName}</Text>
-                <Text numberOfLines={1} style={styles.storyAge}>
+                <Text numberOfLines={1} style={[styles.userName, { color: COLORS.text }]}>{authorName}</Text>
+                <Text numberOfLines={1} style={[styles.storyAge, { color: COLORS.muted }]}>
                   {authorUsername ? `@${authorUsername} · ` : ''}{formatStoryAge(story)}
                 </Text>
               </View>
@@ -379,19 +533,57 @@ export default function StoryViewer({
                 accessibilityRole="button"
                 accessibilityLabel="Close story"
               >
-                <Ionicons name="close" size={26} color="#fff" />
+                <Ionicons name="close" size={26} color={COLORS.text} />
               </TouchableOpacity>
             </View>
           </View>
+
+          {!isOwner && (
+            <View style={styles.replyBar}>
+              <TouchableOpacity
+                style={styles.replyHeart}
+                onPress={sendHeartReply}
+                disabled={sendingReply}
+                accessibilityRole="button"
+                accessibilityLabel="Send heart reaction"
+              >
+                <Ionicons name="heart" size={20} color={sendingReply ? COLORS.muted : COLORS.pink} />
+              </TouchableOpacity>
+              <TextInput
+                style={[styles.replyInput, sendingReply && styles.replyInputDisabled]}
+                value={replyText}
+                onChangeText={setReplyText}
+                placeholder="Send a reply…"
+                placeholderTextColor={COLORS.muted}
+                editable={!sendingReply}
+                maxLength={500}
+                returnKeyType="send"
+                onSubmitEditing={sendReply}
+                accessibilityLabel="Story reply"
+              />
+              <TouchableOpacity
+                style={[styles.replySend, sendingReply && styles.replySendDisabled]}
+                onPress={sendReply}
+                disabled={!replyText.trim() || sendingReply}
+                accessibilityRole="button"
+                accessibilityLabel="Send reply"
+              >
+                {sendingReply ? (
+                  <ActivityIndicator size="small" color={COLORS.bg} />
+                ) : (
+                  <Ionicons name="send" size={20} color={COLORS.cyan} />
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </Modal>
-      {isOwner ? (
-        <ViewersListModal
-          visible={viewersVisible}
-          storyId={story.$id}
-          onClose={() => setViewersVisible(false)}
-        />
-      ) : null}
+
+      <ViewersBottomSheet
+        visible={isOwner && viewersVisible}
+        storyId={story.$id}
+        onClose={() => setViewersVisible(false)}
+      />
     </>
   );
 }
@@ -399,7 +591,7 @@ export default function StoryViewer({
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#050505',
+    backgroundColor: COLORS.bg,
     justifyContent: 'center',
   },
   textStory: {
@@ -407,7 +599,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 34,
-    backgroundColor: '#162B36',
+    backgroundColor: COLORS.card,
   },
   storyText: {
     color: '#fff',
@@ -428,12 +620,8 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     flexDirection: 'row',
   },
-  leftZone: {
-    flex: 1,
-  },
-  rightZone: {
-    flex: 2,
-  },
+  leftZone: { flex: 1 },
+  rightZone: { flex: 2 },
   header: {
     position: 'absolute',
     top: 0,
@@ -443,10 +631,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingTop: 12,
   },
-  progressRow: {
-    flexDirection: 'row',
-    gap: 4,
-  },
+  progressRow: { flexDirection: 'row', gap: 4 },
   progressTrack: {
     flex: 1,
     height: 3,
@@ -454,15 +639,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.35)',
     overflow: 'hidden',
   },
-  progressFill: {
-    height: 3,
-    backgroundColor: '#fff',
-  },
-  userRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 12,
-  },
+  progressFill: { height: 3, backgroundColor: '#fff' },
+  userRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
   userName: {
     flex: 1,
     color: '#fff',
@@ -494,15 +672,35 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     backgroundColor: 'rgba(0,0,0,0.72)',
   },
-  analyticsCounts: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  analyticsCount: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  analyticsText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  viewersButton: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, borderRadius: 17, backgroundColor: '#00E5FF' },
+  viewersButton: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, borderRadius: 17, backgroundColor: COLORS.cyan },
   viewersButtonText: { color: '#061116', fontSize: 12, fontWeight: '800' },
   viewTrackingError: { position: 'absolute', right: 14, bottom: 15, left: 14, zIndex: 2, alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.72)' },
-  viewTrackingErrorText: { color: '#FFD4DE', fontSize: 11, textAlign: 'center' },
+  viewTrackingErrorText: { color: COLORS.pink, fontSize: 11, textAlign: 'center' },
+  replyBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: COLORS.card,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    gap: 8,
+  },
+  replyHeart: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.05)' },
+  replyInput: { flex: 1, color: COLORS.text, backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: COLORS.border, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, fontSize: 14 },
+  replyInputDisabled: { opacity: 0.6 },
+  replySend: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: COLORS.cyan },
+  replySendDisabled: { opacity: 0.5 },
+  sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
+  sheet: { height: '80%', backgroundColor: COLORS.card, borderTopLeftRadius: 22, borderTopRightRadius: 22, overflow: 'hidden' },
+  sheetHandle: { width: 40, height: 4, alignSelf: 'center', borderRadius: 2, backgroundColor: COLORS.muted, marginTop: 10 },
+  sheetTitle: { flex: 1, color: COLORS.text, fontSize: 16, fontWeight: '800', textAlign: 'center' },
+  sheetClose: { position: 'absolute', right: 16, top: 10, zIndex: 3 },
+  sheetLoading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  sheetError: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
+  sheetErrorText: { color: COLORS.pink, fontSize: 14, textAlign: 'center' },
+  viewerList: { paddingHorizontal: 16, paddingBottom: 20 },
+  viewerItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  viewerName: { marginLeft: 12, color: COLORS.text, fontSize: 14, fontWeight: '600' },
+  sheetEmpty: { color: COLORS.muted, textAlign: 'center', marginTop: 30 },
 });

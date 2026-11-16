@@ -74,7 +74,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#343943',
+    backgroundColor: COLORS.card,
   },
   authorInfo: {
     flex: 1,
@@ -84,7 +84,7 @@ const styles = StyleSheet.create({
   bar: {
     height: 9,
     borderRadius: 5,
-    backgroundColor: '#343943',
+    backgroundColor: COLORS.card,
   },
   nameBar: {
     width: 120,
@@ -98,7 +98,7 @@ const styles = StyleSheet.create({
     height: 8,
     marginLeft: 10,
     borderRadius: 5,
-    backgroundColor: '#343943',
+    backgroundColor: COLORS.card,
   },
   postText: {
     marginTop: 16,

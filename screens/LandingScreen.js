@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import LoadingDots from '../components/LoadingDots';
+import { COLORS } from '../config/constants';
 
 export default function LandingScreen() {
   return (
@@ -12,11 +13,11 @@ export default function LandingScreen() {
         <Ionicons
           name="videocam"
           size={76}
-          color="#00E5FF"
+          color={COLORS.cyan}
           accessibilityLabel="MzansiReels"
         />
-        <Text style={styles.brand}>MzansiReels</Text>
-        <Text style={styles.tagline}>Scroll. Laugh. Repeat.</Text>
+        <Text style={[styles.brand, { color: COLORS.text }]}>MzansiReels</Text>
+        <Text style={[styles.tagline, { color: COLORS.muted }]}>Scroll. Laugh. Repeat.</Text>
         <View style={styles.loading}>
           <LoadingDots />
         </View>
@@ -28,7 +29,7 @@ export default function LandingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: COLORS.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -54,3 +55,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 });
+

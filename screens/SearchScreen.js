@@ -38,7 +38,6 @@ import StoryViewer from '../components/StoryViewer';
 import TextPostCard from '../components/TextPostCard';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { useSearchMenu } from '../context/SearchMenuContext';
 import { useResponsiveLayout } from '../config/responsive';
 
 const TABS = ['Search', 'Creators', 'Explore'];
@@ -122,7 +121,7 @@ function getSounds(videos) {
     .map(([sound, count]) => ({ sound, count }));
 }
 
-function VideoTile({ video, onPress }) {
+function VideoTile({ video, onPress, colors }) {
   const [imageFailed, setImageFailed] = useState(false);
   const thumbnail = useMemo(() => {
     try {
@@ -139,19 +138,19 @@ function VideoTile({ video, onPress }) {
       {thumbnail && !imageFailed ? (
         <Image source={{ uri: thumbnail }} style={styles.videoThumbnail} onError={() => setImageFailed(true)} />
       ) : (
-        <View style={styles.videoPlaceholder}>
-          <Ionicons name="play" size={24} color="#AAB2BD" />
+        <View style={[styles.videoPlaceholder, { backgroundColor: COLORS.card }]}>
+          <Ionicons name="play" size={24} color={COLORS.muted} />
         </View>
       )}
-      <View style={styles.videoMeta}>
-        <Ionicons name="play" size={12} color="#fff" />
-        <Text style={styles.videoMetaText}>{formatCompactCount(video.views || 0)}</Text>
+      <View style={[styles.videoMeta, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+        <Ionicons name="play" size={12} color={COLORS.text} />
+        <Text style={[styles.videoMetaText, { color: COLORS.text }]}>{formatCompactCount(video.views || 0)}</Text>
       </View>
     </TouchableOpacity>
   );
 }
 
-function VideoGrid({ videos, onPress }) {
+function VideoGrid({ videos, onPress, colors }) {
   const rows = [];
   for (let index = 0; index < videos.length; index += 3) {
     rows.push(videos.slice(index, index + 3));
@@ -161,7 +160,7 @@ function VideoGrid({ videos, onPress }) {
       {rows.map((row, rowIndex) => (
         <View key={`video-row-${rowIndex}`} style={styles.videoRow}>
           {row.map((video) => (
-            <VideoTile key={video.$id} video={video} onPress={() => onPress(video)} />
+            <VideoTile key={video.$id} video={video} colors={colors} onPress={() => onPress(video)} />
           ))}
           {row.length < 3 && Array.from({ length: 3 - row.length }, (_, index) => (
             <View key={`spacer-${rowIndex}-${index}`} style={styles.videoSpacer} />
@@ -182,7 +181,7 @@ function CreatorCard({
   onFollow,
 }) {
   return (
-    <View style={[styles.creatorCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+    <View style={[styles.creatorCard, { backgroundColor: COLORS.card, borderColor: COLORS.border }]}>
       <TouchableOpacity style={styles.creatorProfile} onPress={onOpen} activeOpacity={0.8}>
         <Avatar
           uri={creator.avatarUrl}
@@ -193,22 +192,22 @@ function CreatorCard({
         />
         <View style={styles.creatorDetails}>
           <View style={styles.creatorNameRow}>
-            <Text style={[styles.creatorName, { color: colors.text }]} numberOfLines={1}>
+            <Text style={[styles.creatorName, { color: COLORS.text }]} numberOfLines={1}>
               {creator.name || creator.username || creator.userId}
             </Text>
             {creator.isVerified === true && (
               <Ionicons name="checkmark-circle" size={16} color={COLORS.cyan} style={styles.verifiedIcon} />
             )}
           </View>
-          <Text style={[styles.creatorHandle, { color: colors.muted }]} numberOfLines={1}>
+          <Text style={[styles.creatorHandle, { color: COLORS.muted }]} numberOfLines={1}>
             @{creator.username || creator.userId}
           </Text>
           {creator.bio ? (
-            <Text style={[styles.creatorBio, { color: colors.muted }]} numberOfLines={1}>
+            <Text style={[styles.creatorBio, { color: COLORS.muted }]} numberOfLines={1}>
               {creator.bio}
             </Text>
           ) : null}
-          <Text style={[styles.creatorCounts, { color: colors.muted }]}>
+          <Text style={[styles.creatorCounts, { color: COLORS.muted }]}>
             {formatCompactCount(creator.followers)} followers · {formatCompactCount(creator.following)} following
           </Text>
         </View>
@@ -217,7 +216,7 @@ function CreatorCard({
         <TouchableOpacity
           style={[
             styles.followButton,
-            { borderColor: followed ? colors.border : COLORS.cyan, backgroundColor: followed ? colors.card : COLORS.cyan },
+            { borderColor: followed ? COLORS.border : COLORS.cyan, backgroundColor: followed ? COLORS.card : COLORS.cyan },
             disabled && styles.disabledButton,
           ]}
           onPress={onFollow}
@@ -226,9 +225,9 @@ function CreatorCard({
           accessibilityLabel={followed ? `Unfollow ${creator.username || creator.name}` : `Follow ${creator.username || creator.name}`}
         >
           {busy ? (
-            <ActivityIndicator size="small" color={followed ? colors.text : '#000'} />
+            <ActivityIndicator size="small" color={followed ? COLORS.text : '#000'} />
           ) : (
-            <Text style={[styles.followButtonText, { color: creator.userId === creator.currentUserId || followed ? colors.text : '#000' }]}>
+            <Text style={[styles.followButtonText, { color: creator.userId === creator.currentUserId || followed ? COLORS.text : '#000' }]}>
               {creator.userId === creator.currentUserId ? 'You' : followed ? 'Following' : 'Follow'}
             </Text>
           )}
@@ -241,7 +240,7 @@ function CreatorCard({
 function SectionTitle({ title, colors, action, onAction }) {
   return (
     <View style={styles.sectionHeading}>
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+      <Text style={[styles.sectionTitle, { color: COLORS.text }]}>{title}</Text>
       {action ? (
         <TouchableOpacity onPress={onAction} accessibilityRole="button">
           <Text style={styles.sectionAction}>{action}</Text>
@@ -254,9 +253,9 @@ function SectionTitle({ title, colors, action, onAction }) {
 export default function SearchScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { scale, horizontalGutter } = useResponsiveLayout();
-  const { colors } = useTheme();
   const { user } = useAuth();
-  const { searchTab, setSearchTab } = useSearchMenu();
+  const { colors } = useTheme();
+  const [activeTab, setActiveTab] = useState('search');
   const [searchText, setSearchText] = useState('');
   const [videos, setVideos] = useState([]);
   const [creators, setCreators] = useState([]);
@@ -286,7 +285,6 @@ export default function SearchScreen({ navigation, route }) {
   const [followsLoading, setFollowsLoading] = useState(false);
   const [storyViewerVisible, setStoryViewerVisible] = useState(false);
   const [activeStoryGroup, setActiveStoryGroup] = useState(0);
-  const activeTab = TABS.includes(searchTab) ? searchTab : 'Search';
   const normalizedSearch = searchText.trim().toLowerCase();
   const storyGroups = useMemo(
     () => groupStories(stories.filter((story) => story.userId !== user?.$id), user?.$id),
@@ -332,8 +330,8 @@ export default function SearchScreen({ navigation, route }) {
 
   useEffect(() => {
     const requestedTab = route?.params?.initialTab;
-    if (TABS.includes(requestedTab)) setSearchTab(requestedTab);
-  }, [route?.params?.initialTab, setSearchTab]);
+    if (TABS.includes(requestedTab)) setActiveTab(requestedTab.toLowerCase());
+  }, [route?.params?.initialTab, setActiveTab]);
 
   useEffect(() => {
     let active = true;
@@ -368,7 +366,7 @@ export default function SearchScreen({ navigation, route }) {
   }, []);
 
   useEffect(() => {
-    if (!historyReady || activeTab !== 'Search' || !searchText.trim()) return undefined;
+    if (!historyReady || activeTab !== 'search' || !searchText.trim()) return undefined;
     const timeout = setTimeout(() => recordRecentSearch(searchText), 800);
     return () => clearTimeout(timeout);
   }, [activeTab, historyReady, recordRecentSearch, searchText]);
@@ -468,7 +466,7 @@ export default function SearchScreen({ navigation, route }) {
     setNotice('');
 
     try {
-      if (activeTab === 'Search') {
+      if (activeTab === 'search') {
         const [videoOutcome, postOutcome, creatorOutcome] = await Promise.all([
           searchVideos(searchText, pageOffsets.videos, SEARCH_PAGE_SIZE)
             .then((result) => ({ result }))
@@ -533,7 +531,7 @@ export default function SearchScreen({ navigation, route }) {
         } else if (postOutcome.postError) {
           setNotice('Post search is temporarily unavailable.');
         }
-      } else if (activeTab === 'Creators') {
+      } else if (activeTab === 'creators') {
         const result = await listCreatorPage(pageOffsets.creators, SEARCH_PAGE_SIZE);
         if (token !== requestId.current) return;
         const matchingCreators = (result.documents || []).filter((creator) => (
@@ -625,7 +623,7 @@ export default function SearchScreen({ navigation, route }) {
     setError('');
     setNotice('');
 
-    if (activeTab === 'Search' && !normalizedSearch) {
+    if (activeTab === 'search' && !normalizedSearch) {
       setLoading(false);
       setLoadingMore(false);
       return undefined;
@@ -637,9 +635,9 @@ export default function SearchScreen({ navigation, route }) {
   }, [activeTab, normalizedSearch, retry, fetchPage]);
 
   const loadMore = () => {
-    const canLoadMore = activeTab === 'Search'
+    const canLoadMore = activeTab === 'search'
       ? hasMore.videos || hasMore.creators || hasMore.posts
-      : activeTab === 'Creators'
+      : activeTab === 'creators'
         ? hasMore.creators
         : hasMore.videos || hasMore.posts;
     if (!loading && !loadingMore && canLoadMore) fetchPage(false, requestId.current);
@@ -742,12 +740,12 @@ export default function SearchScreen({ navigation, route }) {
 
   const useSearchSuggestion = (value) => {
     setSearchText(value);
-    setSearchTab('Search');
+    setActiveTab('search');
   };
 
-  const activeHasMore = activeTab === 'Search'
+  const activeHasMore = activeTab === 'search'
     ? hasMore.videos || hasMore.creators || hasMore.posts
-    : activeTab === 'Creators'
+    : activeTab === 'creators'
       ? hasMore.creators
       : hasMore.videos || hasMore.posts;
 
@@ -765,7 +763,7 @@ export default function SearchScreen({ navigation, route }) {
 
   const emptyResults = (message) => (
     <View style={styles.emptyState}>
-      <Text style={[styles.stateText, { color: colors.muted }]}>{message}</Text>
+      <Text style={[styles.stateText, { color: COLORS.muted }]}>{message}</Text>
     </View>
   );
 
@@ -773,7 +771,7 @@ export default function SearchScreen({ navigation, route }) {
     <View style={styles.pageContent}>
       {suggestionError ? (
         <View style={styles.suggestionError}>
-          <Text style={[styles.helperText, { color: colors.muted }]}>{suggestionError}</Text>
+          <Text style={[styles.helperText, { color: COLORS.muted }]}>{suggestionError}</Text>
           <TouchableOpacity onPress={() => setSuggestionRetry((value) => value + 1)}>
             <Text style={styles.sectionAction}>Retry suggestions</Text>
           </TouchableOpacity>
@@ -790,14 +788,14 @@ export default function SearchScreen({ navigation, route }) {
           <View style={styles.chipWrap}>
             {recentSearches.map((term) => (
               <TouchableOpacity key={term} style={styles.historyChip} onPress={() => useSearchSuggestion(term)}>
-                <Ionicons name="time-outline" size={15} color={colors.muted} />
-                <Text style={[styles.historyText, { color: colors.text }]} numberOfLines={1}>{term}</Text>
-                <Ionicons name="arrow-up-outline" size={14} color={colors.muted} />
+                <Ionicons name="time-outline" size={15} color={COLORS.muted} />
+                <Text style={[styles.historyText, { color: COLORS.text }]} numberOfLines={1}>{term}</Text>
+                <Ionicons name="arrow-up-outline" size={14} color={COLORS.muted} />
               </TouchableOpacity>
             ))}
           </View>
         ) : (
-          <Text style={[styles.helperText, { color: colors.muted }]}>Your recent searches will appear here.</Text>
+          <Text style={[styles.helperText, { color: COLORS.muted }]}>Your recent searches will appear here.</Text>
         )}
       </View>
 
@@ -813,7 +811,7 @@ export default function SearchScreen({ navigation, route }) {
             ))}
           </View>
         ) : (
-          <Text style={[styles.helperText, { color: colors.muted }]}>
+          <Text style={[styles.helperText, { color: COLORS.muted }]}>
             {suggestionError || (suggestionsLoading ? 'Checking recent videos and posts for hashtags…' : 'No hashtags found in recent content.')}
           </Text>
         )}
@@ -826,17 +824,17 @@ export default function SearchScreen({ navigation, route }) {
             {sounds.slice(0, 8).map(({ sound, count }) => (
               <TouchableOpacity key={sound} style={styles.soundChip} onPress={() => useSearchSuggestion(sound)}>
                 <Ionicons name="musical-notes-outline" size={15} color={COLORS.cyan} />
-                <Text style={[styles.historyText, { color: colors.text }]} numberOfLines={1}>{sound}</Text>
+                <Text style={[styles.historyText, { color: COLORS.text }]} numberOfLines={1}>{sound}</Text>
                 <Text style={styles.trendCount}>{formatCompactCount(count)}</Text>
               </TouchableOpacity>
             ))}
           </View>
         ) : (
-          <Text style={[styles.helperText, { color: colors.muted }]}>
+          <Text style={[styles.helperText, { color: COLORS.muted }]}>
             {suggestionError || (suggestionsLoading ? 'Checking recent videos for sound names…' : 'No sound names found in recent video data.')}
           </Text>
         )}
-        <Text style={[styles.indexNote, { color: colors.muted }]}>
+        <Text style={[styles.indexNote, { color: COLORS.muted }]}>
           Sound and hashtag search uses existing video fields when those fields have Appwrite full-text indexes.
         </Text>
       </View>
@@ -847,19 +845,19 @@ export default function SearchScreen({ navigation, route }) {
           <View>
             {discoveryFeatured.length ? (
               <>
-                <Text style={[styles.subsectionTitle, { color: colors.muted }]}>Verified</Text>
+                <Text style={[styles.subsectionTitle, { color: COLORS.muted }]}>Verified</Text>
                 {discoveryFeatured.slice(0, 4).map(creatorCard)}
               </>
             ) : null}
             {discoveryRecommended.length ? (
               <>
-                <Text style={[styles.subsectionTitle, { color: colors.muted }]}>More creators</Text>
+                <Text style={[styles.subsectionTitle, { color: COLORS.muted }]}>More creators</Text>
                 {discoveryRecommended.slice(0, 4).map(creatorCard)}
               </>
             ) : null}
           </View>
         ) : (
-          <Text style={[styles.helperText, { color: colors.muted }]}>
+          <Text style={[styles.helperText, { color: COLORS.muted }]}>
             {suggestionError || (suggestionsLoading ? 'Loading creator recommendations…' : 'No public creator profiles are available yet.')}
           </Text>
         )}
@@ -869,17 +867,17 @@ export default function SearchScreen({ navigation, route }) {
 
   const renderSearchResults = () => (
     <View style={styles.pageContent}>
-      <Text style={[styles.resultSummary, { color: colors.muted }]}>Results for “{searchText.trim()}”</Text>
+      <Text style={[styles.resultSummary, { color: COLORS.muted }]}>Results for “{searchText.trim()}”</Text>
       {creators.length ? (
         <View style={styles.section}>
-          <SectionTitle title="People" colors={colors} action="See all" onAction={() => setSearchTab('Creators')} />
+          <SectionTitle title="People" colors={colors} action="See all" onAction={() => setActiveTab('creators')} />
           {uniqueCreators(creators).slice(0, 6).map(creatorCard)}
         </View>
       ) : null}
       {videos.length ? (
         <View style={styles.section}>
           <SectionTitle title="Videos" colors={colors} />
-          <VideoGrid videos={videos} onPress={openVideo} />
+          <VideoGrid videos={videos} onPress={openVideo} colors={colors} />
         </View>
       ) : null}
       {posts.length ? (
@@ -906,7 +904,7 @@ export default function SearchScreen({ navigation, route }) {
             {featuredCreators.map((creator) => (
               <TouchableOpacity
                 key={creator.userId}
-                style={[styles.featuredCreator, { backgroundColor: colors.card, borderColor: colors.border }]}
+                style={[styles.featuredCreator, { backgroundColor: COLORS.card, borderColor: COLORS.border }]}
                 onPress={() => openCreator(creator)}
               >
                 <View style={styles.featuredAvatar}>
@@ -915,24 +913,24 @@ export default function SearchScreen({ navigation, route }) {
                     <Ionicons name="checkmark-circle" size={19} color={COLORS.cyan} style={styles.featuredVerified} />
                   )}
                 </View>
-                <Text style={[styles.featuredName, { color: colors.text }]} numberOfLines={1}>
+                <Text style={[styles.featuredName, { color: COLORS.text }]} numberOfLines={1}>
                   @{creator.username || creator.userId}
                 </Text>
-                <Text style={[styles.featuredFollowers, { color: colors.muted }]}>
+                <Text style={[styles.featuredFollowers, { color: COLORS.muted }]}>
                   {formatCompactCount(creator.followers)} followers
                 </Text>
                 <TouchableOpacity
                   style={[
                     styles.featuredFollowButton,
-                    { backgroundColor: followRecords[creator.userId] ? colors.bg : COLORS.cyan },
+                    { backgroundColor: followRecords[creator.userId] ? COLORS.bg : COLORS.cyan },
                   ]}
                   onPress={() => toggleFollow(creator)}
                   disabled={creator.userId === user?.$id || followsLoading || followBusy[creator.userId]}
                 >
                   {followBusy[creator.userId] ? (
-                    <ActivityIndicator size="small" color={followRecords[creator.userId] ? colors.text : '#000'} />
+                    <ActivityIndicator size="small" color={followRecords[creator.userId] ? COLORS.text : '#000'} />
                   ) : (
-                    <Text style={[styles.featuredFollowText, { color: creator.userId === user?.$id || followRecords[creator.userId] ? colors.text : '#000' }]}>
+                    <Text style={[styles.featuredFollowText, { color: creator.userId === user?.$id || followRecords[creator.userId] ? COLORS.text : '#000' }]}>
                       {creator.userId === user?.$id ? 'You' : followRecords[creator.userId] ? 'Following' : 'Follow'}
                     </Text>
                   )}
@@ -973,7 +971,7 @@ export default function SearchScreen({ navigation, route }) {
       {videos.length ? (
         <View style={styles.section}>
           <SectionTitle title="Latest videos" colors={colors} />
-          <VideoGrid videos={videos} onPress={openVideo} />
+          <VideoGrid videos={videos} onPress={openVideo} colors={colors} />
         </View>
       ) : null}
       {popularVideos.length ? (
@@ -991,7 +989,7 @@ export default function SearchScreen({ navigation, route }) {
                 key={category}
                 style={styles.trendChip}
                 onPress={() => {
-                  setSearchTab('Search');
+    setActiveTab('search');
                   setSearchText(category);
                 }}
               >
@@ -1023,7 +1021,7 @@ export default function SearchScreen({ navigation, route }) {
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
+    <View style={[styles.container, { backgroundColor: COLORS.bg }]}>
       <View
         style={[
           styles.header,
@@ -1032,18 +1030,17 @@ export default function SearchScreen({ navigation, route }) {
       >
         <View style={styles.titleRow}>
           <View>
-            <Text style={[styles.title, { color: colors.text, fontSize: 28 * scale }]}>Discover</Text>
-            <Text style={[styles.subtitle, { color: colors.muted }]}>Find creators and videos from Mzansi</Text>
+            <Text style={[styles.title, { color: COLORS.text, fontSize: 28 * scale }]}>Discover</Text>
+            <Text style={[styles.subtitle, { color: COLORS.muted }]}>Find creators and videos from Mzansi</Text>
           </View>
           <Ionicons name="sparkles-outline" size={25} color={COLORS.cyan} />
         </View>
-        {activeTab !== 'Explore' && (
-          <View style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="search" size={20} color={colors.muted} style={{ marginRight: 10 }} />
+        <View style={[styles.searchBar, { backgroundColor: COLORS.card, borderColor: COLORS.border }]}>
+            <Ionicons name="search" size={20} color={COLORS.muted} style={{ marginRight: 10 }} />
             <TextInput
-              style={[styles.searchInput, { color: colors.text }]}
-              placeholder={activeTab === 'Creators' ? 'Search creators' : 'Search videos, people, posts, sounds, hashtags'}
-              placeholderTextColor={colors.muted}
+              style={[styles.searchInput, { color: COLORS.text }]}
+              placeholder={activeTab === 'creators' ? 'Search creators' : 'Search videos, people, posts, sounds, hashtags'}
+              placeholderTextColor={COLORS.muted}
               value={searchText}
               onChangeText={setSearchText}
               autoCapitalize="none"
@@ -1052,23 +1049,22 @@ export default function SearchScreen({ navigation, route }) {
             />
             {!!searchText && (
               <TouchableOpacity onPress={() => setSearchText('')} accessibilityLabel="Clear search">
-                <Ionicons name="close-circle" size={20} color={colors.muted} />
+                <Ionicons name="close-circle" size={20} color={COLORS.muted} />
               </TouchableOpacity>
             )}
           </View>
-        )}
-        <View style={[styles.tabRow, { borderBottomColor: colors.border }]}>
+        <View style={[styles.tabRow, { borderBottomColor: COLORS.border }]}>
           {TABS.map((tab) => {
-            const selected = activeTab === tab;
+              const selected = activeTab === tab.toLowerCase();
             return (
               <TouchableOpacity
                 key={tab}
                 style={styles.tab}
-                onPress={() => setSearchTab(tab)}
+                onPress={() => setActiveTab(tab.toLowerCase())}
                 accessibilityRole="tab"
                 accessibilityState={{ selected }}
               >
-                <Text style={[styles.tabText, { color: selected ? COLORS.cyan : colors.muted }]}>{tab}</Text>
+                <Text style={[styles.tabText, { color: selected ? COLORS.cyan : COLORS.muted }]}>{tab}</Text>
                 {selected && <View style={styles.tabUnderline} />}
               </TouchableOpacity>
             );
@@ -1080,9 +1076,9 @@ export default function SearchScreen({ navigation, route }) {
         <ActivityIndicator size="large" color={COLORS.cyan} style={styles.loading} />
       ) : error ? (
         <View style={styles.stateContainer}>
-          <Text style={[styles.stateText, { color: colors.muted }]}>{error}</Text>
+          <Text style={[styles.stateText, { color: COLORS.muted }]}>{error}</Text>
           <TouchableOpacity style={styles.retryButton} onPress={() => setRetry((value) => value + 1)}>
-            <Text style={styles.retryText}>Try again</Text>
+            <Text style={[styles.retryText, { color: COLORS.text }]}>Try again</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -1092,10 +1088,10 @@ export default function SearchScreen({ navigation, route }) {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.scrollContent}
         >
-          {notice ? <Text style={styles.noticeText}>{notice}</Text> : null}
-          {activeTab === 'Search'
+          {notice ? <Text style={[styles.noticeText, { color: COLORS.muted }]}>{notice}</Text> : null}
+          {activeTab === 'search'
             ? normalizedSearch ? renderSearchResults() : renderSearchDiscovery()
-            : activeTab === 'Creators' ? renderCreators() : renderExplore()}
+            : activeTab === 'creators' ? renderCreators() : renderExplore()}
         </ScrollView>
       )}
 
@@ -1184,3 +1180,4 @@ const styles = StyleSheet.create({
   noticeText: { color: '#E8B957', fontSize: 12, lineHeight: 17, marginHorizontal: 15, marginTop: 12 },
   suggestionError: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
 });
+

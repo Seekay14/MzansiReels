@@ -51,7 +51,7 @@ export default function LaunchCountdownCard() {
         </View>
         <View style={styles.copy}>
           <Text style={styles.eyebrow}>MZANSIREELS LAUNCH</Text>
-          <Text style={styles.title}>{isLive ? 'We’re live!' : 'Counting down to January 2027'}</Text>
+          <Text style={[styles.title, { color: COLORS.text }]}>{isLive ? 'We’re live!' : 'Counting down to January 2027'}</Text>
         </View>
       </View>
       <View style={styles.countdownRow}>
@@ -77,8 +77,9 @@ const styles = StyleSheet.create({
   eyebrow: { color: COLORS.cyan, fontSize: 9, fontWeight: '900', letterSpacing: 1.25 },
   title: { color: '#F6F8FA', fontSize: 14, fontWeight: '800', marginTop: 3 },
   countdownRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  timeBlock: { flex: 1, minHeight: 55, alignItems: 'center', justifyContent: 'center', paddingVertical: 6, borderRadius: 10, backgroundColor: '#1A2028' },
+  timeBlock: { flex: 1, minHeight: 55, alignItems: 'center', justifyContent: 'center', paddingVertical: 6, borderRadius: 10, backgroundColor: COLORS.card },
   value: { color: COLORS.cyan, fontSize: 19, lineHeight: 23, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  label: { color: '#89929D', fontSize: 9, fontWeight: '600', marginTop: 2 },
-  separator: { color: '#65717D', fontSize: 17, fontWeight: '800', paddingHorizontal: 3 },
+  label: { color: COLORS.muted, fontSize: 9, fontWeight: '600', marginTop: 2 },
+  separator: { color: COLORS.muted, fontSize: 17, fontWeight: '800', paddingHorizontal: 3 },
 });
+

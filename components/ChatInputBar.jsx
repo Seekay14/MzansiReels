@@ -8,8 +8,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-
-const CYAN = '#00E5FF';
+import { COLORS } from '../config/constants';
 
 export default function ChatInputBar({
   value,
@@ -37,7 +36,7 @@ export default function ChatInputBar({
         accessibilityRole="button"
         accessibilityLabel="Attach photo or video"
       >
-        <Ionicons name="image-outline" size={23} color={CYAN} />
+        <Ionicons name="image-outline" size={23} color={COLORS.cyan} />
       </TouchableOpacity>
       <TouchableOpacity
         style={[styles.iconButton, showEmojiPicker && styles.emojiButtonActive]}
@@ -48,7 +47,7 @@ export default function ChatInputBar({
         accessibilityState={{ expanded: showEmojiPicker }}
         accessibilityLabel="Open emoji picker; long press for stickers"
       >
-        <Ionicons name="happy-outline" size={23} color={CYAN} />
+        <Ionicons name="happy-outline" size={23} color={COLORS.cyan} />
       </TouchableOpacity>
       {recording ? (
         <>
@@ -58,7 +57,7 @@ export default function ChatInputBar({
             accessibilityRole="button"
             accessibilityLabel="Discard voice note"
           >
-            <Ionicons name="trash-outline" size={21} color="#FF0055" />
+            <Ionicons name="trash-outline" size={21} color={COLORS.pink} />
           </TouchableOpacity>
           <View style={styles.recordingTime}>
             <View style={styles.recordingDot} />
@@ -72,7 +71,7 @@ export default function ChatInputBar({
             accessibilityRole="button"
             accessibilityLabel="Stop and send voice note"
           >
-            <Ionicons name="stop" size={18} color="#0B0D12" />
+            <Ionicons name="stop" size={18} color={COLORS.bg} />
           </TouchableOpacity>
         </>
       ) : null}
@@ -81,7 +80,7 @@ export default function ChatInputBar({
           <TextInput
             style={styles.input}
             placeholder="Message..."
-            placeholderTextColor="#8B95A7"
+            placeholderTextColor={COLORS.muted}
             value={value}
             onChangeText={onChangeText}
             onFocus={onInputFocus}
@@ -89,7 +88,7 @@ export default function ChatInputBar({
             multiline
             maxLength={4000}
             underlineColorAndroid="transparent"
-            selectionColor={CYAN}
+            selectionColor={COLORS.cyan}
             accessibilityLabel="Message"
           />
           {value.trim() ? (
@@ -101,8 +100,8 @@ export default function ChatInputBar({
               accessibilityLabel="Send message"
             >
               {sending
-                ? <ActivityIndicator size="small" color="#0B0D12" />
-                : <Ionicons name="paper-plane" size={18} color="#0B0D12" />}
+                ? <ActivityIndicator size="small" color={COLORS.bg} />
+                : <Ionicons name="paper-plane" size={18} color={COLORS.bg} />}
             </TouchableOpacity>
           ) : onVoiceNote ? (
             <TouchableOpacity
@@ -112,7 +111,7 @@ export default function ChatInputBar({
               accessibilityRole="button"
               accessibilityLabel="Record voice note"
             >
-              <Ionicons name="mic-outline" size={23} color={CYAN} />
+              <Ionicons name="mic-outline" size={23} color={COLORS.cyan} />
             </TouchableOpacity>
           ) : null}
         </>
@@ -126,8 +125,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderTopWidth: 1,
-    borderTopColor: '#222222',
-    backgroundColor: '#121212',
+    borderTopColor: COLORS.border,
+    backgroundColor: COLORS.card,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
@@ -138,7 +137,7 @@ const styles = StyleSheet.create({
   },
   emojiButtonActive: {
     borderRadius: 20,
-    backgroundColor: '#252A35',
+    backgroundColor: COLORS.card,
   },
   input: {
     flex: 1,
@@ -148,9 +147,9 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     borderColor: 'transparent',
     borderRadius: 20,
-    color: '#FFFFFF',
+    color: '#fff',
     fontSize: 15,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: COLORS.card,
     outlineStyle: 'none',
     textAlignVertical: 'center',
   },
@@ -164,7 +163,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 20,
-    backgroundColor: CYAN,
+    backgroundColor: COLORS.cyan,
   },
   sendButtonDisabled: {
     opacity: 0.45,
@@ -180,12 +179,13 @@ const styles = StyleSheet.create({
     height: 7,
     borderRadius: 4,
     marginRight: 6,
-    backgroundColor: '#FF0055',
+    backgroundColor: COLORS.pink,
   },
   recordingText: {
     padding: 0,
-    color: '#FF0055',
+    color: COLORS.pink,
     fontSize: 12,
     fontWeight: '700',
   },
 });
+
