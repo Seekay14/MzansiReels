@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
+  Image,
   Platform,
   RefreshControl,
   ScrollView,
@@ -13,12 +15,14 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useIsFocused } from '@react-navigation/native';
 import TextPostCard from '../components/TextPostCard';
 import SkeletonPost from '../components/SkeletonPost';
 import BrandTitle from '../components/BrandTitle';
 import CreatePostComposer from '../components/CreatePostComposer';
 import CreatePostModal from '../components/CreatePostModal';
+import FeaturedCreatorsCarousel from '../components/FeaturedCreatorsCarousel';
 import { groupStories } from '../components/StoriesRow';
 import StoryViewer from '../components/StoryViewer';
 import TopLoadingBar from '../components/TopLoadingBar';
@@ -32,6 +36,171 @@ import * as ImagePicker from 'expo-image-picker';
 import Avatar from '../components/Avatar';
 
 const PAGE_SIZE = 20;
+
+function StoryCard({ story, creatorName, isRead, onPress }) {
+  const pressScale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.timing(pressScale, { toValue: 0.96, duration: 100, useNativeDriver: true }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.timing(pressScale, { toValue: 1, duration: 100, useNativeDriver: true }).start();
+  };
+
+  const storyUrl = story.mediaUrl || story.imageUrl || story.videoUrl || '';
+  const avatarUrl = story.avatarUrl || '';
+
+  return (
+    <TouchableOpacity
+      style={[styles.storyCard, isRead ? styles.storyReadBorder : styles.storyUnreadBorder]}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      onPress={onPress}
+      activeOpacity={1}
+      accessibilityRole="button"
+      accessibilityLabel={`View ${creatorName}'s story`}
+    >
+      <Animated.View style={{ transform: [{ scale: pressScale }] }}>
+        <View style={styles.storyMediaWrapper}>
+          {storyUrl ? (
+            <Image source={{ uri: storyUrl }} style={styles.storyMedia} resizeMode="cover" />
+          ) : avatarUrl ? (
+            <Image source={{ uri: avatarUrl }} style={styles.storyMedia} resizeMode="cover" />
+          ) : (
+            <LinearGradient colors={['#1A1B23', '#0A0A0F']} style={styles.storyMediaFallback} />
+          )}
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.9)']} style={styles.storyGradient} />
+        </View>
+        <Text numberOfLines={2} style={styles.storyName}>{creatorName}</Text>
+      </Animated.View>
+    </TouchableOpacity>
+  );
+}
+
+function ReelsCarousel({ reels, navigation, user }) {
+  if (!reels || reels.length === 0) return null;
+
+  const handleReelPress = (video) => {
+    navigation.navigate('Watch', { video, allVideos: reels });
+  };
+
+  const pressScale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.timing(pressScale, {
+      toValue: 0.96,
+      duration: 100,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.timing(pressScale, {
+      toValue: 1,
+      duration: 100,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <View style={styles.reelsSection}>
+      <View style={styles.reelsDividerWrapper}>
+        <View style={styles.reelsHeaderRow}>
+        <View style={styles.reelsHeaderLeft}>
+          <Ionicons name="videocam-outline" size={18} color={COLORS.text} />
+          <Text style={styles.reelsHeaderText}>Reels</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.watchAllLink}
+          onPress={() => navigation.navigate('Watch')}
+          accessibilityRole="button"
+          accessibilityLabel="Watch all reels"
+        >
+          <Text style={styles.watchAllText}>Watch all</Text>
+        </TouchableOpacity>
+      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.reelsList}
+      >
+        {reels.map((video) => {
+          const creatorName = video.userName || video.name || 'User';
+          const creatorUsername = video.username || video.userName || '';
+          const isVerified = video.isVerified === true;
+          const thumbnailUrl = video.thumbnailUrl || video.videoUrl || '';
+          const caption = video.content || video.caption || '';
+          const views = Number(video.views || 0);
+          const formattedViews = views >= 1000 ? `${(views / 1000).toFixed(1)}K` : String(views || 0);
+
+          return (
+            <TouchableOpacity
+              key={video.$id}
+              style={styles.reelCard}
+              onPressIn={handlePressIn}
+              onPressOut={handlePressOut}
+              onPress={() => handleReelPress(video)}
+              activeOpacity={1}
+              accessibilityRole="button"
+              accessibilityLabel={`View ${creatorName}'s reel`}
+            >
+              <Animated.View style={{ transform: [{ scale: pressScale }] }}>
+                <View style={styles.reelMediaWrapper}>
+                  {thumbnailUrl ? (
+                    <Image
+                      source={{ uri: thumbnailUrl }}
+                      style={styles.reelMedia}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <LinearGradient
+                      colors={['#1A1B23', '#0A0A0F']}
+                      style={styles.reelMediaFallback}
+                    >
+                      <Ionicons
+                        name="videocam-outline"
+                        size={40}
+                        color="rgba(255,255,255,0.1)"
+                      />
+                    </LinearGradient>
+                  )}
+                  <LinearGradient
+                    colors={['transparent', 'rgba(0,0,0,0.9)']}
+                    style={styles.reelGradient}
+                  />
+                  <View style={styles.reelStats}>
+                    <Ionicons name="play" size={12} color={COLORS.text} />
+                    <Text style={styles.reelViews}>{formattedViews}</Text>
+                  </View>
+                  <View style={styles.reelPlayOverlay}>
+                    <Ionicons name="play" size={44} color={COLORS.text} />
+                  </View>
+                </View>
+                <View style={styles.reelInfo}>
+                  {caption ? (
+                    <Text numberOfLines={2} style={styles.reelCaption}>
+                      {caption}
+                    </Text>
+                  ) : null}
+                  <View style={styles.reelUsernameRow}>
+                    <Text style={styles.reelUsername}>
+                      @{creatorUsername || creatorName}
+                    </Text>
+                    {isVerified && (
+                      <Ionicons name="checkmark-circle" size={12} color={COLORS.cyan} style={styles.verifyBadge} />
+                    )}
+                  </View>
+                </View>
+              </Animated.View>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+      </View>
+    </View>
+  );
+}
 
 export default function HomeFeed({ navigation }) {
   const { user } = useAuth();
@@ -68,6 +237,8 @@ export default function HomeFeed({ navigation }) {
   const [errorMessage, setErrorMessage] = useState('');
   const [hasMore, setHasMore] = useState(true);
   const [hasNewPosts, setHasNewPosts] = useState(false);
+  const [reels, setReels] = useState([]);
+  const [loadingReels, setLoadingReels] = useState(false);
   const listRef = useRef(null);
   const listOffset = useRef(0);
   const scrollOffset = useRef(0);
@@ -229,12 +400,32 @@ export default function HomeFeed({ navigation }) {
     }
   }, [user?.$id]);
 
+  const fetchReels = useCallback(async () => {
+    if (!user?.$id) {
+      setReels([]);
+      return;
+    }
+    setLoadingReels(true);
+    try {
+      const result = await databases.listDocuments(DATABASE_ID, COLLECTIONS.videos, [
+        Query.orderDesc('$createdAt'),
+        Query.limit(10),
+      ]);
+      setReels(result.documents);
+    } catch (error) {
+      console.error('Could not load reels:', error);
+    } finally {
+      setLoadingReels(false);
+    }
+  }, [user?.$id]);
+
   useEffect(() => {
     if (focused) {
       fetchPosts();
       fetchStories();
+      fetchReels();
     }
-  }, [focused, fetchPosts, fetchStories]);
+  }, [focused, fetchPosts, fetchStories, fetchReels]);
 
   useEffect(() => {
     if (!focused || !user?.$id) return undefined;
@@ -247,7 +438,8 @@ export default function HomeFeed({ navigation }) {
     setHasNewPosts(false);
     fetchPosts();
     fetchStories();
-  }, [fetchPosts, fetchStories]);
+    fetchReels();
+  }, [fetchPosts, fetchStories, fetchReels]);
 
   useEffect(() => {
     const tabNavigation = navigation.getParent()?.getParent();
@@ -367,6 +559,15 @@ export default function HomeFeed({ navigation }) {
   }, []);
 
   const visiblePosts = posts.filter((post) => !hiddenPostIds.includes(post.$id));
+  const feedData = React.useMemo(() => {
+    if (visiblePosts.length === 0) return visiblePosts;
+    return [
+      visiblePosts[0],
+      { type: 'reels_carousel', id: 'reels-carousel' },
+      { type: 'verified_creators', id: 'verified-creators' },
+      ...visiblePosts.slice(1),
+    ];
+  }, [visiblePosts]);
   const storiesHeader = (
     <View>
       {user?.$id ? (
@@ -386,37 +587,28 @@ export default function HomeFeed({ navigation }) {
           contentContainerStyle={styles.storiesList}
         >
           <TouchableOpacity
-            style={[styles.storyItem, styles.createStoryItem]}
+            style={[styles.storyCard, styles.createStoryCard]}
             onPress={() => navigation.navigate('Messages', { screen: 'Status' })}
             accessibilityRole="button"
-            accessibilityLabel="Create your own story"
+            accessibilityLabel="Create your own status"
           >
-            <View style={styles.createStoryRing}>
-              <View style={styles.createStoryAvatar}>
-                <Ionicons name="videocam" size={28} color={COLORS.cyan} />
-              </View>
-              <View style={styles.createStoryPlusBadge} />
+            <View style={styles.createStoryCardContent}>
+              <Ionicons name="videocam" size={30} color={COLORS.text} />
             </View>
-            <Text numberOfLines={1} style={[styles.storyName, { color: COLORS.text }]}>Create story</Text>
+            <Text numberOfLines={2} style={[styles.storyName, { color: COLORS.text }]}>Create status</Text>
           </TouchableOpacity>
           {storyGroups.map((group) => {
             const story = group.latest;
             const creatorName = group.stories[0]?.userName || group.stories[0]?.name || 'User';
+            const isRead = story.isRead === true;
             return (
-              <TouchableOpacity
+              <StoryCard
                 key={group.userId}
-                style={styles.storyItem}
+                story={story}
+                creatorName={creatorName}
+                isRead={isRead}
                 onPress={() => { setActiveStoryGroup(storyGroups.indexOf(group)); setStoryViewerVisible(true); }}
-                accessibilityRole="button"
-                accessibilityLabel={`View ${creatorName}'s story`}
-              >
-                <View style={[styles.storyRing, styles.activeRing]}>
-                  <View style={styles.avatarFrame}>
-                    <Avatar uri={group.stories[0]?.avatarUrl} userId={group.userId} name={creatorName} size={56} />
-                  </View>
-                </View>
-                <Text numberOfLines={1} style={[styles.storyName, { color: COLORS.text }]}>{creatorName}</Text>
-              </TouchableOpacity>
+              />
             );
           })}
         </ScrollView>
@@ -429,7 +621,11 @@ export default function HomeFeed({ navigation }) {
       data={Array.from({ length: 5 }, (_, index) => `skeleton-${index}`)}
       keyExtractor={(item) => item}
       renderItem={() => <SkeletonPost />}
-      ListHeaderComponent={storiesHeader}
+      ListHeaderComponent={
+        <>
+          {storiesHeader}
+        </>
+      }
       contentContainerStyle={isDesktop ? styles.desktopListContent : styles.listContent}
       style={styles.feedList}
       showsVerticalScrollIndicator={false}
@@ -447,21 +643,45 @@ export default function HomeFeed({ navigation }) {
   ) : (
     <FlatList
       ref={listRef}
-      data={visiblePosts}
-      keyExtractor={(item) => item.$id}
-      renderItem={({ item }) => (
-        <TextPostCard
-          post={item}
-          user={user}
-          currentUser={user}
-          navigation={navigation}
-          onHide={hidePost}
-          onDelete={removePost}
-          onShared={addSharedPost}
-          desktop={isDesktop}
-        />
-      )}
-      ListHeaderComponent={storiesHeader}
+      data={feedData}
+      keyExtractor={(item) => {
+        if (item.type === 'reels_carousel') return item.id;
+        if (item.type === 'verified_creators') return item.id;
+        return item.$id;
+      }}
+      renderItem={({ item }) => {
+        if (item.type === 'reels_carousel') {
+          return (
+            <View style={styles.carouselWrapper}>
+              <ReelsCarousel reels={reels} navigation={navigation} user={user} />
+            </View>
+          );
+        }
+        if (item.type === 'verified_creators') {
+          return (
+            <View style={[styles.carouselWrapper, styles.verifiedCreatorsWrapper]}>
+              <FeaturedCreatorsCarousel navigation={navigation} />
+            </View>
+          );
+        }
+        return (
+          <TextPostCard
+            post={item}
+            user={user}
+            currentUser={user}
+            navigation={navigation}
+            onHide={hidePost}
+            onDelete={removePost}
+            onShared={addSharedPost}
+            desktop={isDesktop}
+          />
+        );
+      }}
+      ListHeaderComponent={
+        <>
+          {storiesHeader}
+        </>
+      }
       contentContainerStyle={[
         visiblePosts.length ? styles.listContent : styles.emptyList,
         isDesktop && styles.desktopListContent,
@@ -684,15 +904,38 @@ const styles = StyleSheet.create({
   newPostsText: { color: '#061116', fontSize: 12, fontWeight: '800', marginLeft: 6 },
   listContent: { paddingTop: 12, paddingBottom: 18 },
   storiesContainer: { paddingTop: 10, paddingBottom: 12 },
-  storiesList: { paddingHorizontal: 13, paddingTop: 8, gap: 14 },
-  storyItem: { width: 70, alignItems: 'center' },
-  createStoryItem: { width: 70, alignItems: 'center', marginLeft: 0 },
-  storyRing: { width: 66, height: 66, alignItems: 'center', justifyContent: 'center', borderRadius: 33, borderWidth: 2, borderColor: COLORS.border },
-  activeRing: { borderColor: COLORS.cyan },
-  createStoryRing: { width: 66, height: 66, alignItems: 'center', justifyContent: 'center', borderRadius: 33, borderWidth: 2, borderColor: COLORS.border },
-  createStoryAvatar: { width: 60, height: 60, alignItems: 'center', justifyContent: 'center', borderRadius: 30, borderWidth: 2, borderColor: COLORS.bg, backgroundColor: COLORS.card, overflow: 'hidden', position: 'relative' },
-  createStoryPlusBadge: { position: 'absolute', right: -4, bottom: -4, width: 20, height: 20, borderRadius: 10, backgroundColor: COLORS.cyan, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: COLORS.bg },
-  storyName: { width: 70, marginTop: 5, color: '#E8EAED', fontSize: 11, textAlign: 'center' },
+  storiesList: { paddingHorizontal: 14, paddingTop: 8, gap: 10 },
+  storyCard: {
+    width: 100,
+    height: 140,
+    borderRadius: 12,
+    borderWidth: 2,
+    backgroundColor: COLORS.card,
+    overflow: 'hidden',
+    alignItems: 'center',
+  },
+  createStoryCard: {
+    width: 100,
+    height: 140,
+    borderRadius: 12,
+    backgroundColor: COLORS.cyan,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  createStoryCardContent: { alignItems: 'center', justifyContent: 'center' },
+  storyReadBorder: { borderColor: COLORS.muted },
+  storyUnreadBorder: { borderColor: COLORS.cyan },
+  storyMediaWrapper: { width: '100%', height: 100, position: 'relative', overflow: 'hidden' },
+  storyMedia: { width: '100%', height: '100%' },
+  storyMediaFallback: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
+  storyGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '40%' },
+  storyName: { width: 100, fontSize: 10, fontWeight: '800', color: COLORS.text, textAlign: 'center', paddingHorizontal: 4, marginTop: 4 },
   emptyList: { flexGrow: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
   emptyIcon: { width: 76, height: 76, alignItems: 'center', justifyContent: 'center', borderRadius: 38, backgroundColor: 'rgba(0,229,255,0.1)' },
@@ -702,5 +945,65 @@ const styles = StyleSheet.create({
   retryText: { color: '#061116', fontSize: 13, fontWeight: '800' },
   footerLoader: { paddingVertical: 16 },
   inlineError: { color: '#FF7B86', textAlign: 'center', padding: 8 },
+  reelsSection: { marginVertical: 14 },
+  reelsDividerWrapper: {
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+    paddingTop: 10,
+    marginBottom: 10,
+  },
+  carouselWrapper: {
+    borderTopWidth: 8,
+    borderTopColor: COLORS.bg,
+    borderBottomWidth: 8,
+    borderBottomColor: COLORS.bg,
+    marginBottom: 0,
+  },
+  verifiedCreatorsWrapper: {
+    borderBottomWidth: 8,
+    borderBottomColor: COLORS.bg,
+    marginBottom: 8,
+  },
+  reelsHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    backgroundColor: COLORS.bg,
+    marginBottom: 10,
+  },
+  reelsHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  reelsHeaderText: { color: COLORS.text, fontSize: 16, fontWeight: '800' },
+  watchAllLink: { paddingHorizontal: 8 },
+  watchAllText: { color: COLORS.cyan, fontSize: 13, fontWeight: '700' },
+  reelsList: { paddingHorizontal: 15, gap: 14, paddingBottom: 15 },
+  reelCard: {
+    width: 150,
+    height: 250,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: COLORS.card,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    overflow: 'hidden',
+  },
+  reelMediaWrapper: { width: 150, height: 190, position: 'relative', overflow: 'hidden' },
+  reelMedia: { width: '100%', height: '100%' },
+  reelMediaFallback: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
+  reelGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '55%' },
+  reelPlayOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.2)', alignItems: 'center', justifyContent: 'center' },
+  reelStats: { position: 'absolute', top: 10, right: 10, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 7, paddingVertical: 4, borderRadius: 14 },
+  reelViews: { color: COLORS.text, fontSize: 11, fontWeight: '700' },
+  reelInfo: { paddingHorizontal: 10, paddingBottom: 10 },
+  reelCaption: { fontSize: 12, lineHeight: 16, fontWeight: '700', color: COLORS.text, marginBottom: 6 },
+  reelUsernameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  reelUsername: { fontSize: 11.5, fontWeight: '700', color: COLORS.text },
+  verifyBadge: { marginTop: -1 },
 });
 

@@ -6,7 +6,9 @@ import {
   Alert,
   FlatList,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StatusBar,
   StyleSheet,
@@ -20,6 +22,8 @@ import { useEvent } from 'expo';
 import { useIsFocused } from '@react-navigation/native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import Avatar from './Avatar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { databases, ID, Query } from '../config/appwrite';
 import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
 import { formatStoryAge, getStoryExpiresAt } from '../config/storyUtils';
@@ -195,6 +199,10 @@ export default function StoryViewer({
   const [replyText, setReplyText] = useState('');
   const [sendingReply, setSendingReply] = useState(false);
   const screenFocused = useIsFocused();
+  const insets = useSafeAreaInsets();
+  const [isStoryLiked, setIsStoryLiked] = useState(false);
+  const [storyLikesCount, setStoryLikesCount] = useState(0);
+  const [likedStoryIds, setLikedStoryIds] = useState(new Set());
   const storyPaused = pressPaused || viewersVisible || !appIsActive || !screenFocused;
   const pendingInitialStoryId = useRef(null);
 
@@ -385,13 +393,41 @@ export default function StoryViewer({
     loadViewerCount();
   }, [story?.$id]);
 
+  useEffect(() => {
+    let active = true;
+    const loadLikes = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(`@mzansireels/liked_stories_${userId}`);
+        const ids = raw ? new Set(JSON.parse(raw)) : new Set();
+        setLikedStoryIds(ids);
+        if (story?.$id) {
+          setIsStoryLiked(ids.has(story.$id));
+          setStoryLikesCount(story.likes || 0);
+        }
+      } catch (error) {
+        console.error('Could not load liked stories:', error);
+      }
+    };
+    if (userId) loadLikes();
+    return () => { active = false; };
+  }, [userId, story?.$id]);
+
   const sendReply = async () => {
     if (!replyText.trim()) return;
     if (!currentUser?.$id) return;
     setSendingReply(true);
     try {
       const chat = await getOrCreateChat(currentUser.$id, story.userId);
-      await sendMessage(chat.$id, currentUser.$id, story.userId, replyText);
+      await sendMessage(
+        chat.$id,
+        currentUser.$id,
+        story.userId,
+        replyText,
+        {
+          storyId: story.$id,
+          storyMediaUrl: story.mediaUrl || mediaUrl,
+        },
+      );
       setReplyText('');
       Alert.alert('Reply sent!');
     } catch (error) {
@@ -414,6 +450,31 @@ export default function StoryViewer({
       Alert.alert('Reply failed', error.message || 'Could not send your reply.');
     } finally {
       setSendingReply(false);
+    }
+  };
+
+  const handleLike = async () => {
+    if (!currentUser?.$id || !story?.$id) return;
+    const storageKey = `@mzansireels/liked_stories_${userId}`;
+    const alreadyLiked = likedStoryIds.has(story.$id);
+    const newIds = new Set(likedStoryIds);
+    const newCount = alreadyLiked ? Math.max(0, storyLikesCount - 1) : storyLikesCount + 1;
+    const newLiked = !alreadyLiked;
+
+    setIsStoryLiked(newLiked);
+    setStoryLikesCount(newCount);
+    if (alreadyLiked) newIds.delete(story.$id); else newIds.add(story.$id);
+    setLikedStoryIds(newIds);
+
+    try {
+      await AsyncStorage.setItem(storageKey, JSON.stringify([...newIds]));
+      await databases.updateDocument(DATABASE_ID, COLLECTIONS.stories, story.$id, { likes: newCount });
+    } catch (error) {
+      console.error('Could not toggle story like:', error);
+      setIsStoryLiked(alreadyLiked);
+      setStoryLikesCount(alreadyLiked ? storyLikesCount + 1 : Math.max(0, storyLikesCount - 1));
+      if (alreadyLiked) newIds.delete(story.$id); else newIds.add(story.$id);
+      setLikedStoryIds(newIds);
     }
   };
 
@@ -443,139 +504,151 @@ export default function StoryViewer({
       >
         <StatusBar hidden />
         <View style={styles.screen}>
-          {mediaType === 'video' && mediaUrl ? (
-            <StoryVideo
-              key={story.$id}
-              uri={mediaUrl}
-              shouldPlay={visible && !storyPaused && !viewersVisible}
-            />
-          ) : mediaUrl && !imageError ? (
-            <Image
-              source={{ uri: mediaUrl }}
-              style={StyleSheet.absoluteFill}
-              resizeMode="contain"
-              onError={() => setImageError(true)}
-            />
-          ) : mediaUrl ? (
-            <View style={styles.mediaError}>
-              <Text style={[styles.mediaErrorText, { color: COLORS.text }]}>Could not load this image.</Text>
-            </View>
-          ) : (
-            <View style={styles.textStory}>
-              <Text style={[styles.storyText, { color: COLORS.text }]}>{story.content}</Text>
-            </View>
-          )}
-
-          <View style={styles.tapZones}>
-            <Pressable
-              style={styles.leftZone}
-              onPressIn={() => setPressPaused(true)}
-              onPressOut={() => setPressPaused(false)}
-              onPress={goPrevious}
-              accessibilityLabel="Previous story"
-            />
-            <Pressable
-              style={styles.rightZone}
-              onPressIn={() => setPressPaused(true)}
-              onPressOut={() => setPressPaused(false)}
-              onPress={goNext}
-              accessibilityLabel="Next story"
-            />
-          </View>
-
-          {isOwner ? (
-            <View style={styles.analyticsOverlay}>
-              <TouchableOpacity
-                style={styles.viewersButton}
-                onPress={() => setViewersVisible(true)}
-                accessibilityRole="button"
-                accessibilityLabel="View story viewers"
-              >
-                <Ionicons name="eye-outline" size={17} color={COLORS.bg} />
-                <Text style={[styles.viewersButtonText, { color: COLORS.bg }]}>
-                  {viewerCount} Viewers
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ) : viewTrackingError ? (
-            <View style={styles.viewTrackingError}>
-              <Text style={styles.viewTrackingErrorText}>{viewTrackingError}</Text>
-            </View>
-          ) : null}
-
-          <View style={styles.header}>
-            <View style={styles.progressRow}>
-              {stories.map((item, index) => (
-                <ProgressSegment
-                  key={item.$id}
-                  complete={index < storyIndex}
-                  active={index === storyIndex}
-                  progress={progress}
-                />
-              ))}
-            </View>
-            <View style={styles.userRow}>
-              <Avatar
-                uri={authorProfile?.avatarUrl || story.avatarUrl}
-                userId={story.userId}
-                name={authorName}
-                size={36}
+          <View style={styles.mediaWrapper}>
+            {mediaType === 'video' && mediaUrl ? (
+              <StoryVideo
+                key={story.$id}
+                uri={mediaUrl}
+                shouldPlay={visible && !storyPaused && !viewersVisible}
               />
-              <View style={styles.authorDetails}>
-                <Text numberOfLines={1} style={[styles.userName, { color: COLORS.text }]}>{authorName}</Text>
-                <Text numberOfLines={1} style={[styles.storyAge, { color: COLORS.muted }]}>
-                  {authorUsername ? `@${authorUsername} · ` : ''}{formatStoryAge(story)}
-                </Text>
+            ) : mediaUrl && !imageError ? (
+              <Image
+                source={{ uri: mediaUrl }}
+                style={StyleSheet.absoluteFill}
+                resizeMode="contain"
+                onError={() => setImageError(true)}
+              />
+            ) : mediaUrl ? (
+              <View style={styles.mediaError}>
+                <Text style={[styles.mediaErrorText, { color: COLORS.text }]}>Could not load this image.</Text>
               </View>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={closeViewer}
-                accessibilityRole="button"
-                accessibilityLabel="Close story"
-              >
-                <Ionicons name="close" size={26} color={COLORS.text} />
-              </TouchableOpacity>
+            ) : (
+              <View style={styles.textStory}>
+                <Text style={[styles.storyText, { color: COLORS.text }]}>{story.content}</Text>
+              </View>
+            )}
+
+            <View style={styles.tapZones}>
+              <Pressable
+                style={styles.leftZone}
+                onPressIn={() => setPressPaused(true)}
+                onPressOut={() => setPressPaused(false)}
+                onPress={goPrevious}
+                accessibilityLabel="Previous story"
+              />
+              <Pressable
+                style={styles.rightZone}
+                onPressIn={() => setPressPaused(true)}
+                onPressOut={() => setPressPaused(false)}
+                onPress={goNext}
+                accessibilityLabel="Next story"
+              />
+            </View>
+
+            {isOwner ? (
+              <View style={styles.analyticsOverlay}>
+                <TouchableOpacity
+                  style={styles.viewersButton}
+                  onPress={() => setViewersVisible(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="View story viewers"
+                >
+                  <Ionicons name="eye-outline" size={17} color={COLORS.bg} />
+                  <Text style={[styles.viewersButtonText, { color: COLORS.bg }]}>
+                    {viewerCount} Viewers
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : viewTrackingError ? (
+              <View style={styles.viewTrackingError}>
+                <Text style={styles.viewTrackingErrorText}>{viewTrackingError}</Text>
+              </View>
+            ) : null}
+
+            <View style={styles.header}>
+              <View style={styles.progressRow}>
+                {stories.map((item, index) => (
+                  <ProgressSegment
+                    key={item.$id}
+                    complete={index < storyIndex}
+                    active={index === storyIndex}
+                    progress={progress}
+                  />
+                ))}
+              </View>
+              <View style={styles.userRow}>
+                <Avatar
+                  uri={authorProfile?.avatarUrl || story.avatarUrl}
+                  userId={story.userId}
+                  name={authorName}
+                  size={36}
+                />
+                <View style={styles.authorDetails}>
+                  <Text numberOfLines={1} style={[styles.userName, { color: COLORS.text }]}>{authorName}</Text>
+                  <Text numberOfLines={1} style={[styles.storyAge, { color: COLORS.muted }]}>
+                    {authorUsername ? `@${authorUsername} · ` : ''}{formatStoryAge(story)}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.closeButton}
+                  onPress={closeViewer}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close story"
+                >
+                  <Ionicons name="close" size={26} color={COLORS.text} />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
-          {!isOwner && (
-            <View style={styles.replyBar}>
-              <TouchableOpacity
-                style={styles.replyHeart}
-                onPress={sendHeartReply}
-                disabled={sendingReply}
-                accessibilityRole="button"
-                accessibilityLabel="Send heart reaction"
-              >
-                <Ionicons name="heart" size={20} color={sendingReply ? COLORS.muted : COLORS.pink} />
-              </TouchableOpacity>
-              <TextInput
-                style={[styles.replyInput, sendingReply && styles.replyInputDisabled]}
-                value={replyText}
-                onChangeText={setReplyText}
-                placeholder="Send a reply…"
-                placeholderTextColor={COLORS.muted}
-                editable={!sendingReply}
-                maxLength={500}
-                returnKeyType="send"
-                onSubmitEditing={sendReply}
-                accessibilityLabel="Story reply"
-              />
-              <TouchableOpacity
-                style={[styles.replySend, sendingReply && styles.replySendDisabled]}
-                onPress={sendReply}
-                disabled={!replyText.trim() || sendingReply}
-                accessibilityRole="button"
-                accessibilityLabel="Send reply"
-              >
-                {sendingReply ? (
-                  <ActivityIndicator size="small" color={COLORS.bg} />
-                ) : (
-                  <Ionicons name="send" size={20} color={COLORS.cyan} />
-                )}
-              </TouchableOpacity>
-            </View>
-          )}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? insets.bottom + 14 : 0}
+            style={[styles.replyWrapper, { paddingBottom: insets.bottom }]}
+          >
+            {!isOwner && (
+              <View style={styles.replyBar}>
+                <TouchableOpacity
+                  style={[styles.storyLike, isStoryLiked && styles.storyLikeActive]}
+                  onPress={handleLike}
+                  disabled={sendingReply}
+                  accessibilityRole="button"
+                  accessibilityLabel={isStoryLiked ? 'Unlike story' : 'Like story'}
+                >
+                  <Ionicons
+                    name={isStoryLiked ? 'heart' : 'heart-outline'}
+                    size={20}
+                    color={isStoryLiked ? COLORS.cyan : COLORS.text}
+                  />
+                </TouchableOpacity>
+                <TextInput
+                  style={[styles.replyInput, sendingReply && styles.replyInputDisabled]}
+                  value={replyText}
+                  onChangeText={setReplyText}
+                  placeholder="Send a reply…"
+                  placeholderTextColor={COLORS.muted}
+                  editable={!sendingReply}
+                  maxLength={500}
+                  returnKeyType="send"
+                  onSubmitEditing={sendReply}
+                  accessibilityLabel="Story reply"
+                />
+                <TouchableOpacity
+                  style={[styles.replySend, sendingReply && styles.replySendDisabled]}
+                  onPress={sendReply}
+                  disabled={!replyText.trim() || sendingReply}
+                  accessibilityRole="button"
+                  accessibilityLabel="Send reply"
+                >
+                  {sendingReply ? (
+                    <ActivityIndicator size="small" color={COLORS.bg} />
+                  ) : (
+                    <Ionicons name="send" size={20} color={COLORS.bg} />
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
@@ -592,7 +665,9 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: COLORS.bg,
-    justifyContent: 'center',
+  },
+  mediaWrapper: {
+    flex: 1,
   },
   textStory: {
     flex: 1,
@@ -676,6 +751,7 @@ const styles = StyleSheet.create({
   viewersButtonText: { color: '#061116', fontSize: 12, fontWeight: '800' },
   viewTrackingError: { position: 'absolute', right: 14, bottom: 15, left: 14, zIndex: 2, alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.72)' },
   viewTrackingErrorText: { color: COLORS.pink, fontSize: 11, textAlign: 'center' },
+  replyWrapper: {},
   replyBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -684,12 +760,14 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.card,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
-    gap: 8,
+    gap: 10,
   },
-  replyHeart: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.05)' },
-  replyInput: { flex: 1, color: COLORS.text, backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: COLORS.border, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, fontSize: 14 },
+  replyHeart: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.06)' },
+  storyLike: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.06)', marginRight: 8 },
+  storyLikeActive: { backgroundColor: 'rgba(0,229,255,0.15)' },
+  replyInput: { flex: 1, minWidth: 0, color: COLORS.text, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: COLORS.border, borderRadius: 24, paddingHorizontal: 16, paddingVertical: 8, fontSize: 14, maxWidth: '75%' },
   replyInputDisabled: { opacity: 0.6 },
-  replySend: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: COLORS.cyan },
+  replySend: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, backgroundColor: COLORS.cyan },
   replySendDisabled: { opacity: 0.5 },
   sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
   sheet: { height: '80%', backgroundColor: COLORS.card, borderTopLeftRadius: 22, borderTopRightRadius: 22, overflow: 'hidden' },

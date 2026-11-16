@@ -73,6 +73,21 @@ export async function blockUser(currentUserId, targetUserId) {
   });
 }
 
+export async function unblockUser(currentUserId, targetUserId) {
+  if (!currentUserId || !targetUserId || currentUserId === targetUserId) {
+    throw new Error('A valid current user and target user are required to unblock someone.');
+  }
+
+  const existing = await databases.listDocuments(DATABASE_ID, COLLECTIONS.blocks, [
+    Query.equal('blockerId', currentUserId),
+    Query.equal('blockedId', targetUserId),
+    Query.limit(1),
+  ]);
+  if (!existing.documents[0]) return null;
+
+  return databases.deleteDocument(DATABASE_ID, COLLECTIONS.blocks, existing.documents[0].$id);
+}
+
 export function getAvatarPreviewUrl(fileId) {
   if (!fileId) throw new Error('An avatar file ID is required.');
   return storage.getFilePreviewURL(BUCKET_ID, fileId, 200, 200).toString();
@@ -86,18 +101,43 @@ export function getFileViewUrl(fileId) {
 export function getVideoThumbnail(video) {
   if (!video || typeof video !== 'object') return '';
 
-  const videoFileId = video.videoFileId || fileIdFromUrl(video.videoUrl) || '';
+  // 1. New schema: thumbnailFileId points to an Appwrite Storage file
+  const thumbnailFileId = typeof video.thumbnailFileId === 'string' ? video.thumbnailFileId.trim() : '';
+  if (thumbnailFileId) {
+    try {
+      const url = storage.getFileViewURL(BUCKET_ID, thumbnailFileId).toString();
+      if (__DEV__) {
+        console.debug('VIDEO THUMBNAIL:', {
+          videoDocumentId: video.$id || '',
+          thumbnailFileId,
+          generatedThumbnailUrl: url,
+        });
+      }
+      return url;
+    } catch (error) {
+      if (__DEV__) {
+        console.warn('Invalid profile video thumbnail fileId:', {
+          videoDocumentId: video.$id || '',
+          thumbnailFileId,
+          error: error.message,
+        });
+      }
+      return '';
+    }
+  }
+
+  // 2. Legacy fallback: thumbnailUrl stored as a full URL
   const thumbnailField = typeof video.thumbnailUrl === 'string' ? video.thumbnailUrl.trim() : '';
   if (thumbnailField) {
     try {
       const url = new URL(thumbnailField);
       if (url.protocol === 'http:' || url.protocol === 'https:') {
         if (__DEV__) {
-          console.debug('PROFILE VIDEO THUMBNAIL:', {
+          console.debug('PROFILE VIDEO THUMBNAIL (legacy):', {
             videoDocumentId: video.$id || '',
             thumbnailField,
             thumbnailFileId: fileIdFromUrl(thumbnailField) || '',
-            videoFileId,
+            videoFileId: video.videoFileId || '',
             generatedThumbnailUrl: url.toString(),
           });
         }
@@ -109,7 +149,7 @@ export function getVideoThumbnail(video) {
           videoDocumentId: video.$id || '',
           thumbnailField,
           thumbnailFileId: fileIdFromUrl(thumbnailField) || '',
-          videoFileId,
+          videoFileId: video.videoFileId || '',
           error: error.message,
         });
       }
@@ -121,7 +161,7 @@ export function getVideoThumbnail(video) {
         videoDocumentId: video.$id || '',
         thumbnailField,
         thumbnailFileId: fileIdFromUrl(thumbnailField) || '',
-        videoFileId,
+        videoFileId: video.videoFileId || '',
       });
     }
     return '';
@@ -356,17 +396,17 @@ export async function ensureUserDoc(user) {
 
   return databases.createDocument(DATABASE_ID, COLLECTIONS.users, ID.unique(), {
     userId: user.$id,
-    name: '',
-    username: '',
-    avatarUrl: '',
+    name: user.name || user.email.split('@')[0],
+    username: `user_${user.$id.slice(-6)}`,
     followers: 0,
     following: 0,
-    pushNotifications: true,
-    isPrivate: false,
     isVerified: false,
-    interests: [],
-    profileSetupComplete: false,
+    isPrivate: false,
+    pushNotifications: true,
     onboardingComplete: false,
+    profileSetupComplete: false,
+    termsAccepted: false,
+    isDeactivated: false,
   });
 }
 
@@ -548,7 +588,7 @@ export async function generateAndUploadThumbnail(videoUri, videoId, userId) {
       publicRead: true,
       folder: `videos/${userId}/thumbnails`,
     });
-    return getAvatarPreviewUrl(fileId);
+    return fileId;
   } finally {
     if (webThumbnailUrl) URL.revokeObjectURL(webThumbnailUrl);
   }

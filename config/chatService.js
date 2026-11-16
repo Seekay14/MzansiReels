@@ -32,7 +32,7 @@ export async function getOrCreateChat(currentUserId, targetUserId) {
   }
 }
 
-export async function sendMessage(chatId, senderId, receiverId, text) {
+export async function sendMessage(chatId, senderId, receiverId, text, storyReply = null) {
   if (!chatId || !senderId || !receiverId || !text.trim()) {
     throw new Error('A chat, sender, receiver, and message are required.');
   }
@@ -44,7 +44,18 @@ export async function sendMessage(chatId, senderId, receiverId, text) {
       DATABASE_ID,
       COLLECTIONS.messages,
       ID.unique(),
-      { chatId, senderId, receiverId, text: cleanText, isRead: false },
+      {
+        chatId,
+        senderId,
+        receiverId,
+        text: cleanText,
+        isRead: false,
+        isStatusReply: storyReply ? true : false,
+        ...(storyReply && {
+          storyId: storyReply.storyId,
+          storyMediaUrl: storyReply.storyMediaUrl,
+        }),
+      },
     );
 
     // 2. Update the chat's last message

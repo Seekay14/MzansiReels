@@ -938,6 +938,7 @@ export default function SearchScreen({ navigation, route }) {
               </TouchableOpacity>
             ))}
           </ScrollView>
+          <View style={styles.featuredSectionDivider} />
         </View>
       ) : null}
 
@@ -1162,6 +1163,7 @@ const styles = StyleSheet.create({
   featuredFollowers: { fontSize: 10, marginTop: 3 },
   featuredFollowButton: { minWidth: 88, minHeight: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 16, marginTop: 9, paddingHorizontal: 12 },
   featuredFollowText: { fontSize: 11, fontWeight: '800' },
+  featuredSectionDivider: { height: 1, backgroundColor: COLORS.border, marginVertical: 16 },
   videoRow: { flexDirection: 'row', width: '100%' },
   videoTile: { flex: 1 / 3, aspectRatio: 1, padding: 1 },
   videoSpacer: { flex: 1 / 3, aspectRatio: 1, padding: 1 },

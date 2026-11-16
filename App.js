@@ -91,55 +91,38 @@ async function getCachedUser() {
  * - 'none':        No current session exists (Appwrite returned 401).
  */
 const SESSION_TYPE_REGISTERED = 'registered';
-const SESSION_TYPE_ANONYMOUS = 'anonymous';
-const SESSION_TYPE_GUEST = 'guest';
 const SESSION_TYPE_NONE = 'none';
 
 /**
  * Detects the type of the currently active Appwrite session.
  *
- * This function never treats an anonymous/guest session as a registered
- * account. It only returns the session type so callers can decide what to do
- * with the user.
+ * Only returns 'registered' for a verified email/password session, or 'none'
+ * when no session exists. Anonymous/guest sessions are no longer supported.
  *
- * @returns {'registered' | 'anonymous' | 'guest' | 'none'}
+ * @returns {'registered' | 'none'}
  */
 export async function detectSessionType() {
   let session;
   try {
     session = await account.getSession('current');
   } catch (error) {
-    // Appwrite returns 401 when there is no current session.
     if (error?.code === 401 || error?.type === 'auth') {
       return SESSION_TYPE_NONE;
     }
-    // Re-throw any other error so we do not silently fall back to an
-    // unauthenticated state.
     throw error;
   }
 
-  // No session object returned.
   if (!session) return SESSION_TYPE_NONE;
 
-  // Verify the session is actually a registered user by fetching the account.
-  // Guest/anonymous sessions lack the 'account' scope, so account.get()
-  // fails with 401 for them. We must never treat a guest session as a
-  // registered account, even if its provider is null.
   try {
     await account.get();
-    // account.get() succeeded: this is a verified registered-user session.
     if (session.provider?.toLowerCase() === 'anonymous') {
-      return SESSION_TYPE_ANONYMOUS;
+      return SESSION_TYPE_NONE;
     }
     return SESSION_TYPE_REGISTERED;
   } catch (error) {
-    // account.get() failed: this is not a registered account (guest/anonymous
-    // sessions lack the 'account' scope). Do not treat as registered.
     if (error?.code === 401 || error?.type === 'auth') {
-      if (session.provider?.toLowerCase() === 'anonymous') {
-        return SESSION_TYPE_ANONYMOUS;
-      }
-      return SESSION_TYPE_GUEST;
+      return SESSION_TYPE_NONE;
     }
     throw error;
   }
@@ -583,20 +566,6 @@ export default function App() {
               console.error('Could not verify registered-user session:', error);
               await setUser(null);
             }
-            break;
-          }
-
-          case SESSION_TYPE_ANONYMOUS: {
-            if (!mounted || !sessionCheckActive) return;
-            setAuthUser(null);
-            setAuthState('anonymous');
-            break;
-          }
-
-          case SESSION_TYPE_GUEST: {
-            if (!mounted || !sessionCheckActive) return;
-            setAuthUser(null);
-            setAuthState('guest');
             break;
           }
 

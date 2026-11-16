@@ -79,6 +79,7 @@ export default function VideoCard({
   const [isSharingVideo, setIsSharingVideo] = useState(false);
   const [isDeletingVideo, setIsDeletingVideo] = useState(false);
   const [isDeleted, setIsDeleted] = useState(false);
+  const [isLiking, setIsLiking] = useState(false);
   const [appIsActive, setAppIsActive] = useState(
     AppState.currentState === 'active' || AppState.currentState === null,
   );
@@ -473,7 +474,8 @@ export default function VideoCard({
       Alert.alert('Login Required', 'Please log in to like this video.');
       return;
     }
-    if (busy.current) return;
+    if (isLiking || busy.current) return;
+    setIsLiking(true);
     busy.current = true;
 
     Animated.sequence([
@@ -497,7 +499,10 @@ export default function VideoCard({
       setLikes(previousLikes);
       setIsLiked(previousIsLiked);
       Alert.alert('Error', 'Could not update your like. Please try again.');
-    } finally { busy.current = false; }
+    } finally {
+      busy.current = false;
+      setIsLiking(false);
+    }
   };
 
   const handleFollow = async () => {

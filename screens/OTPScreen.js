@@ -13,21 +13,30 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { account, ID } from '../config/appwrite';
-import { COLORS } from '../config/constants';
+import { account, databases, ID, Query } from '../config/appwrite';
+import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
 import { useAuth } from '../context/AuthContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+$/;
+const RESEND_SECONDS = 30;
 
 export default function OTPScreen({ navigation, route }) {
   const { setUser } = useAuth();
   const insets = useSafeAreaInsets();
-  const { otpUserId, otpEmail } = route?.params || {};
+  const params = route?.params || {};
+  const action = params.action || 'login';
+  const otpUserId = params.otpUserId || '';
+  const otpEmail = params.otpEmail || '';
+  const signupName = params.signupName || '';
 
-const [otpCode, setOtpCode] = useState('');
-const [loading, setLoading] = useState(false);
-const [resendTime, setResendTime] = useState(0);
-const resendCountdownRef = useRef(null);
-const secondsLeftRef = useRef(30);
+  const [otpCode, setOtpCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [resendTime, setResendTime] = useState(0);
+  const [errorMessage, setErrorMessage] = useState('');
+  const resendCountdownRef = useRef(null);
+  const secondsLeftRef = useRef(RESEND_SECONDS);
+  const otpInputRef = useRef(null);
 
   useEffect(() => {
     return () => {
@@ -36,7 +45,8 @@ const secondsLeftRef = useRef(30);
   }, []);
 
   const startResendCountdown = useCallback(() => {
-    secondsLeftRef.current = 30;
+    secondsLeftRef.current = RESEND_SECONDS;
+    setResendTime(RESEND_SECONDS);
     if (resendCountdownRef.current) clearInterval(resendCountdownRef.current);
     resendCountdownRef.current = setInterval(() => {
       secondsLeftRef.current -= 1;
@@ -44,56 +54,86 @@ const secondsLeftRef = useRef(30);
       if (secondsLeftRef.current <= 0) {
         clearInterval(resendCountdownRef.current);
         resendCountdownRef.current = null;
+        setResendTime(0);
       }
     }, 1000);
   }, []);
 
   useEffect(() => {
     startResendCountdown();
+    otpInputRef.current?.focus();
   }, [startResendCountdown]);
 
   const canResend = secondsLeftRef.current <= 0;
 
+  const clearError = () => setErrorMessage('');
+
   const handleOTPChange = (value) => {
+    clearError();
     const digits = value.replace(/\D/g, '').slice(0, 6);
     setOtpCode(digits);
     if (digits.length === 6) {
-      setTimeout(() => {
-        verifyOtp();
-      }, 300);
-    }
-  };
-
-  const handleKeyPress = (event) => {
-    if (event.nativeEvent.key === 'Backspace' && otpCode.length === 0) {
-      // Nothing to delete
+      setTimeout(() => verifyOtp(), 300);
     }
   };
 
   const verifyOtp = async () => {
     if (!otpUserId) {
-      Alert.alert('Session expired', 'Please try logging in again.');
+      setErrorMessage('Session expired. Please try logging in again.');
       return;
     }
     if (!otpCode || otpCode.length !== 6) {
-      Alert.alert('Invalid code', 'Please enter a valid 6-digit code.');
+      setErrorMessage('Please enter a valid 6-digit code.');
       return;
     }
     setLoading(true);
+    setErrorMessage('');
     try {
       await account.createSession(otpUserId, otpCode);
+
       const currentUser = await account.get();
       const authUser = {
         $id: currentUser.$id,
         email: currentUser.email || otpEmail,
-        name: currentUser.name || '',
+        name: currentUser.name || signupName || '',
         status: true,
       };
+
+      if (action === 'signup') {
+        const profile = await databases.listDocuments(DATABASE_ID, COLLECTIONS.users, [
+          Query.equal('userId', currentUser.$id),
+          Query.limit(1),
+        ]);
+        if (!profile.documents[0]) {
+          await databases.createDocument(DATABASE_ID, COLLECTIONS.users, ID.unique(), {
+            userId: currentUser.$id,
+            name: signupName || currentUser.name || '',
+            username: '',
+            avatarUrl: '',
+            profileSetupComplete: false,
+            onboardingComplete: false,
+            followers: 0,
+            following: 0,
+            interests: [],
+            pushNotifications: true,
+            isPrivate: false,
+            isVerified: false,
+          });
+        }
+      }
+
       await setUser(authUser);
       navigation.navigate('Home');
     } catch (error) {
       console.error('OTP verification failed:', error);
-      Alert.alert('Invalid or expired code', error?.message || 'The verification code is incorrect or has expired. Please request a new one.');
+      const errorText = error?.message || 'Verification failed.';
+      if (error?.code === 401 || error?.type?.includes('user_invalid_token') || /invalid|expired|incorrect/i.test(errorText)) {
+        setErrorMessage('Invalid or expired code. Please request a new one.');
+      } else if (/network|fetch|connection/i.test(errorText)) {
+        setErrorMessage('Network error. Please check your connection and try again.');
+      } else {
+        setErrorMessage(errorText);
+      }
     } finally {
       setLoading(false);
     }
@@ -101,18 +141,26 @@ const secondsLeftRef = useRef(30);
 
   const resendCode = async () => {
     if (!canResend || !otpEmail) return;
+    if (!EMAIL_PATTERN.test(otpEmail)) {
+      setErrorMessage('Invalid email address.');
+      return;
+    }
     setLoading(true);
+    setErrorMessage('');
     try {
-      await account.deleteSession('current');
-      await account.createEmailPasswordSession(otpEmail, '');
-      await account.deleteSession('current');
       const token = await account.createEmailToken(ID.unique(), otpEmail);
       if (token?.$id) {
         startResendCountdown();
+        setErrorMessage('');
       }
     } catch (error) {
       console.error('Resend failed:', error);
-      Alert.alert('Could not resend code', error?.message || 'Unable to resend the verification code. Please try again.');
+      const errorText = error?.message || 'Unable to resend code.';
+      if (/network|fetch|connection/i.test(errorText)) {
+        setErrorMessage('Network error. Please check your connection and try again.');
+      } else {
+        setErrorMessage(errorText);
+      }
     } finally {
       setLoading(false);
     }
@@ -131,18 +179,28 @@ const secondsLeftRef = useRef(30);
             <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
               <Ionicons name="arrow-back" size={24} color={COLORS.text} />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Verify your email</Text>
+            <Text style={styles.headerTitle}>
+              {action === 'signup' ? 'Verify your email' : 'Sign in to MzansiReels'}
+            </Text>
           </View>
           <Text style={styles.subtitle}>
             Enter the 6-digit code sent to{' '}
             <Text style={styles.subtitleBold}>{otpEmail}</Text>
           </Text>
-          <Text style={styles.subtitleDim}>If you don’t see it, check your spam folder.</Text>
+          <Text style={styles.subtitleDim}>
+            {action === 'signup'
+              ? 'This code completes your account creation.'
+              : "If you don't see it, check your spam folder."}
+          </Text>
         </View>
 
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ marginBottom: Math.max(insets.bottom, 20) }}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ marginBottom: Math.max(insets.bottom, 20) }}
+        >
           <View style={styles.inputs}>
             <TextInput
+              ref={otpInputRef}
               style={styles.hiddenInput}
               value={otpCode}
               onChangeText={handleOTPChange}
@@ -164,12 +222,23 @@ const secondsLeftRef = useRef(30);
             ))}
           </View>
 
-          <View style={styles.errorRow}>
-            {loading ? (
-              <ActivityIndicator size="small" color={COLORS.cyan} style={{ marginRight: 8 }} />
-            ) : null}
-            <Text style={styles.errorText}>Enter the 6-digit code to continue.</Text>
-          </View>
+          {errorMessage ? (
+            <View style={styles.errorRow}>
+              <Ionicons name="alert-circle" size={18} color={COLORS.pink} style={{ marginRight: 8 }} />
+              <Text style={[styles.errorText, { color: COLORS.pink }]}>{errorMessage}</Text>
+            </View>
+          ) : (
+            <View style={styles.errorRow}>
+              {loading ? (
+                <ActivityIndicator size="small" color={COLORS.cyan} style={{ marginRight: 8 }} />
+              ) : null}
+              <Text style={styles.errorText}>
+                {action === 'signup'
+                  ? 'Check your email for the 6-digit verification code.'
+                  : 'Enter the 6-digit code to continue.'}
+              </Text>
+            </View>
+          )}
 
           <TouchableOpacity
             style={[styles.verifyBtn, loading && styles.verifyBtnDisabled]}
@@ -180,7 +249,9 @@ const secondsLeftRef = useRef(30);
             {loading ? (
               <ActivityIndicator size="small" color={COLORS.bg} />
             ) : (
-              <Text style={styles.verifyBtnText}>Verify Code</Text>
+              <Text style={styles.verifyBtnText}>
+                {action === 'signup' ? 'Verify & Create Account' : 'Verify Code'}
+              </Text>
             )}
           </TouchableOpacity>
 
@@ -189,7 +260,7 @@ const secondsLeftRef = useRef(30);
             <TouchableOpacity
               style={styles.resendBtn}
               onPress={resendCode}
-              disabled={!canResend}
+              disabled={!canResend || loading}
               activeOpacity={0.8}
             >
               <Text style={[styles.resendCountdown, !canResend && styles.resendCountdownActive]}>
@@ -253,10 +324,6 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 32,
     position: 'relative',
-  },
-  inputCell: {
-    width: 48,
-    height: 56,
   },
   inputCell: {
     width: 48,

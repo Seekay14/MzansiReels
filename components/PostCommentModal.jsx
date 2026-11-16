@@ -315,79 +315,81 @@ export default function PostCommentModal({
               </TouchableOpacity>
             </View>
 
-            {loading && comments.length === 0 ? (
-              <View style={styles.state}>
-                <ActivityIndicator color={COLORS.cyan} />
-              </View>
-            ) : errorMessage && comments.length === 0 ? (
-              <TouchableOpacity style={styles.state} onPress={loadComments}>
-                <Text style={styles.stateText}>{errorMessage}</Text>
-                <Text style={styles.retryText}>Tap to retry</Text>
-              </TouchableOpacity>
-            ) : (
-              <FlatList
-                data={displayComments}
-                keyExtractor={(item) => item.$id}
-                renderItem={renderComment}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
-                style={[styles.list, { flex: 1 }]}
-                contentContainerStyle={comments.length ? styles.list : styles.emptyList}
-                refreshControl={(
-                  <RefreshControl
-                    refreshing={loading && comments.length > 0}
-                    onRefresh={loadComments}
-                    tintColor={COLORS.cyan}
-                  />
-                )}
-                ListEmptyComponent={(
-                  <View style={styles.emptyState}>
-                    <Ionicons name="chatbubble-ellipses-outline" size={32} color={COLORS.muted} />
-                    <Text style={styles.stateText}>Be the first to comment.</Text>
-                  </View>
-                )}
-              />
-            )}
+            <View style={styles.contentWrapper}>
+              {loading && comments.length === 0 ? (
+                <View style={styles.state}>
+                  <ActivityIndicator color={COLORS.cyan} />
+                </View>
+              ) : errorMessage && comments.length === 0 ? (
+                <TouchableOpacity style={styles.state} onPress={loadComments}>
+                  <Text style={styles.stateText}>{errorMessage}</Text>
+                  <Text style={styles.retryText}>Tap to retry</Text>
+                </TouchableOpacity>
+              ) : (
+                <FlatList
+                  data={displayComments}
+                  keyExtractor={(item) => item.$id}
+                  renderItem={renderComment}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                  style={[styles.list, { flex: 1 }]}
+                  contentContainerStyle={comments.length ? styles.list : styles.emptyList}
+                  refreshControl={(
+                    <RefreshControl
+                      refreshing={loading && comments.length > 0}
+                      onRefresh={loadComments}
+                      tintColor={COLORS.cyan}
+                    />
+                  )}
+                  ListEmptyComponent={(
+                    <View style={styles.emptyState}>
+                      <Ionicons name="chatbubble-ellipses-outline" size={32} color={COLORS.muted} />
+                      <Text style={styles.stateText}>Be the first to comment.</Text>
+                    </View>
+                  )}
+                />
+              )}
 
-            {errorMessage && comments.length > 0 ? (
-              <Text style={styles.inlineError}>{errorMessage}</Text>
-            ) : null}
-            {replyTo ? (
-              <View style={styles.replyingBanner}>
-                <Text style={styles.replyingText}>Replying to {replyTo.userName || 'comment'}</Text>
+              {errorMessage && comments.length > 0 ? (
+                <Text style={styles.inlineError}>{errorMessage}</Text>
+              ) : null}
+              {replyTo ? (
+                <View style={styles.replyingBanner}>
+                  <Text style={styles.replyingText}>Replying to {replyTo.userName || 'comment'}</Text>
+                  <TouchableOpacity
+                    onPress={() => setReplyTo(null)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Cancel reply"
+                  >
+                    <Ionicons name="close" size={18} color={COLORS.muted} />
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+              <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+                <Avatar uri={user?.avatarUrl} userId={user?.$id} name={user?.name} size={36} />
+                <TextInput
+                  style={[styles.input, { color: COLORS.text }]}
+                  value={draft}
+                  onChangeText={setDraft}
+                  placeholder={replyTo ? 'Write a reply...' : 'Add a comment...'}
+                  placeholderTextColor={COLORS.muted}
+                  multiline
+                  maxLength={2000}
+                  editable={!sending}
+                  accessibilityLabel="Write a comment"
+                />
                 <TouchableOpacity
-                  onPress={() => setReplyTo(null)}
+                  style={styles.sendButton}
+                  onPress={send}
+                  disabled={!draft.trim() || sending}
                   accessibilityRole="button"
-                  accessibilityLabel="Cancel reply"
+                  accessibilityLabel="Send comment"
                 >
-                  <Ionicons name="close" size={18} color={COLORS.muted} />
+                  {sending
+                    ? <ActivityIndicator size="small" color={COLORS.cyan} />
+                    : <Ionicons name="send" size={20} color={draft.trim() ? COLORS.cyan : COLORS.muted} />}
                 </TouchableOpacity>
               </View>
-            ) : null}
-            <View style={styles.composer}>
-              <Avatar uri={user?.avatarUrl} userId={user?.$id} name={user?.name} size={36} />
-              <TextInput
-                style={[styles.input, { color: COLORS.text }]}
-                value={draft}
-                onChangeText={setDraft}
-                placeholder={replyTo ? 'Write a reply...' : 'Add a comment...'}
-                placeholderTextColor={COLORS.muted}
-                multiline
-                maxLength={2000}
-                editable={!sending}
-                accessibilityLabel="Write a comment"
-              />
-              <TouchableOpacity
-                style={styles.sendButton}
-                onPress={send}
-                disabled={!draft.trim() || sending}
-                accessibilityRole="button"
-                accessibilityLabel="Send comment"
-              >
-                {sending
-                  ? <ActivityIndicator size="small" color={COLORS.cyan} />
-                  : <Ionicons name="send" size={20} color={draft.trim() ? COLORS.cyan : COLORS.muted} />}
-              </TouchableOpacity>
             </View>
           </Animated.View>
         </KeyboardAvoidingView>
@@ -399,8 +401,9 @@ export default function PostCommentModal({
 const styles = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.58)' },
   dismissArea: { ...StyleSheet.absoluteFillObject },
-  keyboardAvoider: { flex: 1, justifyContent: 'flex-end' },
+  keyboardAvoider: { flex: 1 },
   sheet: { flex: 1, backgroundColor: COLORS.card, borderTopLeftRadius: 22, borderTopRightRadius: 22, borderTopWidth: 1, borderColor: COLORS.border, overflow: 'hidden' },
+  contentWrapper: { flex: 1 },
   header: { height: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.card },
   headerSpacer: { width: 44 },
   title: { flex: 1, color: COLORS.text, fontSize: 17, fontWeight: '800', textAlign: 'center' },

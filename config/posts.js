@@ -70,16 +70,12 @@ export async function createPost({
     if (postType !== 'video') return document;
 
     try {
-      const thumbnailUrl = await generateAndUploadThumbnail(asset.uri, documentId, currentUser.$id);
-      const parsedThumbnailUrl = new URL(thumbnailUrl);
-      if (parsedThumbnailUrl.protocol !== 'http:' && parsedThumbnailUrl.protocol !== 'https:') {
-        throw new Error('Could not generate a valid video thumbnail URL.');
-      }
+      const thumbnailFileId = await generateAndUploadThumbnail(asset.uri, documentId, currentUser.$id);
       return await databases.updateDocument(
         DATABASE_ID,
         COLLECTIONS.videos,
         documentId,
-        { thumbnailUrl: parsedThumbnailUrl.toString() },
+        { thumbnailFileId },
       );
     } catch (error) {
       console.warn(`Video ${documentId} was posted without a thumbnail:`, error);

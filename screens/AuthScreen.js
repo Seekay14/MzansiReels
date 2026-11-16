@@ -21,7 +21,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../context/AuthContext';
 import { useResponsiveLayout } from '../config/responsive';
 import Avatar from '../components/Avatar';
-import { SESSION_TYPE_REGISTERED, SESSION_TYPE_ANONYMOUS, SESSION_TYPE_GUEST, SESSION_TYPE_NONE, detectSessionType } from '../App';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const REMEMBERED_EMAIL_KEY = '@mzansireels/remembered-login-email';
@@ -126,20 +125,19 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
   const subtitleOpacity = useRef(new Animated.Value(1)).current;
   const tabIndicatorX = useRef(new Animated.Value(0)).current;
   const subtitles = ['Discover Mzansi talent', 'Scroll. Laugh. Repeat.'];
-  
+
   const [email, setEmail] = useState('');
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [showPassword, setShowPassword] = useState(true);
+  const [otpPassword, setOtpPassword] = useState('');
+  const [otpCode, setOtpCode] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [tabWidth, setTabWidth] = useState(0);
-  
+
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [pendingAccount, setPendingAccount] = useState(null);
-  const [otpUserId, setOtpUserId] = useState('');
-  const [otpEmail, setOtpEmail] = useState('');
   const welcomeOpacity = useRef(new Animated.Value(0)).current;
   const signupOpacity = useRef(new Animated.Value(0)).current;
   const signupTranslate = useRef(new Animated.Value(30)).current;
@@ -247,143 +245,129 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
     focusedInput === inputName && styles.inputFocused,
   ];
 
-  const loginUser = async (loginEmail, loginPassword) => {
-    const normalizedEmail = loginEmail.trim();
-    if (!normalizedEmail) return setMessage(AUTH_MESSAGES.emptyEmail);
-    if (!EMAIL_PATTERN.test(normalizedEmail)) return setMessage(AUTH_MESSAGES.invalidEmail);
+  const handleLogin = async (loginEmail, loginPassword) => {
+    const trimmedEmail = loginEmail.trim();
+    if (!trimmedEmail) return setMessage(AUTH_MESSAGES.emptyEmail);
     if (!loginPassword) return setMessage(AUTH_MESSAGES.emptyPassword);
+
     setLoading(true);
     setMessage('');
     try {
-      // STEP 1: Verify password by creating a session, then immediately logging out.
-      console.log('OTP LOGIN STEP 1: Creating email/password session');
-      await account.createEmailPasswordSession(normalizedEmail, loginPassword);
-      console.log('OTP LOGIN STEP 1: Deleting session');
-      await account.deleteSession('current');
-
-      // STEP 2: Send a 6-digit OTP code to the email.
-      console.log('OTP LOGIN STEP 2: Creating email token');
-      const token = await account.createEmailToken(ID.unique(), normalizedEmail);
-      if (!token?.$id) {
-        throw new Error('Appwrite did not return an email token.');
+      const session = await account.createEmailPasswordSession(trimmedEmail, loginPassword);
+      if (!session?.$id || !session?.userId) {
+        throw new Error('Appwrite returned a session without its session ID or user ID.');
       }
-      setOtpUserId(token.userId);
-      setOtpEmail(normalizedEmail);
-      navigation.navigate('OTPScreen', { otpUserId: token.userId, otpEmail: normalizedEmail });
-      console.log('OTP LOGIN STEP 2: OTP sent to', normalizedEmail);
-    } catch (error) {
-      logAuthError(error, 'otp login');
-      const errorMessage = error?.message || 'An unexpected error occurred.';
-      showLoginError({ message: errorMessage });
-      setMessage(`Login Failed: ${errorMessage}`);
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  const verifyOtp = async (otpCode) => {
-    if (!otpUserId) return setMessage('Session expired. Please try logging in again.');
-    if (!otpCode || otpCode.length !== 6) return setMessage('Please enter a valid 6-digit code.');
-    setLoading(true);
-    setMessage('');
-    try {
-      // STEP 3: Verify the OTP code and create the authenticated session.
-      console.log('OTP LOGIN STEP 3: Verifying OTP');
-      await account.createSession(otpUserId, otpCode);
-      console.log('OTP LOGIN STEP 3: Session created, fetching user');
-
-      // Fetch the authenticated user profile.
       const currentUser = await account.get();
       const authUser = {
         $id: currentUser.$id,
-        email: currentUser.email || otpEmail,
+        email: currentUser.email || trimmedEmail,
         name: currentUser.name || '',
         status: true,
       };
 
-      // Save user to Auth Context and navigate to Home.
+      if (rememberMe) {
+        try {
+          await AsyncStorage.setItem(REMEMBERED_EMAIL_KEY, trimmedEmail);
+        } catch (storageError) {
+          console.error('Could not save remembered email:', storageError);
+        }
+      }
+
       await setUser(authUser);
-      console.log('OTP LOGIN STEP 3 COMPLETE: User saved and navigating home');
       navigation.navigate('Home');
     } catch (error) {
-      logAuthError(error, 'otp verification');
-      const errorMessage = error?.message || 'An unexpected error occurred.';
-      showLoginError({ message: errorMessage });
-      setMessage(`OTP Verification Failed: ${errorMessage}`);
+      if (Number(error?.code) === 401) {
+        setMessage(error.message || 'Invalid email or password. Please try again.');
+        return;
+      }
+      logAuthError(error, 'login');
+      setMessage(error.message || 'An unexpected error occurred.');
     } finally {
       setLoading(false);
     }
   };
 
-  const registerUser = async (signupEmail, signupPassword, signupName) => {
+  const handleVerifyOtp = async () => {
+    if (!otpCode || otpCode.length !== 6) {
+      return setMessage('Please enter a valid 6-digit code.');
+    }
+    setLoading(true);
+    setMessage('');
+    try {
+      await account.updateMFA({ otp: otpCode });
+
+      const currentUser = await account.get();
+      const authUser = {
+        $id: currentUser.$id,
+        email: currentUser.email || email,
+        name: currentUser.name || '',
+        status: true,
+      };
+
+      await setUser(authUser);
+      navigation.navigate('Home');
+    } catch (error) {
+      logAuthError(error, 'otp verify');
+      setMessage(error.message || 'Invalid or expired code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSignup = async (signupUsername, signupEmail, signupPassword) => {
+    const normalizedUsername = signupUsername.trim().startsWith('@') ? signupUsername.trim() : `@${signupUsername.trim()}`;
     const normalizedEmail = signupEmail.trim().toLowerCase();
-    const normalizedName = signupName.trim();
+    if (!normalizedUsername) return setMessage(AUTH_MESSAGES.emptyName);
     if (!normalizedEmail) return setMessage(AUTH_MESSAGES.emptyEmail);
     if (!EMAIL_PATTERN.test(normalizedEmail)) {
       setMessage(AUTH_MESSAGES.invalidEmail);
       return;
     }
-    if (!normalizedName) return setMessage(AUTH_MESSAGES.emptyName);
     if (!signupPassword) return setMessage(AUTH_MESSAGES.emptyPassword);
-    if (!confirmPassword) return setMessage(AUTH_MESSAGES.emptyConfirmation);
     if (signupPassword.length < 8) {
       setMessage('Password must be at least 8 characters.');
-      return;
-    }
-    if (signupPassword !== confirmPassword) {
-      setMessage('Passwords do not match.');
       return;
     }
 
     setLoading(true);
     setMessage('');
     try {
-      // Create the user account in Appwrite (does NOT create a session).
-      await account.create(ID.unique(), normalizedEmail, signupPassword, normalizedName);
+      try {
+        await account.create(ID.unique(), normalizedEmail, signupPassword, normalizedUsername);
+      } catch (createError) {
+        if (createError?.code !== 409) throw createError;
+      }
 
-      // Create an email/password session for the newly registered user.
       const session = await account.createEmailPasswordSession(normalizedEmail, signupPassword);
       if (!session?.$id || !session?.userId) {
         throw new Error('Appwrite returned a session without its session ID or user ID.');
       }
-      console.log('SESSION CREATED:', {
-        sessionId: session.$id,
-        userId: session.userId,
-      });
 
-      // Verify the session type is 'registered' before treating the user as
-      // signed in. Anonymous/guest sessions are not treated as authenticated.
-      const sessionType = await detectSessionType();
-      if (sessionType !== SESSION_TYPE_REGISTERED) {
-        throw new Error('Registration failed: expected a registered-user session.');
+      const currentUser = await account.get();
+      const authUser = {
+        $id: currentUser.$id,
+        email: currentUser.email || normalizedEmail,
+        name: normalizedUsername,
+        status: true,
+      };
+
+      if (rememberMe) {
+        try {
+          await AsyncStorage.setItem(REMEMBERED_EMAIL_KEY, normalizedEmail);
+        } catch (storageError) {
+          console.error('Could not save remembered email:', storageError);
+        }
       }
 
-      // Fetch the verified Appwrite user record.
-      const currentUser = await account.get();
-
-      // Create the user profile document in the database.
-      await databases.createDocument(DATABASE_ID, COLLECTIONS.users, ID.unique(), {
-        userId: currentUser.$id,
-        name: normalizedName,
-        username: '',
-        avatarUrl: '',
-        profileSetupComplete: false,
-        onboardingComplete: false,
-        followers: 0,
-        following: 0,
-        interests: [],
-        pushNotifications: true,
-        isPrivate: false,
-        isVerified: false,
-      });
-
-      // Update the application auth state with the verified user.
-      await setUser(currentUser, { skipOnboarding: false });
-
-      console.log('REGISTRATION STEP COMPLETE: User registered and session verified');
+      await setUser(authUser);
+      navigation.navigate('Home');
     } catch (error) {
-      console.error('Could not complete account registration:', error);
-      showLoginError(error);
+      if (Number(error?.code) === 401) {
+        setMessage(error.message || 'Account created, but login requires verification.');
+        return;
+      }
+      logAuthError(error, 'signup');
       setMessage(getAuthErrorMessage(error, 'signup'));
     } finally {
       setLoading(false);
@@ -394,8 +378,12 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
     setActiveTab(tab);
     setFocusedInput(null);
     setMessage('');
+    setEmail('');
+    setFullName('');
     setPassword('');
-    setConfirmPassword('');
+    setShowPassword(true);
+    setOtpPassword('');
+    setOtpCode('');
   };
 
   const handleContinue = () => {
@@ -415,8 +403,9 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
       setPendingAccount(null);
       setActiveTab('login');
       setEmail('');
+      setFullName('');
       setPassword('');
-      setShowPassword(false);
+      setOtpPassword('');
       setFocusedInput(null);
     } catch (error) {
       console.error('Could not sign out before switching accounts:', error);
@@ -546,11 +535,11 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
 
         {activeTab === 'login' && (
           <>
-            <View style={[styles.iconInputRow, { borderColor: COLORS.border, backgroundColor: COLORS.card },focusedInput === 'loginEmail' && styles.inputFocused]}>
+            <View style={[styles.iconInputRow, { borderColor: COLORS.border, backgroundColor: COLORS.card }, focusedInput === 'loginEmail' && styles.inputFocused]}>
               <Ionicons name="mail-outline" size={19} color={COLORS.muted} style={styles.inputLeadingIcon} />
               <TextInput
                 style={[styles.iconInput, { color: COLORS.text }]}
-                placeholder="Email"
+                placeholder="Email address"
                 placeholderTextColor={COLORS.muted}
                 value={email}
                 onChangeText={setEmail}
@@ -559,9 +548,11 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
                 autoCapitalize="none"
                 keyboardType="email-address"
                 autoComplete="email"
+                returnKeyType="send"
+                onSubmitEditing={() => handleLogin(email, password)}
               />
             </View>
-            <View style={[styles.iconInputRow, { borderColor: COLORS.border, backgroundColor: COLORS.card },styles.loginPasswordInputRow, focusedInput === 'loginPassword' && styles.inputFocused]}>
+            <View style={[styles.iconInputRow, { borderColor: COLORS.border, backgroundColor: COLORS.card }, focusedInput === 'loginPassword' && styles.inputFocused]}>
               <Ionicons name="lock-closed-outline" size={19} color={COLORS.muted} style={styles.inputLeadingIcon} />
               <TextInput
                 style={[styles.iconInput, { color: COLORS.text }]}
@@ -571,12 +562,12 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
                 onChangeText={setPassword}
                 onFocus={() => setFocusedInput('loginPassword')}
                 onBlur={() => setFocusedInput(null)}
-                secureTextEntry={!showPassword}
+                secureTextEntry={showPassword}
                 autoComplete="current-password"
               />
               <TouchableOpacity
                 style={styles.inlineEye}
-                onPress={() => setShowPassword(!showPassword)}
+                onPress={() => setShowPassword((visible) => !visible)}
                 accessibilityRole="button"
                 accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
               >
@@ -605,8 +596,9 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
             </View>
             <TouchableOpacity
               style={[styles.button, loading && styles.buttonLoading]}
-              onPress={() => loginUser(email, password)}
+              onPress={() => handleLogin(email, password)}
               disabled={loading}
+              accessibilityRole="button"
             >
               {loading ? <ActivityIndicator color={COLORS.cyan} /> : <Text style={styles.buttonText}>Login</Text>}
             </TouchableOpacity>
@@ -631,13 +623,13 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
               <Ionicons name="person-outline" size={19} color={focusedInput === 'signupName' ? COLORS.cyan : '#8C969E'} style={styles.inputLeadingIcon} />
               <TextInput
                 style={[styles.signupIconInput, { color: COLORS.text }]}
-                placeholder="Full name"
+                placeholder="@username"
                 placeholderTextColor={COLORS.muted}
                 value={fullName}
                 onChangeText={setFullName}
                 onFocus={() => setFocusedInput('signupName')}
                 onBlur={() => setFocusedInput(null)}
-                autoCapitalize="words"
+                autoCapitalize="none"
                 autoComplete="name"
               />
             </View>
@@ -645,7 +637,7 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
               <Ionicons name="mail-outline" size={19} color={focusedInput === 'signupEmail' ? COLORS.cyan : '#8C969E'} style={styles.inputLeadingIcon} />
               <TextInput
                 style={[styles.signupIconInput, { color: COLORS.text }]}
-                placeholder="Email"
+                placeholder="Email address"
                 placeholderTextColor={COLORS.muted}
                 value={email}
                 onChangeText={setEmail}
@@ -666,7 +658,7 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
                 onChangeText={setPassword}
                 onFocus={() => setFocusedInput('signupPassword')}
                 onBlur={() => setFocusedInput(null)}
-                secureTextEntry={!showPassword}
+                secureTextEntry={showPassword}
                 autoComplete="new-password"
               />
               <TouchableOpacity
@@ -678,27 +670,13 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
                 <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={21} color={focusedInput === 'signupPassword' ? COLORS.cyan : COLORS.muted} />
               </TouchableOpacity>
             </View>
-            <View style={[styles.signupIconInputRow, { borderColor: COLORS.border, backgroundColor: 'rgba(255,255,255,0.03)' }, focusedInput === 'signupConfirmPassword' && styles.signupInputFocused]}>
-              <Ionicons name="lock-closed-outline" size={19} color={focusedInput === 'signupConfirmPassword' ? COLORS.cyan : '#8C969E'} style={styles.inputLeadingIcon} />
-              <TextInput
-                style={[styles.signupIconInput, { color: COLORS.text }]}
-                placeholder="Confirm Password"
-                placeholderTextColor={COLORS.muted}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                onFocus={() => setFocusedInput('signupConfirmPassword')}
-                onBlur={() => setFocusedInput(null)}
-                secureTextEntry={!showPassword}
-                autoComplete="new-password"
-              />
-            </View>
             <TouchableOpacity
               style={[styles.signupButton, { backgroundColor: COLORS.cyan }]}
-              onPress={() => registerUser(email, password, fullName)}
+              onPress={() => handleSignup(fullName, email, password)}
               disabled={loading}
               accessibilityRole="button"
             >
-              {loading ? <ActivityIndicator color={COLORS.bg} /> : <Text style={[styles.signupButtonText, { color: COLORS.bg }]}>Create Account</Text>}
+              {loading ? <ActivityIndicator color={COLORS.bg} /> : <Text style={[styles.signupButtonText, { color: COLORS.bg }]}>Sign Up</Text>}
             </TouchableOpacity>
             <TouchableOpacity style={styles.signupLoginLink} onPress={() => switchTab('login')}>
               <Text style={[styles.signupLoginLinkText, { color: COLORS.text }]}>Already have an account?</Text>
@@ -709,13 +687,72 @@ function AppwriteAuthScreen({ navigation, initialTab = 'login' }) {
 
         {activeTab === 'otp' && (
           <>
-            <Text style={styles.subtitle}>Sign in or create an account with a one-time email code.</Text>
+            <Text style={styles.subtitle}>Enter your email and password to receive a verification code.</Text>
+            <View style={[styles.iconInputRow, { borderColor: COLORS.border, backgroundColor: COLORS.card }, focusedInput === 'loginEmail' && styles.inputFocused]}>
+              <Ionicons name="mail-outline" size={19} color={COLORS.muted} style={styles.inputLeadingIcon} />
+              <TextInput
+                style={[styles.iconInput, { color: COLORS.text }]}
+                placeholder="Email address"
+                placeholderTextColor={COLORS.muted}
+                value={email}
+                onChangeText={setEmail}
+                onFocus={() => setFocusedInput('loginEmail')}
+                onBlur={() => setFocusedInput(null)}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoComplete="email"
+              />
+            </View>
+            <View style={[styles.iconInputRow, { borderColor: COLORS.border, backgroundColor: COLORS.card }, focusedInput === 'loginPassword' && styles.inputFocused]}>
+              <Ionicons name="lock-closed-outline" size={19} color={COLORS.muted} style={styles.inputLeadingIcon} />
+              <TextInput
+                style={[styles.iconInput, { color: COLORS.text }]}
+                placeholder="Password"
+                placeholderTextColor={COLORS.muted}
+                value={otpPassword}
+                onChangeText={setOtpPassword}
+                onFocus={() => setFocusedInput('loginPassword')}
+                onBlur={() => setFocusedInput(null)}
+                secureTextEntry={showPassword}
+                autoComplete="current-password"
+              />
+              <TouchableOpacity
+                style={styles.inlineEye}
+                onPress={() => setShowPassword((visible) => !visible)}
+                accessibilityRole="button"
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+              >
+                <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={21} color={COLORS.muted} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.inputs}>
+              <TextInput
+                style={[styles.hiddenInput]}
+                value={otpCode}
+                onChangeText={setOtpCode}
+                maxLength={6}
+                keyboardType="numeric"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoFocus
+                returnKeyType="done"
+                underlineColorAndroid="transparent"
+              />
+              {Array.from({ length: 6 }).map((_, i) => (
+                <View key={i} style={[styles.inputCell, i === otpCode.length && styles.inputCellActive]}>
+                  <Text style={[styles.inputDigit, { color: otpCode.length > i ? COLORS.text : 'transparent' }]}>
+                    {otpCode[i] || ''}
+                  </Text>
+                </View>
+              ))}
+            </View>
             <TouchableOpacity
-              style={styles.button}
-              onPress={() => navigation.navigate('EmailOTP')}
+              style={[styles.button, loading && styles.buttonLoading]}
+              onPress={handleVerifyOtp}
+              disabled={loading || otpCode.length !== 6}
               accessibilityRole="button"
             >
-              <Text style={styles.buttonText}>Continue with Email OTP</Text>
+              {loading ? <ActivityIndicator color={COLORS.cyan} /> : <Text style={styles.buttonText}>Verify Code</Text>}
             </TouchableOpacity>
           </>
         )}
@@ -846,9 +883,9 @@ const styles = StyleSheet.create({
   forgotPasswordLink: { paddingVertical: 7, paddingLeft: 8 },
   forgotPasswordText: { color: COLORS.cyan, fontSize: 13, fontWeight: '600' },
   eye: { position: 'absolute', right: 15 },
-  button: { minHeight: 54, flexDirection: 'row', justifyContent: 'center', backgroundColor: COLORS.cyan, padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 8 },
+  button: { width: '100%', minHeight: 54, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.cyan, padding: 16, borderRadius: 12, marginTop: 8 },
   buttonLoading: { backgroundColor: COLORS.bg },
-  buttonText: { color: COLORS.bg, fontSize: 18, fontWeight: 'bold' },
+  buttonText: { color: COLORS.bg, fontSize: 18, fontWeight: 'bold', textAlign: 'center' },
   message: { color: COLORS.pink, textAlign: 'center', marginTop: 20, fontWeight: 'bold', fontSize: 15 },
   signupStepHeader: { marginBottom: 22 },
   signupStepLabel: { color: COLORS.cyan, fontSize: 10, fontWeight: '900', letterSpacing: 2, textTransform: 'uppercase' },
@@ -878,10 +915,43 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     elevation: 4,
   },
-  signupButton: { minHeight: 58, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', borderRadius: 18, marginTop: 20, overflow: 'hidden' },
-  signupButtonText: { color: COLORS.bg, fontSize: 17, fontWeight: '900', letterSpacing: 0.5 },
+  signupButton: { width: '100%', minHeight: 58, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', borderRadius: 18, marginTop: 20, overflow: 'hidden' },
+  signupButtonText: { color: COLORS.bg, fontSize: 17, fontWeight: '900', letterSpacing: 0.5, textAlign: 'center' },
   signupLoginLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 18 },
   signupLoginLinkText: { fontSize: 13, fontWeight: '600' },
   checkbox: { width: 21, height: 21, alignItems: 'center', justifyContent: 'center', borderRadius: 5, borderWidth: 1.5, borderColor: COLORS.muted, marginRight: 10 },
   checkboxSelected: { borderColor: COLORS.cyan, backgroundColor: COLORS.cyan },
+  inputs: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 32,
+    position: 'relative',
+  },
+  inputCell: {
+    width: 48,
+    height: 56,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 14,
+    backgroundColor: COLORS.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inputCellActive: {
+    borderColor: COLORS.cyan,
+    borderWidth: 2,
+  },
+  inputDigit: {
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  hiddenInput: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    opacity: 0,
+    width: 48,
+    height: 56,
+  },
 });

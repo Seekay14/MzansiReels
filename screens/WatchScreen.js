@@ -1,14 +1,18 @@
-import React, { useState, useRef } from 'react';
-import { View, TouchableOpacity, StyleSheet, Dimensions, FlatList } from 'react-native';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
+import {
+  View, TouchableOpacity, StyleSheet, Dimensions, FlatList, ActivityIndicator,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import VideoCard from '../components/VideoCard';
 import { blockUser } from '../config/helpers';
 import { useAuth } from '../context/AuthContext';
-import { COLORS } from '../config/constants';
+import { COLORS, COLLECTIONS, DATABASE_ID } from '../config/constants';
+import { databases, Query } from '../config/appwrite';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const PAGE_SIZE = 20;
 
 export default function WatchScreen({ route, navigation }) {
   // 👈 Receive the full list of videos if available
@@ -17,16 +21,30 @@ export default function WatchScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const focused = useIsFocused();
   const [muted, setMuted] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(() => {
-    const initialIndex = allVideos?.findIndex((item) => item.$id === video.$id) ?? 0;
-    return Math.max(0, initialIndex);
-  });
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [deletedVideoIds, setDeletedVideoIds] = useState([]);
   const [blockedUserIds, setBlockedUserIds] = useState([]);
+  const requestId = useRef(0);
 
-  // If allVideos is passed, use it. Otherwise, just show the single video.
-  const feed = (allVideos && allVideos.length > 0 ? allVideos : [video])
-    .filter((item) => !deletedVideoIds.includes(item.$id) && !blockedUserIds.includes(item.userId));
+  // Build initial feed: ensure selected video is present, then start at its index.
+  const initialFeed = useMemo(() => {
+    const videos = allVideos && allVideos.length > 0 ? [...allVideos] : [video];
+    if (!videos.some((item) => item.$id === video.$id)) {
+      videos.unshift(video);
+    }
+    return videos;
+  }, [video, allVideos]);
+
+  const [feed, setFeed] = useState(initialFeed);
+
+  const initialIndex = useMemo(() => {
+    const idx = feed.findIndex((item) => item.$id === video.$id);
+    return Math.max(0, idx);
+  }, [feed, video]);
+
+  const [activeIndex, setActiveIndex] = useState(initialIndex);
 
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }) => {
@@ -36,6 +54,38 @@ export default function WatchScreen({ route, navigation }) {
     if (activeItem) setActiveIndex(activeItem.index);
   }).current;
   const visibleActiveIndex = Math.min(activeIndex, Math.max(feed.length - 1, 0));
+
+  const fetchMore = useCallback(async () => {
+    if (loadingMore || !hasMore || !user?.$id) return;
+    const request = ++requestId.current;
+    setLoadingMore(true);
+    try {
+      const queries = [
+        Query.orderDesc('$createdAt'),
+        Query.limit(PAGE_SIZE),
+        Query.offset(page * PAGE_SIZE),
+      ];
+      const result = await databases.listDocuments(DATABASE_ID, COLLECTIONS.videos, queries);
+      if (request !== requestId.current) return;
+      const existingIds = new Set(feed.map((v) => v.$id));
+      const newVideos = result.documents.filter(
+        (v) => !existingIds.has(v.$id)
+          && !deletedVideoIds.includes(v.$id)
+          && !blockedUserIds.includes(v.userId),
+      );
+      setFeed((current) => [...current, ...newVideos]);
+      setHasMore(newVideos.length > 0);
+      setPage((p) => p + 1);
+    } catch (error) {
+      console.error('Could not load more videos:', error);
+    } finally {
+      if (request === requestId.current) setLoadingMore(false);
+    }
+  }, [loadingMore, hasMore, user?.$id, page, feed, deletedVideoIds, blockedUserIds]);
+
+  const loadMore = useCallback(() => {
+    if (!loadingMore && hasMore) fetchMore();
+  }, [loadingMore, hasMore, fetchMore]);
 
   return (
     <View style={[styles.container, { backgroundColor: COLORS.bg }]}>
@@ -65,9 +115,22 @@ export default function WatchScreen({ route, navigation }) {
           />
         )}
         pagingEnabled
+        snapToInterval={SCREEN_HEIGHT}
+        snapToAlignment="start"
+        decelerationRate="fast"
         showsVerticalScrollIndicator={false}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
+        getItemLayout={(_, index) => ({
+          length: SCREEN_HEIGHT,
+          offset: SCREEN_HEIGHT * index,
+          index,
+        })}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.75}
+        initialNumToRender={1}
+        maxToRenderPerBatch={2}
+        windowSize={3}
       />
       
       {/* Floating Glassy Back Button */}
@@ -77,6 +140,8 @@ export default function WatchScreen({ route, navigation }) {
       >
         <Ionicons name="arrow-back" size={28} color={COLORS.text} />
       </TouchableOpacity>
+      
+      {loadingMore && <ActivityIndicator style={styles.footerLoader} color={COLORS.cyan} />}
     </View>
   );
 }
@@ -99,4 +164,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
   },
+  footerLoader: { padding: 18 },
 });

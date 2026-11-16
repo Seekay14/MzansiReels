@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Image,
   Linking,
   Modal,
@@ -11,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Haptics } from 'expo-haptics';
 import * as Clipboard from 'expo-clipboard';
 import { databases, ID, Query } from '../config/appwrite';
 import { COLLECTIONS, COLORS, DATABASE_ID } from '../config/constants';
@@ -81,6 +83,7 @@ export default function TextPostCard({
   const [shares, setShares] = useState(Number(post.shares) || 0);
   const [liked, setLiked] = useState(false);
   const [liking, setLiking] = useState(false);
+  const heartScale = useRef(new Animated.Value(1)).current;
   const [optionsVisible, setOptionsVisible] = useState(false);
   const [saving, setSaving] = useState(false);
   const [commentModalVisible, setCommentModalVisible] = useState(false);
@@ -180,6 +183,11 @@ export default function TextPostCard({
       return;
     }
     if (liking) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Animated.sequence([
+      Animated.timing(heartScale, { toValue: 1.3, duration: 100, useNativeDriver: true }),
+      Animated.timing(heartScale, { toValue: 1, duration: 100, useNativeDriver: true }),
+    ]).start();
     const previousLiked = liked;
     const previousLikes = likes;
     const nextLiked = !previousLiked;
@@ -405,19 +413,21 @@ export default function TextPostCard({
                 accessibilityRole="button"
                 accessibilityLabel={liked ? 'Unlike post' : 'Like post'}
               >
-                <Ionicons name={liked ? 'heart' : 'heart-outline'} size={20} color={liked ? COLORS.cyan : '#AAB1BA'} />
+                <Animated.View style={{ transform: [{ scale: heartScale }] }}>
+                  <Ionicons name={liked ? 'heart' : 'heart-outline'} size={22} color={liked ? COLORS.cyan : COLORS.muted} />
+                </Animated.View>
                 <Text style={[styles.actionCount, liked && styles.likedCount]}>{formatNumber(likes)}</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.commentButton}
+                style={styles.actionButton}
                 onPress={() => {
                   handleComment();
                 }}
                 accessibilityRole="button"
                 accessibilityLabel={`View ${commentCount} comments`}
               >
-                <Ionicons name="chatbubble-outline" size={19} color="#AAB1BA" />
-                <Text style={styles.actionCount}>{formatNumber(commentCount)}</Text>
+                <Ionicons name="chatbubble-outline" size={22} color={COLORS.muted} />
+                <Text style={[styles.actionCount, commentCount > 0 && styles.activeCount]}>{formatNumber(commentCount)}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.actionButton}
@@ -427,8 +437,8 @@ export default function TextPostCard({
                 accessibilityRole="button"
                 accessibilityLabel={`Share post, ${shares} shares`}
               >
-                <Ionicons name="repeat-outline" size={20} color="#AAB1BA" />
-                <Text style={styles.actionCount}>{formatNumber(shares)}</Text>
+                <Ionicons name="repeat-outline" size={22} color={COLORS.muted} />
+                <Text style={[styles.actionCount, shares > 0 && styles.activeCount]}>{formatNumber(shares)}</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -532,7 +542,7 @@ export default function TextPostCard({
 }
 
 const styles = StyleSheet.create({
-  card: { paddingTop: 14, paddingHorizontal: 15, paddingBottom: 8, marginHorizontal: 10, marginBottom: 11, borderWidth: 1, borderColor: '#252A33', borderRadius: 16, backgroundColor: '#14171E' },
+  card: { paddingTop: 14, paddingHorizontal: 15, paddingBottom: 8, marginHorizontal: 10, marginTop: 8, marginBottom: 11, borderWidth: 1, borderColor: '#252A33', borderRadius: 16, backgroundColor: '#14171E' },
   desktopCard: { width: '100%', maxWidth: 600, alignSelf: 'center', marginHorizontal: 0, marginVertical: 8, borderRadius: 8, borderColor: '#3A3B3C', backgroundColor: '#242526' },
   postHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 11 },
   authorInfo: { flex: 1, marginLeft: 10 },
@@ -554,13 +564,13 @@ const styles = StyleSheet.create({
   linkDomain: { color: '#E5E9ED', fontSize: 12, fontWeight: '800' },
   linkUrl: { color: '#89929D', fontSize: 10, marginTop: 4 },
   visitLink: { color: COLORS.cyan, fontSize: 11, fontWeight: '800', marginRight: 10 },
-  actions: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.07)', marginTop: 2 },
+  actions: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: COLORS.border, marginTop: 2, paddingHorizontal: 15, paddingVertical: 12, backgroundColor: COLORS.card },
   guestReadOnlyText: { fontSize: 12, fontWeight: '600' },
   engagementActions: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  actionButton: { minWidth: 48, flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
-  commentButton: { minWidth: 50, flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
-  actionCount: { color: '#AAB1BA', fontSize: 11, fontWeight: '600', marginLeft: 5 },
+  actionButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
+  actionCount: { color: COLORS.muted, fontSize: 11, fontWeight: '600', marginLeft: 6 },
   likedCount: { color: COLORS.cyan },
+  activeCount: { color: COLORS.text },
   viewCommentsButton: { paddingTop: 2, paddingBottom: 7 },
   viewCommentsText: { color: '#858E99', fontSize: 12, fontWeight: '600' },
   sheetBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.58)' },

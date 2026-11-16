@@ -152,25 +152,25 @@ export default function ChatMenuBottomSheet({
           accessibilityRole="button"
           accessibilityLabel="Close chat menu"
         />
-        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 18) }]}>
-          <View style={styles.handle} />
-          <View style={styles.profileHeader}>
-            <Avatar uri={avatarUrl} userId={userId} name={name} size={60} />
-            <View style={styles.profileCopy}>
-              <Text style={[styles.profileName, { color: COLORS.text }]} numberOfLines={1}>{name || 'User'}</Text>
-              <Text style={styles.profileUsername} numberOfLines={1}>
-                @{(username || 'user').replace(/^@/, '')}
-              </Text>
+          <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 18) }]}>
+            <View style={styles.handle} />
+            <View style={styles.profileHeader}>
+              <Avatar uri={avatarUrl} userId={userId} name={name} size={60} />
+              <View style={styles.profileCopy}>
+                <Text style={[styles.profileName, { color: COLORS.text }]} numberOfLines={1}>{name || 'User'}</Text>
+                <Text style={styles.profileUsername} numberOfLines={1}>
+                  @{(username || 'user').replace(/^@/, '')}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={close}
+                accessibilityRole="button"
+                accessibilityLabel="Close chat menu"
+              >
+                <Ionicons name="close" size={20} color={COLORS.text} />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={close}
-              accessibilityRole="button"
-              accessibilityLabel="Close chat menu"
-            >
-              <Ionicons name="close" size={20} color={COLORS.text} />
-            </TouchableOpacity>
-          </View>
           <View style={styles.divider} />
 
           <ScrollView
@@ -265,11 +265,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   handle: { width: 38, height: 4, alignSelf: 'center', borderRadius: 2, backgroundColor: COLORS.muted },
-  profileHeader: { minHeight: 88, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 9 },
+  profileHeader: { minHeight: 88, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 9 },
   profileCopy: { flex: 1, marginLeft: 14 },
   profileName: { color: '#fff', fontSize: 17, fontWeight: '800' },
   profileUsername: { color: COLORS.muted, fontSize: 13, marginTop: 4 },
-  closeButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: COLORS.card },
+  closeButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: COLORS.card, zIndex: 10, elevation: 10 },
   divider: { height: StyleSheet.hairlineWidth, marginHorizontal: 18, marginBottom: 5, backgroundColor: COLORS.border },
   menuScroll: { flexShrink: 1 },
   menuContent: { paddingBottom: 6 },
