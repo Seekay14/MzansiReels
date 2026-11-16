@@ -1,0 +1,23 @@
+﻿
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MzansiReels</title>
+    <script>
+      try {
+        sessionStorage.setItem(
+          'mzansireels:spa-path',
+          window.location.pathname + window.location.search + window.location.hash
+        );
+      } catch (error) {
+        console.error('Could not preserve the requested route:', error);
+      }
+      window.location.replace('/');
+    </script>
+  </head>
+  <body>
+    <p>Loading MzansiReels…</p>
+  </body>
+</html>
